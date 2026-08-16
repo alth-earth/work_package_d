@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
+from referencing.exceptions import Unretrievable
+from referencing.jsonschema import DRAFT202012
 
 from arctic_route_display.models import LayerView, RouteSetView, V2BatchView
 
@@ -28,9 +31,23 @@ def _load_json(path: str | Path) -> dict[str, Any]:
 def _validate(document: dict[str, Any], schema_path: str | Path | None) -> None:
     if schema_path is None:
         return
-    schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
+    schema_path = Path(schema_path)
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema_dir = schema_path.parent
+
+    def retrieve(uri: str):
+        filename = uri.rsplit("/", 1)[-1]
+        local = schema_dir / filename
+        if local.is_file():
+            return Resource.from_contents(
+                json.loads(local.read_text(encoding="utf-8")),
+                default_specification=DRAFT202012,
+            )
+        raise Unretrievable(uri)
+
+    registry = Registry(retrieve=retrieve)
     errors = sorted(
-        Draft202012Validator(schema).iter_errors(document),
+        Draft202012Validator(schema, registry=registry).iter_errors(document),
         key=lambda error: list(error.path),
     )
     if errors:
@@ -51,10 +68,22 @@ def load_v3_group(
     document = _load_json(path)
     _validate(document, schema_path)
     raw_layers = document.get("layers")
-    if not isinstance(raw_layers, dict) or len(raw_layers) != 4:
+    if isinstance(raw_layers, list) and len(raw_layers) == 4:
+        bundles = [
+            (item.get("planning_layer"), item)
+            for item in raw_layers
+            if isinstance(item, dict)
+        ]
+        if len(bundles) != 4 or any(not layer_id for layer_id, _ in bundles):
+            raise DisplayValidationError(
+                "v3 group list layers must each declare planning_layer"
+            )
+    elif isinstance(raw_layers, dict) and len(raw_layers) == 4:
+        bundles = list(raw_layers.items())
+    else:
         raise DisplayValidationError("v3 group must contain exactly four layers")
     layers: list[LayerView] = []
-    for layer_id, bundle in raw_layers.items():
+    for layer_id, bundle in bundles:
         if not isinstance(bundle, dict):
             raise DisplayValidationError(f"layer {layer_id} is not an object")
         plans = bundle.get("plans")
