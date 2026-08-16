@@ -1,0 +1,10 @@
+.venv/
+.mamba-env/
+.mamba/
+.uv-cache/
+.uv-python/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+output/

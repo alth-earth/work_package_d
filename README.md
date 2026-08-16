@@ -1,0 +1,36 @@
+# 工作包 D：只读展示层（骨架）
+
+> 状态：骨架（2026-08-15）。只实现 v3 整组/ v2 后备的读取、分组、状态机与渲染摘要；
+> 具体地图/交互页面待后续实现。
+> 主线口径：v3 四层 × 三目标（12 路线整组）+ 重规划为演示主线，v2 三目标为强制后备
+> （2026-08-15 确认）。
+
+D 只消费 C 已发布的原子制品，不调用 A/B/C 内部函数、不持有计算锁、不反向修改计算事实。
+
+## 边界
+
+- 输入：`cd.four-layer-route-plan-set.v3`（整组）或 `cd.route-plan.v2`（后备）的 JSON 文件；
+- 输出：供展示层使用的“渲染摘要/状态”JSON；
+- 不允许：读取 A/B 私有数据库、等待规划计算、消费不完整整组、跨代次拼接。
+
+## 快速使用
+
+```bash
+cd /root/my_project/work_package_d
+make sync
+make check
+arctic-route-display snapshot --v3 /path/to/routes/v3/initial.json --output out/snapshot.json
+```
+
+## 结构
+
+- `src/arctic_route_display/models.py`：`RouteSetView`、`LayerView`、`DisplayState`；
+- `src/arctic_route_display/loader.py`：读取/分组 v3 整组与 v2 后备，可选用 C Schema 校验；
+- `src/arctic_route_display/cli.py`：`snapshot` 命令；
+- `tests/`：状态机与分组测试。
+
+## 相关文档
+
+- [C→D 合同](../work_package_c/docs/CD_CONTRACT.md)
+- [D 展示层选型评估](../D_SELECTION_EVALUATION_v2_vs_v3.md)
+- [顶层系统权威](../ARCTIC_ROUTE_SYSTEM.md)
