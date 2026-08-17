@@ -11,7 +11,12 @@ from referencing import Registry, Resource
 from referencing.exceptions import Unretrievable
 from referencing.jsonschema import DRAFT202012
 
-from arctic_route_display.models import LayerView, RouteSetView, V2BatchView
+from arctic_route_display.models import (
+    CoveragePreflightView,
+    LayerView,
+    RouteSetView,
+    V2BatchView,
+)
 
 
 class DisplayValidationError(ValueError):
@@ -139,5 +144,35 @@ def load_v2_batch(
         generation_id=int(document.get("generation_id", -1)),
         objectives=objectives,
         plans=tuple(plans[name] for name in objectives),
+        source_path=str(path),
+    )
+
+
+def load_coverage_preflight(
+    path: str | Path,
+    *,
+    schema_path: str | Path | None = None,
+) -> CoveragePreflightView:
+    """Load an orchestrator planning-coverage-preflight document."""
+
+    document = _load_json(path)
+    _validate(document, schema_path)
+    if document.get("schema_version") != "orchestrator.planning-coverage-preflight.v1":
+        raise DisplayValidationError("coverage preflight schema_version mismatch")
+    frames = document.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise DisplayValidationError("coverage preflight must contain at least one frame")
+    return CoveragePreflightView(
+        schema_version=str(document["schema_version"]),
+        run_id=str(document.get("run_id", "")),
+        scenario_id=str(document.get("scenario_id", "")),
+        corridor_id=str(document.get("corridor_id", "")),
+        generation_id=int(document.get("generation_id", -1)),
+        input_revision=int(document.get("input_revision", -1)),
+        frames_expected=int(document.get("frames_expected", -1)),
+        frames_checked=int(document.get("frames_checked", -1)),
+        gate_passed=bool(document.get("gate_passed", False)),
+        worst_frame=document.get("worst_frame"),
+        frames=tuple(frames),
         source_path=str(path),
     )

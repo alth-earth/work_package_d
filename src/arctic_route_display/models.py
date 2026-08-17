@@ -46,6 +46,40 @@ class V2BatchView:
     source_path: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class CoveragePreflightView:
+    """Read-only planning coverage preflight produced by the orchestrator."""
+
+    schema_version: str
+    run_id: str
+    scenario_id: str
+    corridor_id: str
+    generation_id: int
+    input_revision: int
+    frames_expected: int
+    frames_checked: int
+    gate_passed: bool
+    worst_frame: dict[str, Any] | None
+    frames: tuple[dict[str, Any], ...]
+    source_path: str | None = None
+
+    @property
+    def total_nodes(self) -> int:
+        return self.frames[0]["total_nodes"] if self.frames else 0
+
+    @property
+    def hard_nodes(self) -> int:
+        return self.frames[0]["hard_nodes"] if self.frames else 0
+
+    @property
+    def land_nodes(self) -> int:
+        return self.frames[0]["land_nodes"] if self.frames else 0
+
+    @property
+    def data_unavailable_nodes(self) -> int:
+        return self.frames[0]["data_unavailable_nodes"] if self.frames else 0
+
+
 @dataclass(slots=True)
 class DisplayState:
     """Latest complete group plus optional previous group and v2 fallback."""
