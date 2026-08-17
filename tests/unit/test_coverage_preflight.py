@@ -51,3 +51,6 @@ def test_cli_coverage_subcommand_prints_summary(capsys: pytest.CaptureFixture[st
     assert payload["gate_passed"] is True
     assert payload["run_id"] == "run-00000000-0000-4000-8000-0000000c0002"
     assert payload["data_unavailable_nodes"] == 2
+    assert payload["other_hard_nodes"] == 0
+    assert payload["hard_nodes"] == 5
+    assert payload["planning_available_nodes"] == 85

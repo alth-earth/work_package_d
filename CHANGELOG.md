@@ -6,6 +6,7 @@
   orchestrator 的 `planning-coverage-preflight.json`（可带本地 schema 校验），
   暴露 gate/land/data_unavailable/total 等解释性指标；
 - CLI 新增 `coverage <path>` 子命令，`snapshot` 可选 `--coverage` 附带摘要；
+- coverage 摘要补充 `other_hard_nodes` / `hard_nodes` / `planning_available_nodes`；
 - 新增 fixture 与 3 项测试；D 共 12 tests 通过。
 
 ## Unreleased - 2026-08-16（RC1）
