@@ -105,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
                     "gate_passed": view.gate_passed,
                     "land_nodes": view.land_nodes,
                     "data_unavailable_nodes": view.data_unavailable_nodes,
+                    "ice_free_neutralized_nodes": view.ice_free_neutralized_nodes,
                     "other_hard_nodes": (
                         0
                         if view.worst_frame is None
@@ -134,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
             "frames_checked": coverage_view.frames_checked,
             "land_nodes": coverage_view.land_nodes,
             "data_unavailable_nodes": coverage_view.data_unavailable_nodes,
+            "ice_free_neutralized_nodes": coverage_view.ice_free_neutralized_nodes,
             "planning_available_nodes": coverage_view.total_nodes - coverage_view.hard_nodes,
             "total_nodes": coverage_view.total_nodes,
         },

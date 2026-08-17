@@ -19,6 +19,7 @@
     "other_hard_nodes": 0,
     "navigable_nodes": 85,
     "unknown_navigable_nodes": 0,
+    "ice_free_neutralized_nodes": 3,
     "finite_coverage_percent": 100.0,
     "missing_input_variable_counts": {
       "ocean_current_u": 2,
@@ -36,6 +37,7 @@
       "other_hard_nodes": 0,
       "navigable_nodes": 85,
       "unknown_navigable_nodes": 0,
+      "ice_free_neutralized_nodes": 3,
       "finite_coverage_percent": 100.0,
       "missing_input_variable_counts": {
         "ocean_current_u": 2,

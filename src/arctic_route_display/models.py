@@ -79,6 +79,10 @@ class CoveragePreflightView:
     def data_unavailable_nodes(self) -> int:
         return self.frames[0]["data_unavailable_nodes"] if self.frames else 0
 
+    @property
+    def ice_free_neutralized_nodes(self) -> int:
+        return int(self.frames[0].get("ice_free_neutralized_nodes", 0)) if self.frames else 0
+
 
 @dataclass(slots=True)
 class DisplayState:
