@@ -17,6 +17,7 @@ from arctic_route_display.demo.frozen_loader import (
     FrozenScenarioSource,
     load_frozen_scenario,
 )
+from arctic_route_display.demo.geo_integrity import run_geo_integrity_audit
 from arctic_route_display.demo.live_loader import load_live_result
 from arctic_route_display.demo.preflight import run_preflight
 from arctic_route_display.loader import (
@@ -122,6 +123,23 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("/root/my_project/arctic_route_orchestrator/.venv/bin/python"),
     )
+    geo = demo_sub.add_parser(
+        "geo-integrity",
+        help="机器可验证 Route Geospatial Integrity gate（冻结制品 + 风险帧）",
+    )
+    geo.add_argument(
+        "--config",
+        type=Path,
+        default=Path("/root/my_project/work_package_d/configs/demo_frozen_sources.json"),
+    )
+    geo.add_argument(
+        "--output",
+        type=Path,
+        default=Path(
+            "/root/my_project/work_package_a/data/output/rc2-smoke/"
+            "route-geospatial-integrity.json"
+        ),
+    )
     serve = demo_sub.add_parser("serve", help="本地只读 Demo Viewer（localhost）")
     serve.add_argument(
         "--state",
@@ -164,12 +182,44 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 print("READY FOR DEMO")
                 return 0
+            if args.demo_command == "geo-integrity":
+                report = run_geo_integrity_audit(args.config)
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(
+                    json.dumps(report.to_dict(), ensure_ascii=False, sort_keys=True, indent=2)
+                    + "\n",
+                    encoding="utf-8",
+                )
+                print("Route Geospatial Integrity")
+                for scenario in report.scenarios:
+                    print(
+                        f"  {scenario.scenario_id:<48} {scenario.status:<5} "
+                        f"routes={scenario.passed_routes}/{scenario.total_routes} "
+                        f"wp_hard={scenario.waypoint_hard_violations} "
+                        f"edge_hard={scenario.edge_hard_violations} "
+                        f"land={scenario.land_intersections} "
+                        f"du={scenario.data_unavailable_violations} "
+                        f"corner={scenario.corner_cutting_violations} "
+                        f"viewer_px={scenario.viewer_projection_intersections}"
+                    )
+                print(f"OVERALL = {report.overall_status}")
+                print(
+                    json.dumps(
+                        {
+                            "ok": report.overall_status == "PASS",
+                            "output": str(args.output),
+                        }
+                    )
+                )
+                return 0 if report.overall_status == "PASS" else 2
             if args.demo_command == "build":
                 config = json.loads(args.config.read_text(encoding="utf-8"))
                 scenarios = [
                     load_frozen_scenario(_demo_source(config, "scenario_a")),
                     load_frozen_scenario(_demo_source(config, "scenario_b")),
                 ]
+                audit = run_geo_integrity_audit(args.config)
+                audit_by_scenario = {item.scenario_id: item for item in audit.scenarios}
                 if args.live_result is not None:
                     live = load_live_result(
                         args.live_result,
@@ -179,7 +229,24 @@ def main(argv: list[str] | None = None) -> int:
                 document = {
                     "schema_version": "d.demo-state.v1",
                     "generated_at": datetime.now(UTC).isoformat(),
-                    "scenarios": [scenario.to_dict() for scenario in scenarios],
+                    "scenarios": [
+                        {
+                            **scenario.to_dict(),
+                            "geo_integrity": (
+                                audit_by_scenario[scenario.scenario_id].summary()
+                                if scenario.scenario_id in audit_by_scenario
+                                else {
+                                    "scenario_id": scenario.scenario_id,
+                                    "status": "NOT_RUN",
+                                    "detail": (
+                                        "live result is audited separately after "
+                                        "frozen audit"
+                                    ),
+                                }
+                            ),
+                        }
+                        for scenario in scenarios
+                    ],
                 }
                 args.output.parent.mkdir(parents=True, exist_ok=True)
                 args.output.write_text(

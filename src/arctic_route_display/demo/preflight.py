@@ -14,6 +14,7 @@ from arctic_route_display.demo.frozen_loader import (
     FrozenScenarioSource,
     load_frozen_scenario,
 )
+from arctic_route_display.demo.geo_integrity import run_geo_integrity_audit
 
 
 def _mem_available_gib() -> float:
@@ -88,6 +89,33 @@ def run_preflight(
         except DemoValidationError as exc:
             rows.append({"check": f"Frozen {key}", "status": "FAIL", "detail": str(exc)})
             raise
+
+    try:
+        audit = run_geo_integrity_audit(config_path)
+        rows.append(
+            {
+                "check": "Route Geospatial Integrity",
+                "status": audit.overall_status,
+                "detail": (
+                    f"scenarios={len(audit.scenarios)} "
+                    f"routes={sum(s.passed_routes for s in audit.scenarios)}/"
+                    f"{sum(s.total_routes for s in audit.scenarios)} "
+                    f"waypoint_hard={sum(s.waypoint_hard_violations for s in audit.scenarios)} "
+                    f"edge_hard={sum(s.edge_hard_violations for s in audit.scenarios)} "
+                    f"land={sum(s.land_intersections for s in audit.scenarios)} "
+                    f"du={sum(s.data_unavailable_violations for s in audit.scenarios)} "
+                    f"corner={sum(s.corner_cutting_violations for s in audit.scenarios)} "
+                    f"viewer_px={sum(s.viewer_projection_intersections for s in audit.scenarios)}"
+                ),
+            }
+        )
+        if audit.overall_status != "PASS":
+            raise DemoValidationError("route geospatial integrity gate failed")
+    except (DemoValidationError, ValueError, json.JSONDecodeError, OSError) as exc:
+        rows.append(
+            {"check": "Route Geospatial Integrity", "status": "FAIL", "detail": str(exc)}
+        )
+        raise DemoValidationError(str(exc)) from exc
 
     schema_paths = {
         "D v3 schema": (
