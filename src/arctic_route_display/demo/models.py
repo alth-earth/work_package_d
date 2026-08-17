@@ -215,6 +215,10 @@ class DemoScenario:
     phases: tuple[DemoPhase, ...]
     coverage: DemoCoverage
     source_dir: str
+    scenario_mode: str = ""
+    simulation_start: str = ""
+    simulation_end: str = ""
+    knowledge_as_of: str = ""
     notes: tuple[str, ...] = field(default_factory=tuple)
     spatial: DemoSpatial | None = None
     phase_deltas: tuple[DemoRouteDelta, ...] = field(default_factory=tuple)
@@ -231,6 +235,10 @@ class DemoScenario:
             "phases": [phase.to_dict() for phase in self.phases],
             "coverage": self.coverage.to_dict(),
             "source_dir": self.source_dir,
+            "scenario_mode": self.scenario_mode,
+            "simulation_start": self.simulation_start,
+            "simulation_end": self.simulation_end,
+            "knowledge_as_of": self.knowledge_as_of,
             "notes": list(self.notes),
             "spatial": None if self.spatial is None else self.spatial.to_dict(),
             "phase_deltas": [delta.to_dict() for delta in self.phase_deltas],

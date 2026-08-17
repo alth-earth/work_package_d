@@ -272,7 +272,8 @@
       }
       document.getElementById("scenario-label").textContent =
         s.scenario_id + " · " + s.corridor_id + " v" + s.corridor_version +
-        " · bundle " + (s.bundle_id || "—") + " · run " + (s.run_context_id || "—");
+        " · bundle " + (s.bundle_id || "—") + " · run " + (s.run_context_id || "—") +
+        " · mode " + (s.scenario_mode || "—");
       renderTabs();
       renderControls(s);
       renderAll(s);
@@ -453,6 +454,11 @@
         "</code></p>" +
         "<p>bundle: <code>" + escapeHtml(s.bundle_id || "—") + "</code></p>" +
         "<p>run context: <code>" + escapeHtml(s.run_context_id || "—") + "</code></p>" +
+        "<p>scenario mode: <code>" + escapeHtml(s.scenario_mode || "—") + "</code></p>" +
+        "<p>simulation: <code>" + escapeHtml(s.simulation_start || "—") +
+        " → " + escapeHtml(s.simulation_end || "—") + "</code></p>" +
+        "<p>knowledge as of: <code>" + escapeHtml(s.knowledge_as_of || "—") +
+        "</code>（与 run-report identity as_of_time 一致）</p>" +
         (spatial ? "<p>risk commit: <code>" + escapeHtml(spatial.commit_id) +
           "</code><br>grid: <code>" + escapeHtml(spatial.grid_id) + "</code></p>" : "") +
         (frame ? "<p>frame 0: <code>" + escapeHtml(frame.valid_time) + "</code></p>" : "") +

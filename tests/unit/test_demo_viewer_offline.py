@@ -80,6 +80,14 @@ def test_viewer_uses_one_projection_for_cells_and_routes() -> None:
     assert "共用同一等比地理投影" in html
 
 
+def test_viewer_exposes_scenario_mode_and_temporal_provenance() -> None:
+    html = VIEWER.read_text(encoding="utf-8")
+    assert "scenario_mode" in html
+    assert "knowledge_as_of" in html
+    assert "simulation_start" in html
+    assert "RETROSPECTIVE BEST ESTIMATE" in html or "scenario mode" in html
+
+
 def test_viewer_js_syntax() -> None:
     node = shutil.which("node")
     if node is None:

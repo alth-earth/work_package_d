@@ -181,6 +181,18 @@ def load_frozen_scenario(source: FrozenScenarioSource) -> DemoScenario:
         raise DemoValidationError("frozen artifact is not v3")
     identity = report["identity"]
     digests = report["digests"]
+    try:
+        run_context = json.loads(
+            (output_dir / "run-context.json").read_text(encoding="utf-8")
+        )
+        scenario_mode = str(run_context.get("scenario_mode", ""))
+        simulation_start = str(run_context.get("simulation_start", ""))
+        simulation_end = str(run_context.get("simulation_end", ""))
+    except (OSError, json.JSONDecodeError):
+        scenario_mode = ""
+        simulation_start = ""
+        simulation_end = ""
+    knowledge_as_of = str(identity.get("as_of_time", ""))
     expected = source.expected
     checks = {
         "scenario_id": (identity["scenario_id"], expected.get("scenario_id")),
@@ -221,6 +233,10 @@ def load_frozen_scenario(source: FrozenScenarioSource) -> DemoScenario:
         phases=phases,
         coverage=_coverage(preflight),
         source_dir=source.output_dir,
+        scenario_mode=scenario_mode,
+        simulation_start=simulation_start,
+        simulation_end=simulation_end,
+        knowledge_as_of=knowledge_as_of,
         notes=source.notes,
         spatial=spatial,
         phase_deltas=compute_phase_deltas(phases[0], phases[1]),

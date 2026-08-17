@@ -69,6 +69,10 @@ def test_frozen_scenario_b_loads_with_identity() -> None:
         }
     assert scenario.coverage.gate_passed is True
     assert scenario.coverage.ice_free_neutralized_nodes == 57
+    assert scenario.scenario_mode == "retrospective_best_estimate"
+    assert scenario.simulation_start == "2026-08-11T06:00:00Z"
+    assert scenario.simulation_end == "2026-08-17T06:00:00Z"
+    assert scenario.knowledge_as_of == "2026-08-15T09:37:34.830829Z"
     assert scenario.spatial is not None
     assert len(scenario.spatial.frames) == 2
     assert len(scenario.spatial.frames[0].longitudes) == 341
