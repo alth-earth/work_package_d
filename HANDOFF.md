@@ -25,7 +25,9 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
 
 PASS（36 tests）；Viewer = Demo Candidate 2（离线地图 + 交互 + Live API +
 Route Geospatial Integrity badge）；`demo geo-integrity` 机器审计 48/48
-frozen routes PASS；`demo preflight` 含 Route Geospatial Integrity 硬门。
+frozen routes PASS；`demo preflight` 含 Route Geospatial Integrity 硬门；
+Temporal Semantics 机器审计 PASS（38 tests，
+`temporal-semantics-audit.json`）。
 
 ## 已知坑
 
@@ -33,6 +35,10 @@ frozen routes PASS；`demo preflight` 含 Route Geospatial Integrity 硬门。
 - 不允许读取 A/B 私有数据库或等待规划计算。
 - Viewer 历史坑（已修复）：格子与路线曾使用两套投影，导致地理正确的路线
   在屏幕上穿过 LAND；修复后共用同一 `project()`，并有像素空间回归 oracle 测试。
+- 时间语义要点（详见 `TEMPORAL_SEMANTICS_AUDIT_20260817.md`）：
+  Viewer “Frame initial/replan” = risk 帧 valid_time（06:00Z/12:00Z），
+  不是 simulation snapshot；demo-state 目前不保存 as_of_time/scenario_mode
+  （下一阶段 SimulationSnapshot 补齐）；145 帧不能直接当播放器帧。
 
 ## 冻结决策
 
@@ -41,8 +47,9 @@ frozen routes PASS；`demo preflight` 含 Route Geospatial Integrity 硬门。
 ## 下一步
 
 - Pre-demo final（完整答辩流程彩排、恢复演练、独立备份）；
-- NEXT PHASE：GEBCO georeferenced Presentation View、145-frame 动态 Risk
-  Playback、Simulation Clock / Moving Ship / +6h Replan Event（本轮不实施）；
+- NEXT PHASE：Simulation Snapshot schema → rolling A→B→C→D replay →
+  GEBCO georeferenced Presentation View → Simulation-clock Viewer →
+  动态 B forecast / C routes / Moving Ship / +6h Replan Event（本轮不实施）；
 - v2 后备展示不进入 Demo 主线。
 
 ## 常用命令
@@ -53,6 +60,7 @@ cd /root/my_project/work_package_d
 ./.venv/bin/arctic-route-display snapshot --v3 <initial.json> --output out.json
 ./.venv/bin/arctic-route-display demo preflight
 ./.venv/bin/arctic-route-display demo geo-integrity
+./.venv/bin/python scripts/temporal_semantics_audit.py
 ./.venv/bin/arctic-route-display demo build --config configs/demo_frozen_sources.json --output demo-state.json
 ./.venv/bin/arctic-route-display demo serve --state demo-state.json --port 8123
 ```

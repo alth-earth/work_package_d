@@ -11,6 +11,11 @@
 > Route Geospatial Integrity（2026-08-17）：机器审计 48/48 冻结路线 PASS，
 > 修复 Viewer 双投影导致的视觉穿 LAND，gate 并入 `demo preflight`；
 > 见根目录 `ROUTE_GEOSPATIAL_INTEGRITY_AUDIT_20260817.md`。
+> Temporal Semantics Audit（2026-08-17）：`scripts/temporal_semantics_audit.py`
+> 机器审计冻结制品时间语义（145 帧 = 单一 knowledge 快照 × valid_time、
+> +6h replan = 同窗后缀重规划），产物
+> `temporal-semantics-audit.json`；见根目录
+> `TEMPORAL_SEMANTICS_AUDIT_20260817.md`。
 > 主线口径：v3 四层 × 三目标（12 路线整组）+ 重规划为演示主线，v2 三目标为强制后备
 > （2026-08-15 确认）。
 
@@ -61,6 +66,12 @@ Route Geospatial Integrity gate（`demo geo-integrity`）独立于 Coverage Gate
 相交数；机器制品默认写到
 `work_package_a/data/output/rc2-smoke/route-geospatial-integrity.json`。
 
+Temporal semantics audit（`scripts/temporal_semantics_audit.py`）只读冻结
+制品，校验：同一 risk window 内所有帧共享 `as_of_time`、route `as_of_time`
+与 knowledge cutoff 一致、initial/replanned `start_time` 语义、
+replan trigger 与 suffix window 一致、valid_time 逐小时轴；输出
+`work_package_a/data/output/rc2-smoke/temporal-semantics-audit.json`。
+
 ## RC1 事实
 
 - 离线 schema：`work_package_c/schemas/four-layer-route-plan-set-v3.schema.json`
@@ -76,6 +87,8 @@ Route Geospatial Integrity gate（`demo geo-integrity`）独立于 Coverage Gate
 - `src/arctic_route_display/demo/`：Demo Data Model、Frozen/Live loader、preflight；
 - `src/arctic_route_display/demo/geo_integrity.py`：Route Geospatial Integrity
   审计（waypoint/edge/corner/temporal/viewer-projection）；
+- `src/arctic_route_display/demo/temporal_audit.py` +
+  `scripts/temporal_semantics_audit.py`：Temporal Semantics 机器审计；
 - `web/demo_viewer.html`：本地只读 viewer（localhost，无 CDN，离线；真实经纬度
   地图、风险/数据质量图层、Compare 模式、Live 按钮与进度反馈、Route Geospatial
   Integrity 独立 badge）；

@@ -1,5 +1,19 @@
 # 工作包 D 变更记录
 
+## Unreleased - 2026-08-17（Temporal Semantics Audit）
+
+- 新增 `src/arctic_route_display/demo/temporal_audit.py` 与
+  `scripts/temporal_semantics_audit.py`：机器审计冻结制品时间语义
+  （同一 risk window 的 as_of 一致性、route as_of/start_time、replan
+  trigger ↔ suffix window、valid_time 逐小时轴），输出
+  `temporal-semantics-audit.json`；
+- 新增 2 项回归测试（145 帧单一 as_of、+6h replan 复用同一 knowledge
+  切片）；D 共 38 tests；
+- 文档/Viewer 口径修正：`Frame initial/replan` = risk valid_time，不是
+  simulation snapshot；demo-state 暂不保存 as_of/scenario_mode（GAP 记录）；
+  完整审计见根目录 `TEMPORAL_SEMANTICS_AUDIT_20260817.md` 与
+  `TIME_MODEL_QUICK_REFERENCE.md`。
+
 ## Unreleased - 2026-08-17（Route Geospatial Integrity）
 
 - 新增 `demo geo-integrity` 子命令与 `geo_integrity.py` 机器审计：
