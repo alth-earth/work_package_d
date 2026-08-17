@@ -92,7 +92,10 @@
 </head>
 <body>
   <header>
-    <h1>Arctic Route Planning Demo <span id="mode-badge" class="badge frozen">FROZEN VALIDATED</span></h1>
+    <h1>Arctic Route Planning Demo
+      <span id="mode-badge" class="badge frozen">FROZEN VALIDATED</span>
+      <span id="geo-badge" class="badge frozen">ROUTE GEO INTEGRITY: —</span>
+    </h1>
     <div class="sub" id="scenario-label">加载中…</div>
   </header>
 
@@ -149,6 +152,7 @@
         <div class="row"><span>Unknown navigable nodes</span><b id="c-unavail">—</b></div>
         <div class="row"><span>Ice-free not-applicable cells</span><b id="c-icefree">—</b></div>
         <div class="row"><span>Spatial frame(s)</span><b id="c-spatial">—</b></div>
+        <div class="row"><span>Route Geospatial Integrity</span><b id="c-geo">—</b></div>
         <div class="origin-note" id="coverage-note"></div>
       </section>
 
@@ -254,6 +258,18 @@
       const badge = document.getElementById("mode-badge");
       badge.textContent = isLive ? "LIVE COMPUTED" : "FROZEN VALIDATED";
       badge.className = "badge " + (isLive ? "live" : "frozen");
+      const geoBadge = document.getElementById("geo-badge");
+      const geo = s.geo_integrity || null;
+      if (geo && geo.status === "PASS") {
+        geoBadge.textContent = "ROUTE GEO INTEGRITY: PASS";
+        geoBadge.className = "badge frozen";
+      } else if (geo && geo.status === "FAIL") {
+        geoBadge.textContent = "ROUTE GEO INTEGRITY: FAIL";
+        geoBadge.className = "badge live";
+      } else {
+        geoBadge.textContent = "ROUTE GEO INTEGRITY: NOT RUN";
+        geoBadge.className = "badge frozen";
+      }
       document.getElementById("scenario-label").textContent =
         s.scenario_id + " · " + s.corridor_id + " v" + s.corridor_version +
         " · bundle " + (s.bundle_id || "—") + " · run " + (s.run_context_id || "—");
@@ -415,9 +431,17 @@
       document.getElementById("c-spatial").textContent = spatial
         ? spatial.frames.length + " frames · " + spatial.frames[0].longitudes.length + " nodes"
         : "not available";
+      const geo = s.geo_integrity;
+      document.getElementById("c-geo").textContent = geo
+        ? geo.status + " · " + geo.routes_passed + "/" + geo.routes_audited +
+          " routes · land " + geo.land_intersections + " · DU " +
+          geo.data_unavailable_violations + " · corner " +
+          geo.corner_cutting_violations
+        : "NOT RUN";
       document.getElementById("coverage-note").textContent =
         "LAND = 物理不可航；DATA_UNAVAILABLE = 数据不足导致的保守 fail-closed（不是风险等级）；" +
-        "Ice-free not-applicable 表示可信冰浓度已证明 open water 时 ice_type/ice_edge 不适用（不是缺失数据被填 0）。";
+        "Ice-free not-applicable 表示可信冰浓度已证明 open water 时 ice_type/ice_edge 不适用（不是缺失数据被填 0）。" +
+        "Route Geospatial Integrity 是独立于 Coverage Gate 的机器审计：waypoint/edge/LAND/角切/时间帧/投影一致性。";
     }
 
     function renderTech(s) {
@@ -479,12 +503,13 @@
         const nLat = unique(frame.latitudes).length;
         const lonMin = Math.min(...frame.longitudes), lonMax = Math.max(...frame.longitudes);
         const latMin = Math.min(...frame.latitudes), latMax = Math.max(...frame.latitudes);
-        const cellW = Math.max((W - 2 * PAD) / nLon * 0.9, 1.5);
-        const cellH = Math.max((H - 2 * PAD) / nLat * 0.9, 1.5);
-        const lonScale = (W - 2 * PAD) / Math.max(lonMax - lonMin, 1e-6);
-        const latScale = (H - 2 * PAD) / Math.max(latMax - latMin, 1e-6);
-        const xs = frame.longitudes.map(lon => PAD + (lon - lonMin) * lonScale);
-        const ys = frame.latitudes.map(lat => PAD + (latMax - lat) * latScale);
+        const lonStep = nLon > 1 ? (lonMax - lonMin) / (nLon - 1) : 1;
+        const latStep = nLat > 1 ? (latMax - latMin) / (nLat - 1) : 1;
+        const cellW = Math.max(lonStep * scale * 0.9, 1.5);
+        const cellH = Math.max(latStep * scale * 0.9, 1.5);
+        // Cells use the SAME projection as route polylines (single geographic transform).
+        const xs = frame.longitudes.map(lon => project(lon, frame.latitudes[0])[0]);
+        const ys = frame.latitudes.map(lat => project(frame.longitudes[0], lat)[1]);
         const riskMin = Math.min(...frame.risk_scores.filter(v => v > 0), 0.001);
         const riskMax = Math.max(...frame.risk_scores);
         for (let i = 0; i < frame.longitudes.length; i++) {
@@ -561,7 +586,8 @@
       renderLegend(s, frame);
       document.getElementById("map-note").textContent =
         "坐标来源：冻结风险帧真实经纬度（frame " + (frame ? frame.valid_time : "—") +
-        "）；路线来自冻结/live 制品的真实 waypoints，未做任何位置修饰。" +
+        "）；路线来自冻结/live 制品的真实 waypoints，未做任何位置修饰；" +
+        "格子与路线共用同一等比地理投影（非独立拉伸），经 Route Geospatial Integrity 审计。" +
         (s.spatial ? "" : " 当前场景没有 spatial 帧，仅绘制路线。");
     }
 

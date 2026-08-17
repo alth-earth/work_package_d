@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 VIEWER = Path(__file__).parents[2] / "web" / "demo_viewer.html"
@@ -27,6 +29,8 @@ REQUIRED_IDS = {
     "c-unavail",
     "c-icefree",
     "c-spatial",
+    "geo-badge",
+    "c-geo",
     "coverage-note",
     "live-run",
     "live-status",
@@ -61,3 +65,35 @@ def test_viewer_marks_result_origin_honestly() -> None:
     assert "FROZEN VALIDATED" in html
     assert "LIVE COMPUTED" in html
     assert "不会用旧结果冒充 live" in html
+
+
+def test_viewer_uses_one_projection_for_cells_and_routes() -> None:
+    """Regression: the historical bug drew cells and routes with two different
+    transforms, making correct routes appear to cross LAND."""
+
+    html = VIEWER.read_text(encoding="utf-8")
+    assert "const project" in html
+    assert "project(lon, frame.latitudes[0])[0]" in html
+    assert "project(frame.longitudes[0], lat)[1]" in html
+    assert "const lonScale" not in html
+    assert "const latScale" not in html
+    assert "共用同一等比地理投影" in html
+
+
+def test_viewer_js_syntax() -> None:
+    node = shutil.which("node")
+    if node is None:
+        import pytest
+
+        pytest.skip("node not available")
+    html = VIEWER.read_text(encoding="utf-8")
+    start = html.rindex("<script>") + len("<script>")
+    end = html.rindex("</script>")
+    script = html[start:end]
+    result = subprocess.run(
+        [node, "--check"],
+        input=script,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
