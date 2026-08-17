@@ -21,6 +21,9 @@
 > `causal-replay-feasibility.json`（A 19h / B 44h 末期因果窗口）；
 > demo-state 与 Viewer 增加 `scenario_mode`/simulation/knowledge_as_of
 > 诚实展示。见 `CAUSAL_REPLAY_FEASIBILITY_AUDIT_20260817.md`。
+> Causal Replay Engine MVP（2026-08-18）：orchestrator replay 引擎真实
+> 12h/24h/44h PASS；C 四层 PLANNING-HORIZON BLOCKER。见
+> `CAUSAL_REPLAY_MVP_20260818.md`。
 > 主线口径：v3 四层 × 三目标（12 路线整组）+ 重规划为演示主线，v2 三目标为强制后备
 > （2026-08-15 确认）。
 

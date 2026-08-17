@@ -1,5 +1,11 @@
 # 工作包 D 变更记录
 
+## Unreleased - 2026-08-18（Strategy B 关联）
+
+- D 生产代码无改动；文档同步 Strategy B：orchestrator replay 引擎
+  12h/24h/44h 真实回放 PASS、C 四层 PLANNING-HORIZON BLOCKER；
+  见 `CAUSAL_REPLAY_MVP_20260818.md`。
+
 ## Unreleased - 2026-08-17（Causal Replay Feasibility / Mode Honesty）
 
 - Frozen loader 从发布制品读取 `scenario_mode`（RunContext）、
