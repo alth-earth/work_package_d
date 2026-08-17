@@ -2,6 +2,11 @@
 
 ## Unreleased - 2026-08-17（RC2 development）
 
+- Demo Engineering：新增 `demo` 子命令（preflight/build/run-live/serve）、
+  `arctic_route_display.demo`（frozen loader + live loader + preflight）、
+  `web/demo_viewer.html` 本地只读 viewer（无外部依赖）；
+  结果标识 `result_origin = FROZEN_VALIDATED / LIVE_COMPUTED`；
+  D 17 tests 通过。
 - 新增 `load_coverage_preflight` 与 `CoveragePreflightView`：离线消费
   orchestrator 的 `planning-coverage-preflight.json`（可带本地 schema 校验），
   暴露 gate/land/data_unavailable/total 等解释性指标；

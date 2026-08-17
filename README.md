@@ -3,7 +3,8 @@
 > 状态：**RC1 真实制品消费 PASS（2026-08-16）**。v3 整组/ v2 后备的读取、分组、
 > 状态机与渲染摘要已实现并消费真实 r6/r7 输出（initial + replanned）；离线本地
 > schema registry 与 `layers` 数组解析已修复；具体地图/交互页面待后续实现。
-> RC2：新增 `planning-coverage-preflight.json` 消费（`coverage` 子命令 / `snapshot --coverage`）。
+> RC2：新增 `planning-coverage-preflight.json` 消费（`coverage` 子命令 / `snapshot --coverage`）；
+> Demo Candidate：`demo preflight/build/run-live/serve` + 本地只读 viewer。
 > 主线口径：v3 四层 × 三目标（12 路线整组）+ 重规划为演示主线，v2 三目标为强制后备
 > （2026-08-15 确认）。
 
@@ -23,6 +24,10 @@ make sync
 make check
 arctic-route-display snapshot --v3 /path/to/routes/v3/initial.json --output out/snapshot.json
 arctic-route-display coverage /path/to/planning-coverage-preflight.json
+arctic-route-display demo preflight
+arctic-route-display demo build --config configs/demo_frozen_sources.json --output demo-state.json
+arctic-route-display demo run-live --config configs/demo_frozen_sources.json --output live-result.json
+arctic-route-display demo serve --state demo-state.json --port 8123
 ```
 
 ## RC1 事实
@@ -37,6 +42,9 @@ arctic-route-display coverage /path/to/planning-coverage-preflight.json
 - `src/arctic_route_display/models.py`：`RouteSetView`、`LayerView`、`DisplayState`；
 - `src/arctic_route_display/loader.py`：读取/分组 v3 整组与 v2 后备，可选用 C Schema 校验；
 - `src/arctic_route_display/cli.py`：`snapshot` 与 `coverage` 命令；
+- `src/arctic_route_display/demo/`：Demo Data Model、Frozen/Live loader、preflight；
+- `web/demo_viewer.html`：本地只读 viewer（localhost，无 CDN，离线）；
+- `configs/demo_frozen_sources.json`：frozen A/B 与 live smoke 来源配置；
 - `tests/`：状态机与分组测试。
 
 ## 相关文档

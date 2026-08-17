@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Arctic Route Planning Demo</title>
+  <style>
+    :root {
+      --land: #7a6a52; --unknown: #c0392b; --available: #eaf6ff;
+      --frozen: #1f6feb; --live: #d97706; --line: #d0d7de;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, "Noto Sans CJK SC", sans-serif; margin: 0; background: #f6f8fa; color: #1f2328; }
+    header { background: #0d1117; color: #e6edf3; padding: 14px 20px; }
+    header h1 { margin: 0; font-size: 18px; }
+    header .sub { font-size: 12px; opacity: .8; margin-top: 4px; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+    .badge.frozen { background: var(--frozen); color: #fff; }
+    .badge.live { background: var(--live); color: #fff; }
+    .tabs { padding: 10px 20px 0; }
+    .tabs button { margin-right: 6px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; }
+    .tabs button.active { background: #0d1117; color: #fff; border-color: #0d1117; }
+    main { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; padding: 12px 20px 24px; }
+    .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+    .panel h2 { margin: 0 0 10px; font-size: 14px; }
+    svg.map { width: 100%; height: 420px; background: var(--available); border-radius: 8px; }
+    .legend { display: flex; gap: 14px; font-size: 12px; margin-top: 8px; flex-wrap: wrap; }
+    .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #eee; }
+    th { color: #57606a; font-weight: 600; }
+    .coverage .row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed #eee; font-size: 13px; }
+    .gate { padding: 6px 10px; border-radius: 8px; font-weight: 700; text-align: center; }
+    .gate.pass { background: #dafbe1; color: #116329; }
+    .gate.fail { background: #ffebe9; color: #b42318; }
+    .origin-note { font-size: 12px; color: #57606a; margin-top: 8px; }
+    .diff { font-size: 13px; margin-top: 6px; }
+    .diff b { color: #116329; }
+    .controls { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arctic Route Planning Demo <span id="mode-badge" class="badge frozen">FROZEN VALIDATED</span></h1>
+    <div class="sub" id="scenario-label">未加载</div>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+
+  <main>
+    <section class="panel">
+      <h2>Route Map</h2>
+      <div class="controls">
+        <label>Layer <select id="layer-select"></select></label>
+        <label>Objective <select id="objective-select"></select></label>
+        <label>Phase <select id="phase-select"></select></label>
+      </div>
+      <svg class="map" id="map" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+      <div class="legend">
+        <span><i style="background:#1f6feb"></i>route</span>
+        <span><i style="background:#116329"></i>start</span>
+        <span><i style="background:#b42318"></i>destination</span>
+        <span><i style="background:var(--available)"></i>planning available area (approx)</span>
+      </div>
+      <div class="diff" id="replan-diff"></div>
+    </section>
+
+    <div style="display:grid; gap:12px">
+      <section class="panel">
+        <h2>Route Metrics</h2>
+        <table id="metrics-table">
+          <tr><th>Distance</th><td id="m-distance">—</td></tr>
+          <tr><th>ETA</th><td id="m-eta">—</td></tr>
+          <tr><th>Avg risk</th><td id="m-avg">—</td></tr>
+          <tr><th>Max risk</th><td id="m-max">—</td></tr>
+          <tr><th>Integrated risk</th><td id="m-integrated">—</td></tr>
+          <tr><th>Confidence</th><td id="m-confidence">—</td></tr>
+          <tr><th>Turns</th><td id="m-turns">—</td></tr>
+          <tr><th>Hard violations</th><td id="m-hard">—</td></tr>
+          <tr><th>Objective cost</th><td id="m-cost">—</td></tr>
+        </table>
+      </section>
+
+      <section class="panel coverage">
+        <h2>Coverage / Data Quality</h2>
+        <div class="gate pass" id="coverage-gate">—</div>
+        <div class="row"><span>Planning available nodes</span><b id="c-available">—</b></div>
+        <div class="row"><span>LAND (physically non-navigable)</span><b id="c-land">—</b></div>
+        <div class="row"><span>DATA_UNAVAILABLE (fail-closed)</span><b id="c-unknown">—</b></div>
+        <div class="row"><span>Other hard</span><b id="c-other">—</b></div>
+        <div class="row"><span>Unknown navigable nodes</span><b id="c-unavail">—</b></div>
+        <div class="row"><span>Ice-free not-applicable cells</span><b id="c-icefree">—</b></div>
+        <div class="origin-note" id="coverage-note"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    "use strict";
+    let state = null;
+    let current = { scenario: 0, layer: 0, objective: 0, phase: 0 };
+
+    async function boot() {
+      const res = await fetch("/demo-state.json");
+      if (!res.ok) { document.getElementById("scenario-label").textContent = "无法加载 demo-state.json"; return; }
+      state = await res.json();
+      renderTabs();
+      selectScenario(0);
+    }
+
+    function renderTabs() {
+      const tabs = document.getElementById("tabs");
+      tabs.innerHTML = "";
+      state.scenarios.forEach((s, i) => {
+        const btn = document.createElement("button");
+        btn.textContent = s.display_name;
+        btn.onclick = () => selectScenario(i);
+        tabs.appendChild(btn);
+      });
+    }
+
+    function selectScenario(i) {
+      current.scenario = i;
+      const s = state.scenarios[i];
+      const badge = document.getElementById("mode-badge");
+      const isLive = s.result_origin === "LIVE_COMPUTED";
+      badge.textContent = isLive ? "LIVE COMPUTED" : "FROZEN VALIDATED";
+      badge.className = "badge " + (isLive ? "live" : "frozen");
+      document.getElementById("scenario-label").textContent =
+        s.scenario_id + " · " + s.corridor_id + " v" + s.corridor_version +
+        " · bundle " + (s.bundle_id || "—") + " · run " + (s.run_context_id || "—");
+      renderControls(s);
+      renderCoverage(s);
+      renderRoute(s);
+    }
+
+    function renderControls(s) {
+      const layerSel = document.getElementById("layer-select");
+      const objSel = document.getElementById("objective-select");
+      const phaseSel = document.getElementById("phase-select");
+      const firstPhase = s.phases[current.phase] || s.phases[0];
+      const layers = [...new Set(firstPhase.routes.map(r => r.planning_layer))];
+      const objectives = [...new Set(firstPhase.routes.map(r => r.objective))];
+      layerSel.innerHTML = layers.map((l, i) => `<option value="${i}">${l}</option>`).join("");
+      objSel.innerHTML = objectives.map((o, i) => `<option value="${i}">${o}</option>`).join("");
+      phaseSel.innerHTML = s.phases.map((p, i) => `<option value="${i}">${p.phase}${p.layer_set_id ? " · " + p.layer_set_id.slice(0, 18) : ""}</option>`).join("");
+      current.layer = 0; current.objective = 0; current.phase = 0;
+      layerSel.onchange = () => { current.layer = +layerSel.value; renderRoute(s); };
+      objSel.onchange = () => { current.objective = +objSel.value; renderRoute(s); };
+      phaseSel.onchange = () => { current.phase = +phaseSel.value; renderRoute(s); };
+    }
+
+    function selectedRoute(s) {
+      const phase = s.phases[current.phase];
+      const layer = new Set(phase.routes.map(r => r.planning_layer))[Symbol.iterator] ? [...new Set(phase.routes.map(r => r.planning_layer))][current.layer] : null;
+      const objective = [...new Set(phase.routes.map(r => r.objective))][current.objective];
+      return phase.routes.find(r => r.planning_layer === layer && r.objective === objective) || phase.routes[0];
+    }
+
+    function renderRoute(s) {
+      const phase = s.phases[current.phase];
+      const layers = [...new Set(phase.routes.map(r => r.planning_layer))];
+      const objectives = [...new Set(phase.routes.map(r => r.objective))];
+      const route = phase.routes.find(r => r.planning_layer === layers[current.layer] && r.objective === objectives[current.objective]) || phase.routes[0];
+      const m = route.metrics;
+      document.getElementById("m-distance").textContent = m.distance_km.toFixed(1) + " km";
+      document.getElementById("m-eta").textContent = m.eta_hours.toFixed(1) + " h";
+      document.getElementById("m-avg").textContent = m.avg_risk.toFixed(4);
+      document.getElementById("m-max").textContent = m.max_risk.toFixed(4);
+      document.getElementById("m-integrated").textContent = m.integrated_risk_hours.toFixed(2);
+      document.getElementById("m-confidence").textContent = m.minimum_confidence.toFixed(3);
+      document.getElementById("m-turns").textContent = m.turn_count;
+      document.getElementById("m-hard").textContent = m.hard_constraint_violations;
+      document.getElementById("m-cost").textContent = m.objective_cost.toFixed(2);
+      drawMap(route.waypoints);
+      renderDiff(s);
+    }
+
+    function renderDiff(s) {
+      const el = document.getElementById("replan-diff");
+      if (s.phases.length < 2) { el.textContent = ""; return; }
+      const a = s.phases[0].routes.find(r => r.objective === "recommended");
+      const b = s.phases[1].routes.find(r => r.objective === "recommended");
+      if (!a || !b) { el.textContent = ""; return; }
+      el.innerHTML = "Replanning: distance <b>" + (b.metrics.distance_km - a.metrics.distance_km).toFixed(1) + " km</b>, " +
+        "ETA <b>" + (b.metrics.eta_hours - a.metrics.eta_hours).toFixed(1) + " h</b>, " +
+        "avg risk <b>" + (b.metrics.avg_risk - a.metrics.avg_risk).toFixed(4) + "</b>";
+    }
+
+    function drawMap(waypoints) {
+      const svg = document.getElementById("map");
+      svg.innerHTML = "";
+      const lons = waypoints.map(w => w.longitude), lats = waypoints.map(w => w.latitude);
+      const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+      const spanLon = Math.max(maxLon - minLon, 1e-6), spanLat = Math.max(maxLat - minLat, 1e-6);
+      const pad = 5;
+      const pts = waypoints.map(w => {
+        const x = pad + (w.longitude - minLon) / spanLon * (100 - 2 * pad);
+        const y = 95 - (pad + (w.latitude - minLat) / spanLat * (100 - 2 * pad));
+        return [x, y];
+      });
+      const line = pts.map(p => p.join(",")).join(" ");
+      const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+      poly.setAttribute("points", line);
+      poly.setAttribute("fill", "none");
+      poly.setAttribute("stroke", "#1f6feb");
+      poly.setAttribute("stroke-width", "1.2");
+      svg.appendChild(poly);
+      [["#116329", pts[0]], ["#b42318", pts[pts.length - 1]]].forEach(([color, p]) => {
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]); c.setAttribute("r", "1.6");
+        c.setAttribute("fill", color);
+        svg.appendChild(c);
+      });
+    }
+
+    function renderCoverage(s) {
+      const c = s.coverage;
+      const gate = document.getElementById("coverage-gate");
+      gate.textContent = "Coverage Gate: " + (c.gate_passed ? "PASS" : "FAIL") + " · Unknown Navigable: " + c.unknown_navigable_nodes;
+      gate.className = "gate " + (c.gate_passed ? "pass" : "fail");
+      document.getElementById("c-available").textContent = c.planning_available_nodes;
+      document.getElementById("c-land").textContent = c.land_nodes;
+      document.getElementById("c-unknown").textContent = c.data_unavailable_nodes;
+      document.getElementById("c-other").textContent = c.other_hard_nodes;
+      document.getElementById("c-unavail").textContent = c.unknown_navigable_nodes;
+      document.getElementById("c-icefree").textContent = c.ice_free_neutralized_nodes;
+      document.getElementById("coverage-note").textContent =
+        "LAND = physically non-navigable. DATA_UNAVAILABLE = conservative fail-closed due to insufficient data. " +
+        "Ice-free not-applicable cells mean ice_type/ice_edge are not applicable in open water (NOT missing data).";
+    }
+
+    boot();
+  </script>
+</body>
+</html>
