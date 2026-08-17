@@ -27,7 +27,9 @@ PASS（36 tests）；Viewer = Demo Candidate 2（离线地图 + 交互 + Live AP
 Route Geospatial Integrity badge）；`demo geo-integrity` 机器审计 48/48
 frozen routes PASS；`demo preflight` 含 Route Geospatial Integrity 硬门；
 Temporal Semantics 机器审计 PASS（38 tests，
-`temporal-semantics-audit.json`）。
+`temporal-semantics-audit.json`）；Causal Feasibility 在 A 侧审计
+（A 19h / B 44h 末期窗口）；demo-state/Viewer 现展示 scenario_mode 与
+temporal provenance。
 
 ## 已知坑
 
@@ -37,8 +39,10 @@ Temporal Semantics 机器审计 PASS（38 tests，
   在屏幕上穿过 LAND；修复后共用同一 `project()`，并有像素空间回归 oracle 测试。
 - 时间语义要点（详见 `TEMPORAL_SEMANTICS_AUDIT_20260817.md`）：
   Viewer “Frame initial/replan” = risk 帧 valid_time（06:00Z/12:00Z），
-  不是 simulation snapshot；demo-state 目前不保存 as_of_time/scenario_mode
-  （下一阶段 SimulationSnapshot 补齐）；145 帧不能直接当播放器帧。
+  不是 simulation snapshot；145 帧不能直接当播放器帧；早期 demo-state
+  不保存 as_of/scenario_mode，2026-08-17 已补（现保存并展示 scenario_mode
+  / simulation_start/end / knowledge_as_of）；SimulationSnapshot 仍为
+  下一阶段设计。
 
 ## 冻结决策
 

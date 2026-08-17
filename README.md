@@ -16,6 +16,11 @@
 > +6h replan = 同窗后缀重规划），产物
 > `temporal-semantics-audit.json`；见根目录
 > `TEMPORAL_SEMANTICS_AUDIT_20260817.md`。
+> Causal Replay Feasibility（2026-08-17）：A 侧
+> `scripts/causal_replay_feasibility_audit.py` 输出
+> `causal-replay-feasibility.json`（A 19h / B 44h 末期因果窗口）；
+> demo-state 与 Viewer 增加 `scenario_mode`/simulation/knowledge_as_of
+> 诚实展示。见 `CAUSAL_REPLAY_FEASIBILITY_AUDIT_20260817.md`。
 > 主线口径：v3 四层 × 三目标（12 路线整组）+ 重规划为演示主线，v2 三目标为强制后备
 > （2026-08-15 确认）。
 
@@ -71,6 +76,11 @@ Temporal semantics audit（`scripts/temporal_semantics_audit.py`）只读冻结
 与 knowledge cutoff 一致、initial/replanned `start_time` 语义、
 replan trigger 与 suffix window 一致、valid_time 逐小时轴；输出
 `work_package_a/data/output/rc2-smoke/temporal-semantics-audit.json`。
+
+Frozen loader 同时从发布制品读取 `scenario_mode`（RunContext）与
+`knowledge_as_of`（run-report identity），demo-state/Viewer 显式展示
+`RETROSPECTIVE BEST ESTIMATE` 与 simulation 窗口，避免把事后数据当作当时
+预测。
 
 ## RC1 事实
 

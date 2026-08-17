@@ -1,5 +1,16 @@
 # 工作包 D 变更记录
 
+## Unreleased - 2026-08-17（Causal Replay Feasibility / Mode Honesty）
+
+- Frozen loader 从发布制品读取 `scenario_mode`（RunContext）、
+  `simulation_start/end` 与 `knowledge_as_of`（run-report identity），
+  demo-state 与 Viewer 显式展示 `RETROSPECTIVE BEST ESTIMATE` 及
+  simulation/knowledge 时间；
+- 新增测试断言（scenario_mode/knowledge_as_of/simulation 窗口）；D 共
+  39 tests；
+- 关联：A 侧 `causal_replay_feasibility_audit.py` 机器审计（PARTIAL），
+  架构设计见根目录 `SIMULATION_REPLAY_ARCHITECTURE.md`。
+
 ## Unreleased - 2026-08-17（Temporal Semantics Audit）
 
 - 新增 `src/arctic_route_display/demo/temporal_audit.py` 与
