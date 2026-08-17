@@ -20,6 +20,9 @@ CONFIG = Path("/root/my_project/work_package_d/configs/demo_frozen_sources.json"
 TROMSO_OUT = Path(
     "/root/my_project/work_package_a/data/output/rc2-smoke/output-tromso-144h-r2"
 )
+TROMSO_STORE = Path(
+    "/root/my_project/work_package_a/data/output/rc2-smoke/risk-store-tromso-144h-r2"
+)
 REQUIRED = {
     "scenario_id": "tromso_isfjorden_august_2026_demo_v1",
     "corridor_id": "tromso_to_isfjorden_outer",
@@ -43,10 +46,14 @@ def _source(output_dir: str | None = None, **overrides) -> FrozenScenarioSource:
         display_name="Tromsø → Isfjorden (test)",
         output_dir=output_dir or str(TROMSO_OUT),
         expected=values,
+        risk_store_root=str(TROMSO_STORE) if TROMSO_STORE.is_dir() else None,
     )
 
 
-@pytest.mark.skipif(not TROMSO_OUT.is_dir(), reason="frozen RC2 outputs not present")
+@pytest.mark.skipif(
+    not TROMSO_OUT.is_dir() or not TROMSO_STORE.is_dir(),
+    reason="frozen RC2 outputs not present",
+)
 def test_frozen_scenario_b_loads_with_identity() -> None:
     scenario = load_frozen_scenario(
         _source(output_dir=str(TROMSO_OUT))
@@ -62,6 +69,16 @@ def test_frozen_scenario_b_loads_with_identity() -> None:
         }
     assert scenario.coverage.gate_passed is True
     assert scenario.coverage.ice_free_neutralized_nodes == 57
+    assert scenario.spatial is not None
+    assert len(scenario.spatial.frames) == 2
+    assert len(scenario.spatial.frames[0].longitudes) == 341
+    assert len(scenario.phase_deltas) == 12
+    recommended = next(
+        delta
+        for delta in scenario.phase_deltas
+        if delta.planning_layer == "full_voyage" and delta.objective == "recommended"
+    )
+    assert isinstance(recommended.route_changed, bool)
 
 
 @pytest.mark.skipif(not TROMSO_OUT.is_dir(), reason="frozen RC2 outputs not present")
@@ -98,6 +115,7 @@ def test_live_result_loader_marks_live_and_rejects_timeout(tmp_path: Path) -> No
             "hard_constraint_violations": 0,
             "turn_count": 5,
             "objective_cost": 55.0,
+            "expanded_states": 12345,
         },
     }
     path = tmp_path / "live.json"
@@ -105,6 +123,7 @@ def test_live_result_loader_marks_live_and_rejects_timeout(tmp_path: Path) -> No
     scenario = load_live_result(path)
     assert scenario.result_origin == ResultOrigin.LIVE_COMPUTED
     assert scenario.phases[0].phase == "replanned"
+    assert scenario.phases[0].routes[0].expanded_nodes == 12345
 
     doc["status"] = "TIMEOUT"
     doc["message"] = "live replanning exceeded the demo timeout"

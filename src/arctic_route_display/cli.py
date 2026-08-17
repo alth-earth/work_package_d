@@ -7,9 +7,10 @@ import http.server
 import json
 import subprocess
 import sys
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from arctic_route_display.demo.frozen_loader import (
     DemoValidationError,
@@ -130,6 +131,23 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     serve.add_argument("--port", type=int, default=8123)
+    serve.add_argument(
+        "--config",
+        type=Path,
+        default=Path("/root/my_project/work_package_d/configs/demo_frozen_sources.json"),
+    )
+    serve.add_argument(
+        "--orchestrator-python",
+        type=Path,
+        default=Path("/root/my_project/arctic_route_orchestrator/.venv/bin/python"),
+    )
+    serve.add_argument(
+        "--live-output",
+        type=Path,
+        default=Path(
+            "/root/my_project/work_package_a/data/output/rc2-smoke/live-result.json"
+        ),
+    )
     return parser
 
 
@@ -209,7 +227,13 @@ def main(argv: list[str] | None = None) -> int:
                     print(proc.stderr, file=sys.stderr, end="")
                 return proc.returncode
             if args.demo_command == "serve":
-                return _serve_demo(args.state, args.port)
+                return _serve_demo(
+                    args.state,
+                    args.port,
+                    args.config,
+                    args.orchestrator_python,
+                    args.live_output,
+                )
         except (
             DemoValidationError,
             FileNotFoundError,
@@ -341,23 +365,51 @@ def _demo_source(config, key: str) -> FrozenScenarioSource:
         output_dir=item["output_dir"],
         expected=dict(item["expected"]),
         rc1_golden_run_report=item.get("rc1_golden_run_report"),
+        risk_store_root=item.get("risk_store_root"),
         notes=tuple(item.get("notes", ())),
     )
 
 
 class _DemoHandler(http.server.BaseHTTPRequestHandler):
     state_path: Path | None = None
+    config_path: Path | None = None
+    orchestrator_python: Path | None = None
+    live_output: Path | None = None
+    live_coverage: Any = None
+    _live_lock = threading.Lock()
+    _live_state: ClassVar[dict[str, Any]] = {"status": "IDLE"}
+
+    def _send_bytes(self, payload: bytes, content_type: str, status: int = 200) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_json(self, payload: dict[str, Any], status: int = 200) -> None:
+        self._send_bytes(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8"),
+            "application/json",
+            status,
+        )
+
+    def _live_status(self) -> dict[str, Any]:
+        with self._live_lock:
+            state = dict(_DemoHandler._live_state)
+        if state.get("status") == "RUNNING" and state.get("started_at"):
+            started = datetime.fromisoformat(state["started_at"])
+            state["elapsed"] = round((datetime.now(UTC) - started).total_seconds(), 1)
+            if state.get("stage") == "starting" and state["elapsed"] > 12:
+                state["stage"] = "planning"
+        return state
 
     def do_GET(self) -> None:
         if self.path in ("/", "/index.html"):
             html = (
                 Path(__file__).parents[2] / "web" / "demo_viewer.html"
             ).read_text(encoding="utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(html.encode("utf-8"))
+            self._send_bytes(html.encode("utf-8"), "text/html; charset=utf-8")
             return
         if self.path == "/demo-state.json":
             if self.state_path is None or not Path(self.state_path).is_file():
@@ -365,22 +417,122 @@ class _DemoHandler(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             data = Path(self.state_path).read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
+            self._send_bytes(data, "application/json")
+            return
+        if self.path == "/api/live/status":
+            self._send_json(self._live_status())
             return
         self.send_response(404)
         self.end_headers()
+
+    def do_POST(self) -> None:
+        if self.path == "/api/live/start":
+            with self._live_lock:
+                if _DemoHandler._live_state.get("status") == "RUNNING":
+                    self._send_json(
+                        {"ok": False, "error": "live computation already running"}
+                    )
+                    return
+                _DemoHandler._live_state = {
+                    "status": "RUNNING",
+                    "started_at": datetime.now(UTC).isoformat(),
+                    "stage": "starting",
+                    "elapsed": 0.0,
+                }
+            thread = threading.Thread(target=self._run_live, daemon=True)
+            thread.start()
+            self._send_json({"ok": True, "status": "RUNNING"})
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def _run_live(self) -> None:
+        try:
+            config = json.loads(Path(self.config_path).read_text(encoding="utf-8"))
+            paths = dict(config["live"])
+            paths["output_path"] = str(self.live_output)
+            self.live_output.parent.mkdir(parents=True, exist_ok=True)
+            paths_file = self.live_output.parent / ".demo-live-paths.json"
+            paths_file.write_text(json.dumps(paths, sort_keys=True), encoding="utf-8")
+            runner = (
+                Path(self.orchestrator_python).parents[2]
+                / "scripts"
+                / "demo_live_runner.py"
+            )
+            proc = subprocess.Popen(
+                [str(self.orchestrator_python), str(runner), str(paths_file)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            assert proc.stdout is not None
+            output_lines: list[str] = []
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                output_lines.append(line)
+                output_lines = output_lines[-20:]
+                if '"event": "stage_start"' in line or '"stage_start"' in line:
+                    with self._live_lock:
+                        _DemoHandler._live_state["stage"] = "planning"
+                elif '"event": "stage_done"' in line or '"stage_done"' in line:
+                    with self._live_lock:
+                        _DemoHandler._live_state["stage"] = "publishing"
+            return_code = proc.wait()
+            if return_code != 0:
+                message = "live computation failed"
+                try:
+                    document = json.loads(self.live_output.read_text(encoding="utf-8"))
+                    if document.get("status") in ("TIMEOUT", "FAIL"):
+                        message = document.get("message") or message
+                except (OSError, json.JSONDecodeError):
+                    pass
+                with self._live_lock:
+                    _DemoHandler._live_state = {
+                        "status": "FAIL",
+                        "ok": False,
+                        "error": message,
+                        "detail": "\n".join(output_lines[-10:]),
+                    }
+                return
+            scenario = load_live_result(
+                self.live_output,
+                frozen_coverage=self.live_coverage,
+            )
+            with self._live_lock:
+                _DemoHandler._live_state = {
+                    "status": "DONE",
+                    "ok": True,
+                    "scenario": scenario.to_dict(),
+                }
+        except Exception as exc:
+            with self._live_lock:
+                _DemoHandler._live_state = {
+                    "status": "FAIL",
+                    "ok": False,
+                    "error": str(exc),
+                }
 
     def log_message(self, format: str, *args: Any) -> None:
         return
 
 
-def _serve_demo(state_path: Path, port: int) -> int:
+def _serve_demo(
+    state_path: Path,
+    port: int,
+    config_path: Path,
+    orchestrator_python: Path,
+    live_output: Path,
+) -> int:
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    scenario_b = load_frozen_scenario(_demo_source(config, "scenario_b"))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", port), _DemoHandler)
     _DemoHandler.state_path = state_path
+    _DemoHandler.config_path = config_path
+    _DemoHandler.orchestrator_python = orchestrator_python
+    _DemoHandler.live_output = live_output
+    _DemoHandler.live_coverage = scenario_b.coverage
     print(json.dumps({"ok": True, "url": f"http://127.0.0.1:{port}/"}, ensure_ascii=False))
     try:
         server.serve_forever()

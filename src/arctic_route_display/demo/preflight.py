@@ -9,8 +9,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from arctic_route_display.demo.errors import DemoValidationError
 from arctic_route_display.demo.frozen_loader import (
-    DemoValidationError,
     FrozenScenarioSource,
     load_frozen_scenario,
 )
@@ -45,6 +45,7 @@ def _source(config: Mapping[str, Any], key: str) -> FrozenScenarioSource:
         output_dir=item["output_dir"],
         expected=dict(item["expected"]),
         rc1_golden_run_report=item.get("rc1_golden_run_report"),
+        risk_store_root=item.get("risk_store_root"),
         notes=tuple(item.get("notes", ())),
     )
 
@@ -70,6 +71,18 @@ def run_preflight(
                     "check": f"Frozen {key}",
                     "status": "PASS",
                     "detail": f"{scenario.scenario_id} gate={scenario.coverage.gate_passed}",
+                }
+            )
+            if scenario.spatial is None:
+                raise DemoValidationError(f"{key} has no spatial risk frames")
+            rows.append(
+                {
+                    "check": f"Spatial {key}",
+                    "status": "PASS",
+                    "detail": (
+                        f"frames={len(scenario.spatial.frames)} "
+                        f"commit={scenario.spatial.commit_id[:18]}…"
+                    ),
                 }
             )
         except DemoValidationError as exc:

@@ -1,6 +1,6 @@
 # 工作包 D 交接说明
 
-> Status: CURRENT — RC1（2026-08-16）
+> Status: CURRENT — Demo Candidate 2（2026-08-17）
 
 ## 当前基线
 
@@ -23,7 +23,7 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
 
 ## 当前状态
 
-PASS（9 tests）；页面/交互 = TODO（Pre-demo optional）。
+PASS（25 tests）；Viewer = Demo Candidate 2（离线地图 + 交互 + Live API）。
 
 ## 已知坑
 
@@ -36,8 +36,8 @@ PASS（9 tests）；页面/交互 = TODO（Pre-demo optional）。
 
 ## 下一步
 
-- Live Demo 展示页与风险动画（读冻结结果）；
-- 必要时支持 v2 后备展示。
+- Pre-demo final（完整答辩流程彩排、恢复演练、独立备份）；
+- 可选：风险时间动画（frame selector 已有 2 帧）；v2 后备展示不进入 Demo 主线。
 
 ## 常用命令
 
@@ -45,8 +45,12 @@ PASS（9 tests）；页面/交互 = TODO（Pre-demo optional）。
 cd /root/my_project/work_package_d
 ./.venv/bin/python -m pytest -q
 ./.venv/bin/arctic-route-display snapshot --v3 <initial.json> --output out.json
+./.venv/bin/arctic-route-display demo preflight
+./.venv/bin/arctic-route-display demo build --config configs/demo_frozen_sources.json --output demo-state.json
+./.venv/bin/arctic-route-display demo serve --state demo-state.json --port 8123
 ```
 
 ## 证据
 
 `../work_package_a/data/output/golden/mur-v3-smoke-20260816-r6/r7/d-snapshot-*.json`。
+`../work_package_a/data/output/rc2-smoke/demo-state.json`（含 spatial + phase_deltas）。

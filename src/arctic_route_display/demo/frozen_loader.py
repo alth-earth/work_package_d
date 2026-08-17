@@ -9,17 +9,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from arctic_route_display.demo.errors import DemoValidationError
 from arctic_route_display.demo.models import (
     DemoCoverage,
     DemoPhase,
     DemoRoute,
     DemoScenario,
     ResultOrigin,
+    compute_phase_deltas,
 )
-
-
-class DemoValidationError(ValueError):
-    """Raised when a frozen/live artifact fails demo identity validation."""
+from arctic_route_display.demo.spatial import build_spatial
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +30,7 @@ class FrozenScenarioSource:
     output_dir: str
     expected: dict[str, str]
     rc1_golden_run_report: str | None = None
+    risk_store_root: str | None = None
     notes: tuple[str, ...] = ()
 
 
@@ -133,6 +133,7 @@ def _phase(
                     ),
                     turn_count=int(metrics["turn_count"]),
                     objective_cost=float(metrics["objective_cost"]),
+                    expanded_nodes=metrics.get("expanded_nodes"),
                 )
             )
     return DemoPhase(phase=phase, layer_set_id=layer_set_id, routes=tuple(routes))
@@ -204,6 +205,11 @@ def load_frozen_scenario(source: FrozenScenarioSource) -> DemoScenario:
     )
     if source.rc1_golden_run_report is not None:
         _verify_against_rc1_golden(report, Path(source.rc1_golden_run_report))
+    spatial = (
+        build_spatial(output_dir, source.risk_store_root)
+        if source.risk_store_root
+        else None
+    )
     return DemoScenario(
         scenario_id=source.scenario_id,
         display_name=source.display_name,
@@ -216,4 +222,6 @@ def load_frozen_scenario(source: FrozenScenarioSource) -> DemoScenario:
         coverage=_coverage(preflight),
         source_dir=source.output_dir,
         notes=source.notes,
+        spatial=spatial,
+        phase_deltas=compute_phase_deltas(phases[0], phases[1]),
     )

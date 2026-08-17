@@ -1,5 +1,21 @@
 # 工作包 D 变更记录
 
+## Unreleased - 2026-08-17（Demo Candidate 2）
+
+- `demo build` 现在从冻结 risk store 读取每场景 2 帧真实风险帧
+  （frame 0 / frame 6），输出 `spatial`（lon/lat、hard_reason、risk_score、
+  risk_level、confidence）与 `phase_deltas`（12 组 Initial→Replanned 真实 Δ）；
+- `demo serve` 新增本地 `/api/live/start` 与 `/api/live/status`：页面按钮可触发
+  真实小窗重规划并轮询 elapsed/stage，完成后加载 `LIVE_COMPUTED` 结果；
+- Viewer 重写：离线 SVG 经纬度地图（自动 fit bounds）、Availability / Risk
+  score / Risk level 图层与图例、LAND / DATA_UNAVAILABLE / OTHER 独立着色、
+  Scenario A/B 切换、Compare initial→replanned（双路线 + Δ 表）、Live 按钮
+  与 indeterminate 进度、失败状态透明显示；
+- 新增 `spatial.py`、`errors.py`、`DemoFrameView/DemoSpatial/DemoRouteDelta`、
+  `compute_phase_deltas()`；DemoRoute 增加 `expanded_nodes`；
+- 新增 spatial/viewer-offline 测试；D 共 25 tests 通过；
+  RC1 golden regression PASS、Scenario B regression PASS、离线审计 NONE。
+
 ## Unreleased - 2026-08-17（RC2 development）
 
 - Demo Engineering：新增 `demo` 子命令（preflight/build/run-live/serve）、

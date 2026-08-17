@@ -27,6 +27,7 @@ class DemoRoute:
     hard_constraint_violations: int
     turn_count: int
     objective_cost: float
+    expanded_nodes: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +44,7 @@ class DemoRoute:
                 "hard_constraint_violations": self.hard_constraint_violations,
                 "turn_count": self.turn_count,
                 "objective_cost": self.objective_cost,
+                "expanded_nodes": self.expanded_nodes,
             },
         }
 
@@ -92,6 +94,116 @@ class DemoCoverage:
 
 
 @dataclass(frozen=True, slots=True)
+class DemoFrameView:
+    """One real risk frame reduced to presentation-sized arrays."""
+
+    frame_index: int
+    valid_time: str
+    longitudes: tuple[float, ...]
+    latitudes: tuple[float, ...]
+    hard_reasons: tuple[str, ...]
+    risk_scores: tuple[float, ...]
+    risk_levels: tuple[int, ...]
+    confidences: tuple[float, ...]
+    available: tuple[bool, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "frame_index": self.frame_index,
+            "valid_time": self.valid_time,
+            "longitudes": list(self.longitudes),
+            "latitudes": list(self.latitudes),
+            "hard_reasons": list(self.hard_reasons),
+            "risk_scores": list(self.risk_scores),
+            "risk_levels": list(self.risk_levels),
+            "confidences": list(self.confidences),
+            "available": list(self.available),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DemoSpatial:
+    """Real grid coordinates and risk/availability state for display."""
+
+    commit_id: str
+    grid_id: str
+    frames: tuple[DemoFrameView, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "commit_id": self.commit_id,
+            "grid_id": self.grid_id,
+            "frames": [frame.to_dict() for frame in self.frames],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DemoRouteDelta:
+    """Initial-to-replanned business delta for one layer/objective pair."""
+
+    planning_layer: str
+    objective: str
+    distance_km: float
+    eta_hours: float
+    avg_risk: float
+    max_risk: float
+    integrated_risk_hours: float
+    hard_constraint_violations: int
+    turn_count: int
+    objective_cost: float
+    route_changed: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "planning_layer": self.planning_layer,
+            "objective": self.objective,
+            "distance_km": self.distance_km,
+            "eta_hours": self.eta_hours,
+            "avg_risk": self.avg_risk,
+            "max_risk": self.max_risk,
+            "integrated_risk_hours": self.integrated_risk_hours,
+            "hard_constraint_violations": self.hard_constraint_violations,
+            "turn_count": self.turn_count,
+            "objective_cost": self.objective_cost,
+            "route_changed": self.route_changed,
+        }
+
+
+def compute_phase_deltas(
+    initial: DemoPhase,
+    replanned: DemoPhase,
+) -> tuple[DemoRouteDelta, ...]:
+    """Business deltas from real initial/replanned artifacts (replanned - initial)."""
+
+    by_key = {
+        (route.planning_layer, route.objective): route for route in replanned.routes
+    }
+    deltas: list[DemoRouteDelta] = []
+    for route in initial.routes:
+        other = by_key.get((route.planning_layer, route.objective))
+        if other is None:
+            continue
+        deltas.append(
+            DemoRouteDelta(
+                planning_layer=route.planning_layer,
+                objective=route.objective,
+                distance_km=other.distance_km - route.distance_km,
+                eta_hours=other.eta_hours - route.eta_hours,
+                avg_risk=other.avg_risk - route.avg_risk,
+                max_risk=other.max_risk - route.max_risk,
+                integrated_risk_hours=other.integrated_risk_hours
+                - route.integrated_risk_hours,
+                hard_constraint_violations=other.hard_constraint_violations
+                - route.hard_constraint_violations,
+                turn_count=other.turn_count - route.turn_count,
+                objective_cost=other.objective_cost - route.objective_cost,
+                route_changed=route.waypoints != other.waypoints,
+            )
+        )
+    return tuple(deltas)
+
+
+@dataclass(frozen=True, slots=True)
 class DemoScenario:
     scenario_id: str
     display_name: str
@@ -104,6 +216,8 @@ class DemoScenario:
     coverage: DemoCoverage
     source_dir: str
     notes: tuple[str, ...] = field(default_factory=tuple)
+    spatial: DemoSpatial | None = None
+    phase_deltas: tuple[DemoRouteDelta, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,4 +232,6 @@ class DemoScenario:
             "coverage": self.coverage.to_dict(),
             "source_dir": self.source_dir,
             "notes": list(self.notes),
+            "spatial": None if self.spatial is None else self.spatial.to_dict(),
+            "phase_deltas": [delta.to_dict() for delta in self.phase_deltas],
         }

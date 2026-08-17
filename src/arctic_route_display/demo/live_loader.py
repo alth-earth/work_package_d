@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from arctic_route_display.demo.frozen_loader import DemoValidationError
+from arctic_route_display.demo.errors import DemoValidationError
 from arctic_route_display.demo.models import (
     DemoCoverage,
     DemoPhase,
@@ -45,6 +45,8 @@ def load_live_result(
         hard_constraint_violations=int(metrics["hard_constraint_violations"]),
         turn_count=int(metrics["turn_count"]),
         objective_cost=float(metrics["objective_cost"]),
+        expanded_nodes=document.get("expanded_states")
+        or document.get("metrics", {}).get("expanded_states"),
     )
     coverage = frozen_coverage or DemoCoverage(
         gate_passed=False,

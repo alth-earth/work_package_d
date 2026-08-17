@@ -2,70 +2,127 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Arctic Route Planning Demo</title>
   <style>
     :root {
-      --land: #7a6a52; --unknown: #c0392b; --available: #eaf6ff;
-      --frozen: #1f6feb; --live: #d97706; --line: #d0d7de;
+      --bg: #f6f8fa;
+      --panel: #ffffff;
+      --line: #d0d7de;
+      --ink: #1f2328;
+      --muted: #57606a;
+      --frozen: #1f6feb;
+      --live: #d97706;
+      --replan: #d97706;
+      --initial: #1f6feb;
+      --available: #e8f4fb;
+      --land: #b08968;
+      --unknown: #c0392b;
+      --other: #7d3c98;
+      --start: #116329;
+      --dest: #b42318;
+      --ok-bg: #dafbe1;
+      --ok-ink: #116329;
+      --bad-bg: #ffebe9;
+      --bad-ink: #b42318;
+      --run-bg: #fff8c5;
+      --run-ink: #7d4e00;
     }
     * { box-sizing: border-box; }
-    body { font-family: system-ui, "Noto Sans CJK SC", sans-serif; margin: 0; background: #f6f8fa; color: #1f2328; }
+    body { font-family: system-ui, "Noto Sans CJK SC", sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
     header { background: #0d1117; color: #e6edf3; padding: 14px 20px; }
-    header h1 { margin: 0; font-size: 18px; }
-    header .sub { font-size: 12px; opacity: .8; margin-top: 4px; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+    header h1 { margin: 0; font-size: 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    header .sub { font-size: 12px; opacity: .85; margin-top: 4px; word-break: break-all; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
     .badge.frozen { background: var(--frozen); color: #fff; }
     .badge.live { background: var(--live); color: #fff; }
-    .tabs { padding: 10px 20px 0; }
-    .tabs button { margin-right: 6px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; }
+    .banner { display: none; margin: 10px 20px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+    .banner.show { display: block; }
+    .banner.error { background: var(--bad-bg); color: var(--bad-ink); border: 1px solid #ffc9c9; }
+    .banner.warn { background: var(--run-bg); color: var(--run-ink); border: 1px solid #f0d58a; }
+    .tabs { padding: 12px 20px 0; display: flex; gap: 6px; flex-wrap: wrap; }
+    .tabs button { padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; font-size: 13px; }
     .tabs button.active { background: #0d1117; color: #fff; border-color: #0d1117; }
-    main { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; padding: 12px 20px 24px; }
-    .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+    .tabs button .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+    .tabs button .dot.frozen { background: var(--frozen); }
+    .tabs button .dot.live { background: var(--live); }
+    main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); gap: 12px; padding: 12px 20px 24px; align-items: start; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
     .panel h2 { margin: 0 0 10px; font-size: 14px; }
-    svg.map { width: 100%; height: 420px; background: var(--available); border-radius: 8px; }
-    .legend { display: flex; gap: 14px; font-size: 12px; margin-top: 8px; flex-wrap: wrap; }
+    .controls { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .controls label { font-size: 12px; color: var(--muted); }
+    select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; max-width: 220px; }
+    svg.map { width: 100%; height: 460px; background: #eef6fb; border: 1px solid var(--line); border-radius: 8px; display: block; }
+    .legend { display: flex; gap: 12px; font-size: 12px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
     .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+    .legend .swatch-line { height: 3px; border-radius: 2px; }
     table { border-collapse: collapse; width: 100%; font-size: 13px; }
     th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #eee; }
-    th { color: #57606a; font-weight: 600; }
+    th { color: var(--muted); font-weight: 600; }
     .coverage .row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed #eee; font-size: 13px; }
-    .gate { padding: 6px 10px; border-radius: 8px; font-weight: 700; text-align: center; }
-    .gate.pass { background: #dafbe1; color: #116329; }
-    .gate.fail { background: #ffebe9; color: #b42318; }
-    .origin-note { font-size: 12px; color: #57606a; margin-top: 8px; }
-    .diff { font-size: 13px; margin-top: 6px; }
-    .diff b { color: #116329; }
-    .controls { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-    select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); }
+    .gate { padding: 6px 10px; border-radius: 8px; font-weight: 700; text-align: center; margin-bottom: 6px; }
+    .gate.pass { background: var(--ok-bg); color: var(--ok-ink); }
+    .gate.fail { background: var(--bad-bg); color: var(--bad-ink); }
+    .origin-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .diff { font-size: 13px; margin-top: 10px; }
+    .diff table { margin-top: 6px; }
+    .delta-pos { color: #116329; }
+    .delta-neg { color: #b42318; }
+    .delta-zero { color: var(--muted); }
+    .summary { background: #f0f6ff; border: 1px solid #cfe0f5; border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-top: 10px; }
+    .summary .arrow { color: var(--muted); margin: 0 6px; }
+    .live-panel { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 10px; }
+    button.primary { background: #0d1117; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
+    button.primary:disabled { background: #8b949e; cursor: wait; }
+    .live-status { font-size: 13px; margin: 8px 0 4px; white-space: pre-wrap; }
+    .live-status.ok { color: var(--ok-ink); }
+    .live-status.bad { color: var(--bad-ink); }
+    .live-status.run { color: var(--run-ink); }
+    .progress { display: none; height: 8px; background: #eaeef2; border-radius: 999px; overflow: hidden; margin-top: 6px; }
+    .progress.show { display: block; }
+    .progress .bar { width: 30%; height: 100%; background: var(--live); border-radius: 999px; animation: slide 1.2s ease-in-out infinite; }
+    @keyframes slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(340%); } }
+    details.tech { margin-top: 10px; font-size: 12px; color: var(--muted); }
+    details.tech summary { cursor: pointer; }
+    details.tech code { word-break: break-all; }
+    .grid2 { display: grid; gap: 12px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header>
     <h1>Arctic Route Planning Demo <span id="mode-badge" class="badge frozen">FROZEN VALIDATED</span></h1>
-    <div class="sub" id="scenario-label">未加载</div>
+    <div class="sub" id="scenario-label">加载中…</div>
   </header>
+
+  <div class="banner error" id="banner"></div>
+  <div class="banner warn" id="warn"></div>
 
   <div class="tabs" id="tabs"></div>
 
   <main>
     <section class="panel">
-      <h2>Route Map</h2>
+      <h2>Route Map（真实经纬度 / 冻结风险帧）</h2>
       <div class="controls">
         <label>Layer <select id="layer-select"></select></label>
         <label>Objective <select id="objective-select"></select></label>
         <label>Phase <select id="phase-select"></select></label>
+        <label>Map layer <select id="map-mode-select">
+          <option value="availability">Availability</option>
+          <option value="risk_score">Risk score</option>
+          <option value="risk_level">Risk level</option>
+        </select></label>
+        <label>Frame <select id="frame-select"></select></label>
       </div>
-      <svg class="map" id="map" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-      <div class="legend">
-        <span><i style="background:#1f6feb"></i>route</span>
-        <span><i style="background:#116329"></i>start</span>
-        <span><i style="background:#b42318"></i>destination</span>
-        <span><i style="background:var(--available)"></i>planning available area (approx)</span>
-      </div>
+      <svg class="map" id="map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="legend" id="legend"></div>
+      <div class="summary" id="before-after"></div>
       <div class="diff" id="replan-diff"></div>
+      <div class="muted" id="map-note"></div>
     </section>
 
-    <div style="display:grid; gap:12px">
+    <div class="grid2">
       <section class="panel">
         <h2>Route Metrics</h2>
         <table id="metrics-table">
@@ -78,6 +135,7 @@
           <tr><th>Turns</th><td id="m-turns">—</td></tr>
           <tr><th>Hard violations</th><td id="m-hard">—</td></tr>
           <tr><th>Objective cost</th><td id="m-cost">—</td></tr>
+          <tr><th>Expanded nodes</th><td id="m-expanded">—</td></tr>
         </table>
       </section>
 
@@ -85,27 +143,88 @@
         <h2>Coverage / Data Quality</h2>
         <div class="gate pass" id="coverage-gate">—</div>
         <div class="row"><span>Planning available nodes</span><b id="c-available">—</b></div>
-        <div class="row"><span>LAND (physically non-navigable)</span><b id="c-land">—</b></div>
-        <div class="row"><span>DATA_UNAVAILABLE (fail-closed)</span><b id="c-unknown">—</b></div>
+        <div class="row"><span>LAND（物理不可航）</span><b id="c-land">—</b></div>
+        <div class="row"><span>DATA_UNAVAILABLE（fail-closed）</span><b id="c-unknown">—</b></div>
         <div class="row"><span>Other hard</span><b id="c-other">—</b></div>
         <div class="row"><span>Unknown navigable nodes</span><b id="c-unavail">—</b></div>
         <div class="row"><span>Ice-free not-applicable cells</span><b id="c-icefree">—</b></div>
+        <div class="row"><span>Spatial frame(s)</span><b id="c-spatial">—</b></div>
         <div class="origin-note" id="coverage-note"></div>
       </section>
+
+      <section class="panel">
+        <h2>Live Demo <span class="muted">（真实小窗重规划）</span></h2>
+        <button class="primary" id="live-run">Run Live Replanning</button>
+        <div class="live-status" id="live-status">未运行。现场计算使用真实 C planner + worker watchdog，约 30–90 秒。</div>
+        <div class="progress" id="live-progress"><div class="bar"></div></div>
+        <div class="muted" style="margin-top:6px">Live 只重算推荐目标的小窗口路线；覆盖/风险帧复用冻结 Scenario B 窗口，结果明确标记 <b>LIVE COMPUTED</b>。</div>
+      </section>
+
+      <details class="panel tech">
+        <summary>Technical details</summary>
+        <div id="tech-info">—</div>
+      </details>
     </div>
   </main>
 
   <script>
     "use strict";
+    const COLORS = {
+      available: "#e8f4fb",
+      land: "#b08968",
+      unknown: "#c0392b",
+      other: "#7d3c98",
+      initial: "#1f6feb",
+      replan: "#d97706",
+      live: "#c026d3",
+      start: "#116329",
+      dest: "#b42318"
+    };
+    const LEVEL_COLORS = { 0: "#eeeeee", 1: "#2e8b57", 2: "#9acd32", 3: "#f0c808", 4: "#f28c28", 5: "#d7263d" };
     let state = null;
-    let current = { scenario: 0, layer: 0, objective: 0, phase: 0 };
+    let liveTimer = null;
+    let current = {
+      scenario: 0, layer: 0, objective: 0, phase: "initial",
+      mapMode: "availability", frame: 0
+    };
 
     async function boot() {
-      const res = await fetch("/demo-state.json");
-      if (!res.ok) { document.getElementById("scenario-label").textContent = "无法加载 demo-state.json"; return; }
-      state = await res.json();
-      renderTabs();
-      selectScenario(0);
+      try {
+        const res = await fetch("/demo-state.json");
+        if (!res.ok) throw new Error("demo-state.json HTTP " + res.status);
+        state = await res.json();
+        if (!state || !Array.isArray(state.scenarios) || state.scenarios.length === 0) {
+          throw new Error("demo-state.json 没有可用场景");
+        }
+        renderTabs();
+        selectScenario(0);
+        await refreshLiveStatus();
+        liveTimer = setInterval(refreshLiveStatus, 2000);
+      } catch (err) {
+        showBanner(err.message);
+      }
+    }
+
+    function showBanner(message) {
+      const el = document.getElementById("banner");
+      el.textContent = message;
+      el.classList.add("show");
+    }
+
+    function showWarn(message) {
+      const el = document.getElementById("warn");
+      el.textContent = message;
+      el.classList.add("show");
+    }
+
+    function unique(items) {
+      return [...new Set(items)];
+    }
+
+    function phaseLabel(s, phase) {
+      if (phase === "compare") return "Compare initial → replanned";
+      const p = s.phases.find(x => x.phase === phase);
+      return p ? p.phase + (p.layer_set_id ? " · " + p.layer_set_id.slice(0, 16) : "") : phase;
     }
 
     function renderTabs() {
@@ -113,112 +232,178 @@
       tabs.innerHTML = "";
       state.scenarios.forEach((s, i) => {
         const btn = document.createElement("button");
-        btn.textContent = s.display_name;
+        const isLive = s.result_origin === "LIVE_COMPUTED";
+        btn.innerHTML = '<span class="dot ' + (isLive ? "live" : "frozen") + '"></span>' +
+          escapeHtml(s.display_name) + (isLive ? " (LIVE)" : "");
+        if (i === current.scenario) btn.classList.add("active");
         btn.onclick = () => selectScenario(i);
         tabs.appendChild(btn);
       });
     }
 
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
     function selectScenario(i) {
       current.scenario = i;
       const s = state.scenarios[i];
-      const badge = document.getElementById("mode-badge");
       const isLive = s.result_origin === "LIVE_COMPUTED";
+      const badge = document.getElementById("mode-badge");
       badge.textContent = isLive ? "LIVE COMPUTED" : "FROZEN VALIDATED";
       badge.className = "badge " + (isLive ? "live" : "frozen");
       document.getElementById("scenario-label").textContent =
         s.scenario_id + " · " + s.corridor_id + " v" + s.corridor_version +
         " · bundle " + (s.bundle_id || "—") + " · run " + (s.run_context_id || "—");
+      renderTabs();
       renderControls(s);
-      renderCoverage(s);
-      renderRoute(s);
+      renderAll(s);
     }
 
     function renderControls(s) {
+      const firstPhase = s.phases[0];
+      const layers = unique(firstPhase.routes.map(r => r.planning_layer));
+      const objectives = unique(firstPhase.routes.map(r => r.objective));
       const layerSel = document.getElementById("layer-select");
       const objSel = document.getElementById("objective-select");
       const phaseSel = document.getElementById("phase-select");
-      const firstPhase = s.phases[current.phase] || s.phases[0];
-      const layers = [...new Set(firstPhase.routes.map(r => r.planning_layer))];
-      const objectives = [...new Set(firstPhase.routes.map(r => r.objective))];
-      layerSel.innerHTML = layers.map((l, i) => `<option value="${i}">${l}</option>`).join("");
-      objSel.innerHTML = objectives.map((o, i) => `<option value="${i}">${o}</option>`).join("");
-      phaseSel.innerHTML = s.phases.map((p, i) => `<option value="${i}">${p.phase}${p.layer_set_id ? " · " + p.layer_set_id.slice(0, 18) : ""}</option>`).join("");
-      current.layer = 0; current.objective = 0; current.phase = 0;
-      layerSel.onchange = () => { current.layer = +layerSel.value; renderRoute(s); };
-      objSel.onchange = () => { current.objective = +objSel.value; renderRoute(s); };
-      phaseSel.onchange = () => { current.phase = +phaseSel.value; renderRoute(s); };
+      layerSel.innerHTML = layers.map((l, i) =>
+        '<option value="' + i + '">' + escapeHtml(l) + "</option>").join("");
+      objSel.innerHTML = objectives.map((o, i) =>
+        '<option value="' + i + '">' + escapeHtml(o) + "</option>").join("");
+      const phaseOptions = s.phases.map(p => p.phase);
+      if (s.phases.length >= 2) phaseOptions.push("compare");
+      phaseSel.innerHTML = phaseOptions.map(p =>
+        '<option value="' + p + '">' + escapeHtml(phaseLabel(s, p)) + "</option>").join("");
+      if (current.layer >= layers.length) current.layer = 0;
+      if (current.objective >= objectives.length) current.objective = 0;
+      if (!phaseOptions.includes(current.phase)) current.phase = phaseOptions[0];
+      layerSel.value = String(current.layer);
+      objSel.value = String(current.objective);
+      phaseSel.value = current.phase;
+      layerSel.onchange = () => { current.layer = +layerSel.value; renderAll(s); };
+      objSel.onchange = () => { current.objective = +objSel.value; renderAll(s); };
+      phaseSel.onchange = () => { current.phase = phaseSel.value; renderAll(s); };
+
+      const frameSel = document.getElementById("frame-select");
+      if (s.spatial && s.spatial.frames.length > 0) {
+        frameSel.innerHTML = s.spatial.frames.map((f, i) =>
+          '<option value="' + i + '">Frame ' + (i === 0 ? "initial" : "replan") +
+          " · " + escapeHtml(f.valid_time) + "</option>").join("");
+        frameSel.value = String(Math.min(current.frame, s.spatial.frames.length - 1));
+        frameSel.onchange = () => { current.frame = +frameSel.value; renderAll(s); };
+        frameSel.disabled = false;
+      } else {
+        frameSel.innerHTML = '<option value="0">no spatial frame</option>';
+        frameSel.disabled = true;
+      }
+
+      const modeSel = document.getElementById("map-mode-select");
+      modeSel.value = current.mapMode;
+      modeSel.onchange = () => { current.mapMode = modeSel.value; renderAll(s); };
     }
 
     function selectedRoute(s) {
-      const phase = s.phases[current.phase];
-      const layer = new Set(phase.routes.map(r => r.planning_layer))[Symbol.iterator] ? [...new Set(phase.routes.map(r => r.planning_layer))][current.layer] : null;
-      const objective = [...new Set(phase.routes.map(r => r.objective))][current.objective];
-      return phase.routes.find(r => r.planning_layer === layer && r.objective === objective) || phase.routes[0];
+      const layer = unique(s.phases[0].routes.map(r => r.planning_layer))[current.layer];
+      const objective = unique(s.phases[0].routes.map(r => r.objective))[current.objective];
+      const phase = current.phase === "compare" ? "replanned" : current.phase;
+      const p = s.phases.find(x => x.phase === phase);
+      if (!p) return null;
+      return p.routes.find(r => r.planning_layer === layer && r.objective === objective) ||
+        p.routes[0];
     }
 
-    function renderRoute(s) {
-      const phase = s.phases[current.phase];
-      const layers = [...new Set(phase.routes.map(r => r.planning_layer))];
-      const objectives = [...new Set(phase.routes.map(r => r.objective))];
-      const route = phase.routes.find(r => r.planning_layer === layers[current.layer] && r.objective === objectives[current.objective]) || phase.routes[0];
+    function renderAll(s) {
+      renderMetrics(s);
+      drawMap(s);
+      renderDiffs(s);
+      renderCoverage(s);
+      renderTech(s);
+      renderLivePanel(s);
+    }
+
+    function renderMetrics(s) {
+      const route = selectedRoute(s);
+      if (!route) return;
       const m = route.metrics;
-      document.getElementById("m-distance").textContent = m.distance_km.toFixed(1) + " km";
-      document.getElementById("m-eta").textContent = m.eta_hours.toFixed(1) + " h";
-      document.getElementById("m-avg").textContent = m.avg_risk.toFixed(4);
-      document.getElementById("m-max").textContent = m.max_risk.toFixed(4);
-      document.getElementById("m-integrated").textContent = m.integrated_risk_hours.toFixed(2);
-      document.getElementById("m-confidence").textContent = m.minimum_confidence.toFixed(3);
+      document.getElementById("m-distance").textContent = fmt(m.distance_km, 1) + " km";
+      document.getElementById("m-eta").textContent = fmt(m.eta_hours, 1) + " h";
+      document.getElementById("m-avg").textContent = fmt(m.avg_risk, 4);
+      document.getElementById("m-max").textContent = fmt(m.max_risk, 4);
+      document.getElementById("m-integrated").textContent = fmt(m.integrated_risk_hours, 2);
+      document.getElementById("m-confidence").textContent = fmt(m.minimum_confidence, 3);
       document.getElementById("m-turns").textContent = m.turn_count;
       document.getElementById("m-hard").textContent = m.hard_constraint_violations;
-      document.getElementById("m-cost").textContent = m.objective_cost.toFixed(2);
-      drawMap(route.waypoints);
-      renderDiff(s);
+      document.getElementById("m-cost").textContent = fmt(m.objective_cost, 2);
+      document.getElementById("m-expanded").textContent =
+        m.expanded_nodes === null || m.expanded_nodes === undefined ? "—" : m.expanded_nodes;
     }
 
-    function renderDiff(s) {
+    function fmt(value, digits) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
+      return Number(value).toFixed(digits);
+    }
+
+    function renderDiffs(s) {
       const el = document.getElementById("replan-diff");
-      if (s.phases.length < 2) { el.textContent = ""; return; }
-      const a = s.phases[0].routes.find(r => r.objective === "recommended");
-      const b = s.phases[1].routes.find(r => r.objective === "recommended");
-      if (!a || !b) { el.textContent = ""; return; }
-      el.innerHTML = "Replanning: distance <b>" + (b.metrics.distance_km - a.metrics.distance_km).toFixed(1) + " km</b>, " +
-        "ETA <b>" + (b.metrics.eta_hours - a.metrics.eta_hours).toFixed(1) + " h</b>, " +
-        "avg risk <b>" + (b.metrics.avg_risk - a.metrics.avg_risk).toFixed(4) + "</b>";
+      const summary = document.getElementById("before-after");
+      if (s.phases.length < 2) {
+        el.innerHTML = "";
+        summary.innerHTML = "";
+        return;
+      }
+      const layer = unique(s.phases[0].routes.map(r => r.planning_layer))[current.layer];
+      const objective = unique(s.phases[0].routes.map(r => r.objective))[current.objective];
+      const initial = s.phases.find(p => p.phase === "initial");
+      const replanned = s.phases.find(p => p.phase === "replanned");
+      const a = initial.routes.find(r => r.planning_layer === layer && r.objective === objective);
+      const b = replanned.routes.find(r => r.planning_layer === layer && r.objective === objective);
+      if (!a || !b) {
+        el.innerHTML = "";
+        summary.innerHTML = "";
+        return;
+      }
+      summary.innerHTML =
+        "Initial&nbsp;&nbsp;<b>" + fmt(a.metrics.distance_km, 1) + " km</b> / " +
+        fmt(a.metrics.eta_hours, 1) + " h / risk " + fmt(a.metrics.avg_risk, 4) +
+        '<span class="arrow">→</span>Replanned&nbsp;&nbsp;<b>' +
+        fmt(b.metrics.distance_km, 1) + " km</b> / " + fmt(b.metrics.eta_hours, 1) +
+        " h / risk " + fmt(b.metrics.avg_risk, 4);
+      const delta = (s.phase_deltas || []).find(d =>
+        d.planning_layer === layer && d.objective === objective);
+      if (current.phase !== "compare" || !delta) {
+        el.innerHTML = "";
+        return;
+      }
+      el.innerHTML = "<b>Initial vs Replanned（真实 delta）</b>" +
+        '<table><tr><th>Metric</th><th>Δ</th><th>Status</th></tr>' +
+        deltaRow("Distance", delta.distance_km, "km") +
+        deltaRow("ETA", delta.eta_hours, "h") +
+        deltaRow("Avg risk", delta.avg_risk, "") +
+        deltaRow("Max risk", delta.max_risk, "") +
+        deltaRow("Integrated risk", delta.integrated_risk_hours, "h") +
+        deltaRow("Hard violations", delta.hard_constraint_violations, "") +
+        deltaRow("Turns", delta.turn_count, "") +
+        '<tr><th>Route changed</th><td colspan="2">' +
+        (delta.route_changed ? "YES — geometry differs" : "NO — identical waypoints") +
+        "</td></tr></table>";
     }
 
-    function drawMap(waypoints) {
-      const svg = document.getElementById("map");
-      svg.innerHTML = "";
-      const lons = waypoints.map(w => w.longitude), lats = waypoints.map(w => w.latitude);
-      const minLon = Math.min(...lons), maxLon = Math.max(...lons);
-      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-      const spanLon = Math.max(maxLon - minLon, 1e-6), spanLat = Math.max(maxLat - minLat, 1e-6);
-      const pad = 5;
-      const pts = waypoints.map(w => {
-        const x = pad + (w.longitude - minLon) / spanLon * (100 - 2 * pad);
-        const y = 95 - (pad + (w.latitude - minLat) / spanLat * (100 - 2 * pad));
-        return [x, y];
-      });
-      const line = pts.map(p => p.join(",")).join(" ");
-      const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-      poly.setAttribute("points", line);
-      poly.setAttribute("fill", "none");
-      poly.setAttribute("stroke", "#1f6feb");
-      poly.setAttribute("stroke-width", "1.2");
-      svg.appendChild(poly);
-      [["#116329", pts[0]], ["#b42318", pts[pts.length - 1]]].forEach(([color, p]) => {
-        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]); c.setAttribute("r", "1.6");
-        c.setAttribute("fill", color);
-        svg.appendChild(c);
-      });
+    function deltaRow(label, value, unit) {
+      const cls = value > 0.0000001 ? "delta-pos" : (value < -0.0000001 ? "delta-neg" : "delta-zero");
+      return '<tr><th>' + label + '</th><td class="' + cls + '">' +
+        (value > 0 ? "+" : "") + fmt(value, 4) + " " + unit + "</td><td>" +
+        (value > 0.0000001 ? "higher" : (value < -0.0000001 ? "lower" : "unchanged")) +
+        "</td></tr>";
     }
 
     function renderCoverage(s) {
       const c = s.coverage;
       const gate = document.getElementById("coverage-gate");
-      gate.textContent = "Coverage Gate: " + (c.gate_passed ? "PASS" : "FAIL") + " · Unknown Navigable: " + c.unknown_navigable_nodes;
+      gate.textContent = "Coverage Gate: " + (c.gate_passed ? "PASS" : "FAIL") +
+        " · Unknown Navigable: " + c.unknown_navigable_nodes;
       gate.className = "gate " + (c.gate_passed ? "pass" : "fail");
       document.getElementById("c-available").textContent = c.planning_available_nodes;
       document.getElementById("c-land").textContent = c.land_nodes;
@@ -226,10 +411,300 @@
       document.getElementById("c-other").textContent = c.other_hard_nodes;
       document.getElementById("c-unavail").textContent = c.unknown_navigable_nodes;
       document.getElementById("c-icefree").textContent = c.ice_free_neutralized_nodes;
+      const spatial = s.spatial;
+      document.getElementById("c-spatial").textContent = spatial
+        ? spatial.frames.length + " frames · " + spatial.frames[0].longitudes.length + " nodes"
+        : "not available";
       document.getElementById("coverage-note").textContent =
-        "LAND = physically non-navigable. DATA_UNAVAILABLE = conservative fail-closed due to insufficient data. " +
-        "Ice-free not-applicable cells mean ice_type/ice_edge are not applicable in open water (NOT missing data).";
+        "LAND = 物理不可航；DATA_UNAVAILABLE = 数据不足导致的保守 fail-closed（不是风险等级）；" +
+        "Ice-free not-applicable 表示可信冰浓度已证明 open water 时 ice_type/ice_edge 不适用（不是缺失数据被填 0）。";
     }
+
+    function renderTech(s) {
+      const spatial = s.spatial;
+      const frame = spatial ? spatial.frames[0] : null;
+      document.getElementById("tech-info").innerHTML =
+        "<p>scenario: <code>" + escapeHtml(s.scenario_id) + "</code></p>" +
+        "<p>corridor: <code>" + escapeHtml(s.corridor_id) + " v" + escapeHtml(s.corridor_version) +
+        "</code></p>" +
+        "<p>bundle: <code>" + escapeHtml(s.bundle_id || "—") + "</code></p>" +
+        "<p>run context: <code>" + escapeHtml(s.run_context_id || "—") + "</code></p>" +
+        (spatial ? "<p>risk commit: <code>" + escapeHtml(spatial.commit_id) +
+          "</code><br>grid: <code>" + escapeHtml(spatial.grid_id) + "</code></p>" : "") +
+        (frame ? "<p>frame 0: <code>" + escapeHtml(frame.valid_time) + "</code></p>" : "") +
+        "<p>source: <code>" + escapeHtml(s.source_dir) + "</code></p>" +
+        (s.notes && s.notes.length ? "<p>notes:</p><ul>" +
+          s.notes.map(n => "<li>" + escapeHtml(n) + "</li>").join("") + "</ul>" : "");
+    }
+
+    function renderLivePanel(s) {
+      const isLive = s.result_origin === "LIVE_COMPUTED";
+      const btn = document.getElementById("live-run");
+      btn.disabled = isLive;
+      if (isLive) {
+        const route = s.phases[0].routes[0];
+        const status = document.getElementById("live-status");
+        status.className = "live-status ok";
+        status.textContent = "LIVE COMPUTED 结果已加载：" + fmt(route.metrics.distance_km, 1) +
+          " km / " + fmt(route.metrics.eta_hours, 1) + " h（真实计算）。";
+      }
+    }
+
+    function drawMap(s) {
+      const svg = document.getElementById("map");
+      const NS = "http://www.w3.org/2000/svg";
+      svg.innerHTML = "";
+      const W = 1000, H = 620, PAD = 30;
+      const bounds = computeBounds(s);
+      if (!bounds) {
+        document.getElementById("map-note").textContent = "没有可绘制的空间数据。";
+        return;
+      }
+      const spanLon = Math.max(bounds.maxLon - bounds.minLon, 1e-6);
+      const spanLat = Math.max(bounds.maxLat - bounds.minLat, 1e-6);
+      const scale = Math.min((W - 2 * PAD) / spanLon, (H - 2 * PAD) / spanLat);
+      const ox = (W - spanLon * scale) / 2;
+      const oy = (H - spanLat * scale) / 2;
+      const project = (lon, lat) => [
+        ox + (lon - bounds.minLon) * scale,
+        oy + (bounds.maxLat - lat) * scale
+      ];
+      svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+      const frame = s.spatial && s.spatial.frames.length
+        ? s.spatial.frames[Math.min(current.frame, s.spatial.frames.length - 1)]
+        : null;
+      if (frame) {
+        const nLon = unique(frame.longitudes).length;
+        const nLat = unique(frame.latitudes).length;
+        const lonMin = Math.min(...frame.longitudes), lonMax = Math.max(...frame.longitudes);
+        const latMin = Math.min(...frame.latitudes), latMax = Math.max(...frame.latitudes);
+        const cellW = Math.max((W - 2 * PAD) / nLon * 0.9, 1.5);
+        const cellH = Math.max((H - 2 * PAD) / nLat * 0.9, 1.5);
+        const lonScale = (W - 2 * PAD) / Math.max(lonMax - lonMin, 1e-6);
+        const latScale = (H - 2 * PAD) / Math.max(latMax - latMin, 1e-6);
+        const xs = frame.longitudes.map(lon => PAD + (lon - lonMin) * lonScale);
+        const ys = frame.latitudes.map(lat => PAD + (latMax - lat) * latScale);
+        const riskMin = Math.min(...frame.risk_scores.filter(v => v > 0), 0.001);
+        const riskMax = Math.max(...frame.risk_scores);
+        for (let i = 0; i < frame.longitudes.length; i++) {
+          const reason = frame.hard_reasons[i];
+          const available = frame.available[i];
+          let fill = availabilityColor(reason);
+          if (available && current.mapMode === "risk_score") {
+            const v = frame.risk_scores[i];
+            const t = riskMax > riskMin ? Math.min(1, Math.max(0, (v - riskMin) / (riskMax - riskMin))) : 0;
+            fill = riskGradient(t);
+          } else if (available && current.mapMode === "risk_level") {
+            fill = LEVEL_COLORS[frame.risk_levels[i]] || "#eeeeee";
+          }
+          const rect = document.createElementNS(NS, "rect");
+          rect.setAttribute("x", xs[i] - cellW / 2);
+          rect.setAttribute("y", ys[i] - cellH / 2);
+          rect.setAttribute("width", cellW);
+          rect.setAttribute("height", cellH);
+          rect.setAttribute("fill", fill);
+          rect.setAttribute("stroke", "#ffffff");
+          rect.setAttribute("stroke-width", "0.4");
+          rect.setAttribute("rx", "1");
+          rect.setAttribute("data-reason", reason);
+          rect.setAttribute("data-risk", String(frame.risk_scores[i]));
+          rect.setAttribute("data-lonlat", frame.longitudes[i] + "," + frame.latitudes[i]);
+          rect.setAttribute("class", "cell");
+          svg.appendChild(rect);
+        }
+      }
+
+      const routes = [];
+      if (current.phase === "compare") {
+        const a = routeByCurrent(s, "initial");
+        const b = routeByCurrent(s, "replanned");
+        if (a) routes.push({ route: a, color: COLORS.initial, dash: "", label: "initial" });
+        if (b) routes.push({ route: b, color: COLORS.replan, dash: "6 4", label: "replanned" });
+      } else {
+        const r = selectedRoute(s);
+        const color = s.result_origin === "LIVE_COMPUTED" ? COLORS.live :
+          (current.phase === "replanned" ? COLORS.replan : COLORS.initial);
+        if (r) routes.push({ route: r, color, dash: "", label: current.phase });
+      }
+      routes.forEach(item => {
+        const pts = item.route.waypoints.map(w => project(w.longitude, w.latitude));
+        const poly = document.createElementNS(NS, "polyline");
+        poly.setAttribute("points", pts.map(p => p[0].toFixed(2) + "," + p[1].toFixed(2)).join(" "));
+        poly.setAttribute("fill", "none");
+        poly.setAttribute("stroke", item.color);
+        poly.setAttribute("stroke-width", item.label === "initial" ? "2" : "2.6");
+        poly.setAttribute("stroke-dasharray", item.dash);
+        poly.setAttribute("stroke-linejoin", "round");
+        svg.appendChild(poly);
+      });
+
+      const anyRoute = routes[0] && routes[0].route;
+      if (anyRoute) {
+        const startP = project(anyRoute.waypoints[0].longitude, anyRoute.waypoints[0].latitude);
+        const endP = project(anyRoute.waypoints[anyRoute.waypoints.length - 1].longitude,
+          anyRoute.waypoints[anyRoute.waypoints.length - 1].latitude);
+        [[COLORS.start, startP, "circle"], [COLORS.dest, endP, "rect"]].forEach(([color, p, kind]) => {
+          const el = document.createElementNS(NS, kind === "circle" ? "circle" : "rect");
+          if (kind === "circle") {
+            el.setAttribute("cx", p[0]); el.setAttribute("cy", p[1]); el.setAttribute("r", "7");
+          } else {
+            el.setAttribute("x", p[0] - 6); el.setAttribute("y", p[1] - 6);
+            el.setAttribute("width", "12"); el.setAttribute("height", "12");
+          }
+          el.setAttribute("fill", color);
+          el.setAttribute("stroke", "#ffffff");
+          el.setAttribute("stroke-width", "1.5");
+          svg.appendChild(el);
+        });
+      }
+      renderLegend(s, frame);
+      document.getElementById("map-note").textContent =
+        "坐标来源：冻结风险帧真实经纬度（frame " + (frame ? frame.valid_time : "—") +
+        "）；路线来自冻结/live 制品的真实 waypoints，未做任何位置修饰。" +
+        (s.spatial ? "" : " 当前场景没有 spatial 帧，仅绘制路线。");
+    }
+
+    function routeByCurrent(s, phase) {
+      const layer = unique(s.phases[0].routes.map(r => r.planning_layer))[current.layer];
+      const objective = unique(s.phases[0].routes.map(r => r.objective))[current.objective];
+      const p = s.phases.find(x => x.phase === phase);
+      return p ? (p.routes.find(r => r.planning_layer === layer && r.objective === objective) || p.routes[0]) : null;
+    }
+
+    function computeBounds(s) {
+      const points = [];
+      s.phases.forEach(p => p.routes.forEach(r =>
+        r.waypoints.forEach(w => points.push([w.longitude, w.latitude]))));
+      if (s.spatial) {
+        s.spatial.frames.forEach(f => {
+          points.push([Math.min(...f.longitudes), Math.min(...f.latitudes)]);
+          points.push([Math.max(...f.longitudes), Math.max(...f.latitudes)]);
+        });
+      }
+      if (!points.length) return null;
+      const lons = points.map(p => p[0]), lats = points.map(p => p[1]);
+      return {
+        minLon: Math.min(...lons), maxLon: Math.max(...lons),
+        minLat: Math.min(...lats), maxLat: Math.max(...lats)
+      };
+    }
+
+    function availabilityColor(reason) {
+      if (reason === "LAND") return COLORS.land;
+      if (reason === "DATA_UNAVAILABLE") return COLORS.unknown;
+      if (reason === "NONE") return COLORS.available;
+      return COLORS.other;
+    }
+
+    function riskGradient(t) {
+      const hue = 120 * (1 - t);
+      return "hsl(" + hue + ", 75%, 55%)";
+    }
+
+    function renderLegend(s, frame) {
+      const el = document.getElementById("legend");
+      const isLive = s.result_origin === "LIVE_COMPUTED";
+      const routeLegend = current.phase === "compare"
+        ? '<span><i class="swatch-line" style="background:' + COLORS.initial + ';width:16px"></i>initial</span>' +
+          '<span><i class="swatch-line" style="background:' + COLORS.replan + ';width:16px;display:inline-block;height:3px;border-radius:2px"></i>replanned</span>'
+        : '<span><i class="swatch-line" style="background:' +
+          (isLive ? COLORS.live : (current.phase === "replanned" ? COLORS.replan : COLORS.initial)) +
+          ';width:16px"></i>' + (isLive ? "live route" : current.phase) + "</span>";
+      const base =
+        '<span><i style="background:' + COLORS.available + '"></i>planning available</span>' +
+        '<span><i style="background:' + COLORS.land + '"></i>LAND</span>' +
+        '<span><i style="background:' + COLORS.unknown + '"></i>DATA_UNAVAILABLE</span>' +
+        '<span><i style="background:' + COLORS.other + '"></i>OTHER</span>' +
+        '<span><i style="background:' + COLORS.start + '"></i>start</span>' +
+        '<span><i style="background:' + COLORS.dest + '"></i>destination</span>';
+      let riskLegend = "";
+      if (frame && current.mapMode === "risk_score") {
+        const lo = Math.min(...frame.risk_scores.filter(v => v > 0), 0.001);
+        const hi = Math.max(...frame.risk_scores);
+        riskLegend = '<span>risk <b>low</b> <i style="background:hsl(120,75%,55%)"></i>→' +
+          '<i style="background:hsl(0,75%,55%)"></i><b>high</b> (' + lo.toFixed(3) + "–" +
+          hi.toFixed(3) + ")</span>";
+      } else if (frame && current.mapMode === "risk_level") {
+        riskLegend = '<span>risk level</span>' + Object.entries(LEVEL_COLORS).filter(([k]) => +k >= 1)
+          .map(([k, c]) => '<span><i style="background:' + c + '"></i>' + k + "</span>").join("");
+      }
+      el.innerHTML = routeLegend + base + riskLegend;
+    }
+
+    async function refreshLiveStatus() {
+      if (!state) return;
+      try {
+        const res = await fetch("/api/live/status");
+        if (!res.ok) return;
+        const status = await res.json();
+        if (status.status === "RUNNING") {
+          const btn = document.getElementById("live-run");
+          btn.disabled = true;
+          const el = document.getElementById("live-status");
+          el.className = "live-status run";
+          el.textContent = "正在运行真实重规划… elapsed " + (status.elapsed || 0).toFixed(1) +
+            " s · stage " + (status.stage || "starting");
+          document.getElementById("live-progress").classList.add("show");
+        } else if (status.status === "DONE" && status.scenario) {
+          document.getElementById("live-progress").classList.remove("show");
+          const btn = document.getElementById("live-run");
+          btn.disabled = true;
+          const idx = state.scenarios.findIndex(s => s.scenario_id === status.scenario.scenario_id);
+          if (idx < 0) {
+            state.scenarios.push(status.scenario);
+            renderTabs();
+            selectScenario(state.scenarios.length - 1);
+          } else {
+            state.scenarios[idx] = status.scenario;
+            if (current.scenario === idx) {
+              renderTabs();
+              renderAll(status.scenario);
+            }
+          }
+          const el = document.getElementById("live-status");
+          el.className = "live-status ok";
+          el.textContent = "LIVE COMPUTED：真实计算完成并已加载（见新标签页）。";
+          if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+        } else if (status.status === "FAIL") {
+          document.getElementById("live-progress").classList.remove("show");
+          const btn = document.getElementById("live-run");
+          btn.disabled = false;
+          const el = document.getElementById("live-status");
+          el.className = "live-status bad";
+          el.textContent = "LIVE COMPUTATION FAILED / TIMEOUT：\n" + (status.error || "未知错误") +
+            "\n冻结结果仍可继续查看；不会用旧结果冒充 live。";
+          if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+        }
+      } catch (err) {
+        // server may not expose live API in some contexts; keep frozen viewer usable
+      }
+    }
+
+    document.getElementById("live-run").addEventListener("click", async () => {
+      const btn = document.getElementById("live-run");
+      btn.disabled = true;
+      const el = document.getElementById("live-status");
+      el.className = "live-status run";
+      el.textContent = "正在启动真实重规划 worker…";
+      document.getElementById("live-progress").classList.add("show");
+      try {
+        const res = await fetch("/api/live/start", { method: "POST" });
+        const body = await res.json();
+        if (!body.ok) {
+          el.className = "live-status bad";
+          el.textContent = "启动失败：" + (body.error || "unknown");
+          btn.disabled = false;
+          document.getElementById("live-progress").classList.remove("show");
+        }
+      } catch (err) {
+        el.className = "live-status bad";
+        el.textContent = "无法连接 live API：" + err.message;
+        btn.disabled = false;
+        document.getElementById("live-progress").classList.remove("show");
+      }
+      if (!liveTimer) liveTimer = setInterval(refreshLiveStatus, 2000);
+    });
 
     boot();
   </script>

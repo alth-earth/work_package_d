@@ -4,6 +4,7 @@
     "scenario_id": "murmansk_dikson_august_2026_demo_v1",
     "display_name": "Murmansk → Dikson (RC1 Scenario A)",
     "output_dir": "/root/my_project/work_package_a/data/output/rc2-smoke/output-mur-opt",
+    "risk_store_root": "/root/my_project/work_package_a/data/output/rc2-smoke/risk-store-mur-opt",
     "expected": {
       "scenario_id": "murmansk_dikson_august_2026_demo_v1",
       "corridor_id": "offshore_murmansk_to_offshore_dikson",
@@ -23,6 +24,7 @@
     "scenario_id": "tromso_isfjorden_august_2026_demo_v1",
     "display_name": "Tromsø → Isfjorden (RC2 Scenario B)",
     "output_dir": "/root/my_project/work_package_a/data/output/rc2-smoke/output-tromso-144h-r2",
+    "risk_store_root": "/root/my_project/work_package_a/data/output/rc2-smoke/risk-store-tromso-144h-r2",
     "expected": {
       "scenario_id": "tromso_isfjorden_august_2026_demo_v1",
       "corridor_id": "tromso_to_isfjorden_outer",
