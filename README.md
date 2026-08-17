@@ -8,6 +8,9 @@
 > Demo Candidate 2：viewer 增加离线经纬度地图（真实风险帧坐标）、
 > Availability/Risk 图层、Scenario A/B 交互、Compare initial→replanned 真实 delta、
 > Live 按钮 + 进度反馈（`/api/live/start` / `/api/live/status`），仍无任何外部依赖。
+> Route Geospatial Integrity（2026-08-17）：机器审计 48/48 冻结路线 PASS，
+> 修复 Viewer 双投影导致的视觉穿 LAND，gate 并入 `demo preflight`；
+> 见根目录 `ROUTE_GEOSPATIAL_INTEGRITY_AUDIT_20260817.md`。
 > 主线口径：v3 四层 × 三目标（12 路线整组）+ 重规划为演示主线，v2 三目标为强制后备
 > （2026-08-15 确认）。
 
@@ -28,6 +31,7 @@ make check
 arctic-route-display snapshot --v3 /path/to/routes/v3/initial.json --output out/snapshot.json
 arctic-route-display coverage /path/to/planning-coverage-preflight.json
 arctic-route-display demo preflight
+arctic-route-display demo geo-integrity
 arctic-route-display demo build --config configs/demo_frozen_sources.json --output demo-state.json
 arctic-route-display demo run-live --config configs/demo_frozen_sources.json --output live-result.json
 arctic-route-display demo serve --state demo-state.json --port 8123
@@ -51,6 +55,12 @@ demo-state.json spatial
 Viewer SVG（Availability / Risk score / Risk level）
 ```
 
+Route Geospatial Integrity gate（`demo geo-integrity`）独立于 Coverage Gate：
+逐路线验证 waypoint 网格身份/邻接、距离/ETA 可复算、waypoint/edge hard
+（按 ETA 采样）、对角角切、时间帧映射，以及 Viewer 同一投影下的像素空间
+相交数；机器制品默认写到
+`work_package_a/data/output/rc2-smoke/route-geospatial-integrity.json`。
+
 ## RC1 事实
 
 - 离线 schema：`work_package_c/schemas/four-layer-route-plan-set-v3.schema.json`
@@ -64,8 +74,11 @@ Viewer SVG（Availability / Risk score / Risk level）
 - `src/arctic_route_display/loader.py`：读取/分组 v3 整组与 v2 后备，可选用 C Schema 校验；
 - `src/arctic_route_display/cli.py`：`snapshot` 与 `coverage` 命令；
 - `src/arctic_route_display/demo/`：Demo Data Model、Frozen/Live loader、preflight；
+- `src/arctic_route_display/demo/geo_integrity.py`：Route Geospatial Integrity
+  审计（waypoint/edge/corner/temporal/viewer-projection）；
 - `web/demo_viewer.html`：本地只读 viewer（localhost，无 CDN，离线；真实经纬度
-  地图、风险/数据质量图层、Compare 模式、Live 按钮与进度反馈）；
+  地图、风险/数据质量图层、Compare 模式、Live 按钮与进度反馈、Route Geospatial
+  Integrity 独立 badge）；
 - `src/arctic_route_display/demo/spatial.py`：冻结风险帧 → 紧凑空间展示模型；
 - `src/arctic_route_display/demo/errors.py`：demo 层共享验证异常；
 - `configs/demo_frozen_sources.json`：frozen A/B 与 live smoke 来源配置；

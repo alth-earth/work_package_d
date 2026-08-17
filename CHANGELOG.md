@@ -1,5 +1,24 @@
 # 工作包 D 变更记录
 
+## Unreleased - 2026-08-17（Route Geospatial Integrity）
+
+- 新增 `demo geo-integrity` 子命令与 `geo_integrity.py` 机器审计：
+  waypoint 网格身份/8-neighbor 邻接、距离/ETA 可复算、waypoint hard
+  （精确 ETA）、edge hard（C 同款 3 采样 + ≤10 km 密集采样）、对角角切
+  （正交侧格）、ETA→frame 时间映射、Viewer 同一投影下像素空间相交；
+- `demo preflight` 新增 Route Geospatial Integrity 硬门（FAIL 不输出
+  READY FOR DEMO）；`demo build` 的 demo-state 每场景新增独立
+  `geo_integrity` 摘要（PASS/FAIL/NOT_RUN），与 `result_origin` 分开展示；
+- 修复 Viewer 双投影 bug：格子中心与路线共用同一 `project()`（等比投影），
+  格子尺寸按真实经纬步长 × scale × 0.9；删除独立 `lonScale`/`latScale`；
+  修复前路线在像素空间穿过 LAND/DU 格（A=252、B=72），修复后 = 0；
+- Viewer 顶部新增 `ROUTE GEO INTEGRITY: PASS/FAIL/NOT RUN` badge，
+  Coverage 面板新增对应行；
+- 新增 11 项测试（含合成网格违规用例、真实冻结 48 路线审计、旧混合投影
+  回归 oracle、单一投影断言、`node --check` JS 语法）；D 共 36 tests；
+- 机器制品：`route-geospatial-integrity.json`；审计报告见根目录
+  `ROUTE_GEOSPATIAL_INTEGRITY_AUDIT_20260817.md`。
+
 ## Unreleased - 2026-08-17（Demo Candidate 2）
 
 - `demo build` 现在从冻结 risk store 读取每场景 2 帧真实风险帧

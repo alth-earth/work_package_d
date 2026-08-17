@@ -23,12 +23,16 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
 
 ## 当前状态
 
-PASS（25 tests）；Viewer = Demo Candidate 2（离线地图 + 交互 + Live API）。
+PASS（36 tests）；Viewer = Demo Candidate 2（离线地图 + 交互 + Live API +
+Route Geospatial Integrity badge）；`demo geo-integrity` 机器审计 48/48
+frozen routes PASS；`demo preflight` 含 Route Geospatial Integrity 硬门。
 
 ## 已知坑
 
 - v3 `layers` 是数组不是 dict；schema `$id` 用 `arctic-route.local`，必须本地解析；
 - 不允许读取 A/B 私有数据库或等待规划计算。
+- Viewer 历史坑（已修复）：格子与路线曾使用两套投影，导致地理正确的路线
+  在屏幕上穿过 LAND；修复后共用同一 `project()`，并有像素空间回归 oracle 测试。
 
 ## 冻结决策
 
@@ -37,7 +41,9 @@ PASS（25 tests）；Viewer = Demo Candidate 2（离线地图 + 交互 + Live AP
 ## 下一步
 
 - Pre-demo final（完整答辩流程彩排、恢复演练、独立备份）；
-- 可选：风险时间动画（frame selector 已有 2 帧）；v2 后备展示不进入 Demo 主线。
+- NEXT PHASE：GEBCO georeferenced Presentation View、145-frame 动态 Risk
+  Playback、Simulation Clock / Moving Ship / +6h Replan Event（本轮不实施）；
+- v2 后备展示不进入 Demo 主线。
 
 ## 常用命令
 
@@ -46,6 +52,7 @@ cd /root/my_project/work_package_d
 ./.venv/bin/python -m pytest -q
 ./.venv/bin/arctic-route-display snapshot --v3 <initial.json> --output out.json
 ./.venv/bin/arctic-route-display demo preflight
+./.venv/bin/arctic-route-display demo geo-integrity
 ./.venv/bin/arctic-route-display demo build --config configs/demo_frozen_sources.json --output demo-state.json
 ./.venv/bin/arctic-route-display demo serve --state demo-state.json --port 8123
 ```
