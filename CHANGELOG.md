@@ -6,6 +6,11 @@
   12h/24h/44h 真实回放 PASS、C 四层 PLANNING-HORIZON BLOCKER；
   见 `CAUSAL_REPLAY_MVP_20260818.md`。
 
+## Unreleased - 2026-08-18 第二轮（Strategy B 关联）
+
+- D 无代码改动；文档同步：三窗口解耦（77h）、v2 complete-route 12h
+  集成 PASS、v3 four-layer contract-edge blocker。
+
 ## Unreleased - 2026-08-17（Causal Replay Feasibility / Mode Honesty）
 
 - Frozen loader 从发布制品读取 `scenario_mode`（RunContext）、
