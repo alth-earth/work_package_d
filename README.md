@@ -3,7 +3,7 @@ Document Status: ACTIVE_SUPPORTING
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: demo-engineering
-Last Verified: 2026-08-20
+Last Verified: 2026-08-21
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -54,6 +54,23 @@ Browser evidence is kept outside Git under
 warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
 +12h/+24h = unavailable. D full tests: 54 passed; ruff and JS syntax are clean.
 
+## Viewer Presentation Polish（2026-08-21 01:20 +08:00）
+
+- Presentation Mode uses softer exact-cell risk rendering and pixel-aligned
+  fills; Engineering Debug retains the raw cell grid and diagnostics.
+- Route drawing applies only display-side linear densification and round joins;
+  authoritative waypoints, ETA, adoption, and completed-track semantics do not
+  change.
+- The white vessel dot is now a small top-down ship icon. Its position remains
+  backend ETA + Simulation Clock; its rotation is derived from the active
+  authoritative route segment bearing. Pixel speed remains absent.
+- The Orchestrator bundle declares `presentation.viewer-presentation.v1`:
+  exact risk cells/no interpolation, separate fail-closed hard reasons,
+  display-only route densification, and ETA-based vessel rendering.
+- A real Firefox smoke after the polish rechecked horizon availability,
+  continuous movement, pending/adopted routes, layer toggles, and both modes;
+  console errors/warnings were zero.
+
 ### How to build artifacts (orchestrator side)
 
 ```bash
@@ -75,7 +92,8 @@ cd /root/my_project/work_package_d
 - REPLAN_DECIDED != REPLAN_ADOPTED (pending route shown separately)
 - Completed track is append-only
 - Replan only changes future route
-- Viewer does not invent speed or bend route geometry
+- Viewer does not invent speed or bend route geometry; display densification is
+  collinear and presentation-only.
 
 ## Legacy Display Layer (pre-Viewer)
 

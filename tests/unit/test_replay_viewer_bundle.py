@@ -41,6 +41,11 @@ def test_bundle_gates_and_basemap(bundle: dict) -> None:
     assert bundle["gates"]["l2_status"] == "PASS"
     assert bundle["basemap"]["projection"] == "EPSG:4326"
     assert bundle["replay"]["manifest_semantic_digest"].startswith("1bdcbce5")
+    assert bundle["presentation"]["schema_version"] == "presentation.viewer-presentation.v1"
+    assert bundle["presentation"]["risk_rendering"]["geometry_policy"] == (
+        "exact_authoritative_cells_no_interpolation"
+    )
+    assert bundle["presentation"]["route_rendering"]["authoritative_semantics_unchanged"]
 
 
 def test_bundle_intermediate_ship_positions_change(bundle: dict) -> None:

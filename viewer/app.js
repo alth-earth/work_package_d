@@ -15,6 +15,7 @@
   const riskStatusEl = document.getElementById("risk-status");
   const riskHorizonSel = document.getElementById("risk-horizon");
   const riskHorizonStatusEl = document.getElementById("risk-horizon-status");
+  const routeStatusEl = document.getElementById("route-status");
   const layerRisk = document.getElementById("layer-risk");
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
@@ -39,6 +40,18 @@
     3: "#f2c14e",
     4: "#ef8b3a",
     5: "#e35d6a",
+  };
+  const PRESENTATION_RISK_COLORS = {
+    1: "#7bd6a5",
+    2: "#83c7df",
+    3: "#f0cc6a",
+    4: "#efa26e",
+    5: "#e77d88",
+  };
+  const HARD_COLORS = {
+    LAND: "#304858",
+    DATA_UNAVAILABLE: "#8a63d2",
+    OTHER: "#b54f70",
   };
 
   function isoToMs(value) {
@@ -75,6 +88,60 @@
     const x = ((lon - b.min_lon) / (b.max_lon - b.min_lon)) * canvas.width;
     const y = ((b.max_lat - lat) / (b.max_lat - b.min_lat)) * canvas.height;
     return { x, y };
+  }
+
+  function coordinateOf(point) {
+    return { lon: point.lon ?? point.longitude, lat: point.lat ?? point.latitude };
+  }
+
+  // Display-only densification keeps every point on the authoritative straight
+  // segment. It improves anti-aliasing/line joins without bending the route or
+  // changing ETA, ship physics, or hard-cell semantics.
+  function densifyPoints(points, subdivisions = 4) {
+    if (points.length < 2 || subdivisions < 2) return points;
+    const result = [];
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const start = points[i];
+      const end = points[i + 1];
+      const a = coordinateOf(start);
+      const b = coordinateOf(end);
+      for (let step = 0; step < subdivisions; step += 1) {
+        const f = step / subdivisions;
+        const item = { lon: a.lon + (b.lon - a.lon) * f, lat: a.lat + (b.lat - a.lat) * f };
+        if (start.eta && end.eta) {
+          const etaMs = isoToMs(start.eta) + (isoToMs(end.eta) - isoToMs(start.eta)) * f;
+          item.eta = new Date(etaMs).toISOString();
+        }
+        result.push(item);
+      }
+    }
+    result.push(points[points.length - 1]);
+    return result;
+  }
+
+  function bearingDegrees(start, end) {
+    const a = coordinateOf(start);
+    const b = coordinateOf(end);
+    const lat1 = a.lat * Math.PI / 180;
+    const lat2 = b.lat * Math.PI / 180;
+    const deltaLon = (b.lon - a.lon) * Math.PI / 180;
+    const y = Math.sin(deltaLon) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) -
+      Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+
+  function shipHeading(s, active) {
+    if (!active || !active.waypoints || active.waypoints.length < 2) return 0;
+    if (s.segment && s.segment.start_eta && s.segment.end_eta) {
+      const start = active.waypoints.find((point) => point.eta === s.segment.start_eta);
+      const end = active.waypoints.find((point) => point.eta === s.segment.end_eta);
+      if (start && end) return bearingDegrees(start, end);
+    }
+    const index = Number.isInteger(s.edgeIndex) ? s.edgeIndex : 0;
+    const start = active.waypoints[Math.max(0, Math.min(index, active.waypoints.length - 2))];
+    const end = active.waypoints[Math.max(1, Math.min(index + 1, active.waypoints.length - 1))];
+    return bearingDegrees(start, end);
   }
 
   function timelineIndex(ms) {
@@ -236,6 +303,7 @@
       (basemap.bbox.max_lon - basemap.bbox.min_lon) / cols;
     const latStep = (lats.length > 1 ? Math.abs(lats[1] - lats[0]) : 0) ||
       (basemap.bbox.max_lat - basemap.bbox.min_lat) / rows;
+    const presentationRiskPaths = {};
     ctx.save();
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
@@ -244,27 +312,46 @@
         const level = Number(frame.risk_levels[index] || 0);
         const nw = project(lons[col] - lonStep / 2, lats[row] + latStep / 2);
         const se = project(lons[col] + lonStep / 2, lats[row] - latStep / 2);
-        const x = Math.min(nw.x, se.x);
-        const y = Math.min(nw.y, se.y);
-        const width = Math.abs(se.x - nw.x) + 1;
-        const height = Math.abs(se.y - nw.y) + 1;
+        // Pixel-align presentation fills so adjacent translucent cells do not
+        // leave anti-aliased seams. The geographic cell identity is unchanged.
+        const x = Math.floor(Math.min(nw.x, se.x));
+        const y = Math.floor(Math.min(nw.y, se.y));
+        const right = Math.ceil(Math.max(nw.x, se.x));
+        const bottom = Math.ceil(Math.max(nw.y, se.y));
+        const width = right - x + 1;
+        const height = bottom - y + 1;
         if (reason === "NONE" && layers.risk && RISK_COLORS[level]) {
-          ctx.fillStyle = RISK_COLORS[level];
-          ctx.globalAlpha = 0.34;
-          ctx.fillRect(x, y, width, height);
+          if (presentationMode) {
+            if (!presentationRiskPaths[level]) presentationRiskPaths[level] = new Path2D();
+            presentationRiskPaths[level].rect(x, y, width, height);
+          } else {
+            ctx.fillStyle = RISK_COLORS[level];
+            ctx.globalAlpha = 0.34;
+            ctx.fillRect(x, y, width, height);
+            ctx.globalAlpha = 0.25;
+            ctx.strokeStyle = "#d8efff";
+            ctx.lineWidth = 0.6;
+            ctx.strokeRect(x, y, width, height);
+          }
         } else if (reason !== "NONE" && layers.hard) {
-          const color = reason === "LAND" ? "#263746" :
-            reason === "DATA_UNAVAILABLE" ? "#8a63d2" : "#b54f70";
+          const color = HARD_COLORS[reason] || HARD_COLORS.OTHER;
           ctx.fillStyle = color;
-          ctx.globalAlpha = 0.45;
+          ctx.globalAlpha = presentationMode ? 0.34 : 0.45;
           ctx.fillRect(x, y, width, height);
-          ctx.globalAlpha = 0.72;
+          ctx.globalAlpha = presentationMode ? 0.62 : 0.72;
           ctx.strokeStyle = color;
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 3]);
+          ctx.lineWidth = presentationMode ? 1.2 : 1;
+          ctx.setLineDash(presentationMode ? [5, 4] : [3, 3]);
           ctx.strokeRect(x, y, width, height);
           ctx.setLineDash([]);
         }
+      }
+    }
+    if (presentationMode && layers.risk) {
+      for (const [level, path] of Object.entries(presentationRiskPaths)) {
+        ctx.fillStyle = PRESENTATION_RISK_COLORS[level];
+        ctx.globalAlpha = 0.25;
+        ctx.fill(path);
       }
     }
     ctx.restore();
@@ -275,11 +362,14 @@
       (point) => !point.eta || isoToMs(point.eta) - startMs >= filterFutureMs
     );
     if (visible.length < 2) return;
+    const rendered = densifyPoints(visible);
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     ctx.setLineDash(dash);
     ctx.beginPath();
-    visible.forEach((point, index) => {
+    rendered.forEach((point, index) => {
       const geo = project(point.lon ?? point.longitude, point.lat ?? point.latitude);
       if (index === 0) ctx.moveTo(geo.x, geo.y);
       else ctx.lineTo(geo.x, geo.y);
@@ -305,15 +395,12 @@
         (waypoint) => isoToMs(waypoint.eta) - startMs >= simMs
       );
       if (future.length) {
-        ctx.strokeStyle = "#3d9be9";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(pos.x, pos.y);
-        future.forEach((waypoint) => {
-          const geo = project(waypoint.lon, waypoint.lat);
-          ctx.lineTo(geo.x, geo.y);
-        });
-        ctx.stroke();
+        drawPath(
+          [{ lon: s.lon, lat: s.lat, eta: formatAbsolute(s.time) }, ...future],
+          "#49a9ed",
+          3.5,
+          []
+        );
       }
     }
 
@@ -334,17 +421,47 @@
       }
     }
 
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffffff";
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#0f2b3b";
-    ctx.stroke();
-    updateDebug(s);
+    const heading = shipHeading(s, active);
+    drawShipIcon(pos, heading);
+    updateDebug(s, heading);
   }
 
-  function updateDebug(s) {
+  function drawShipIcon(pos, heading) {
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(heading * Math.PI / 180);
+    ctx.beginPath();
+    ctx.moveTo(0, -15);
+    ctx.quadraticCurveTo(6, -7, 6, 1);
+    ctx.lineTo(4.5, 9);
+    ctx.lineTo(0, 13);
+    ctx.lineTo(-4.5, 9);
+    ctx.lineTo(-6, 1);
+    ctx.quadraticCurveTo(-6, -7, 0, -15);
+    ctx.closePath();
+    ctx.fillStyle = "#f5fbff";
+    ctx.fill();
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = "#092337";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-3, -1);
+    ctx.lineTo(3, -1);
+    ctx.lineTo(2.5, 5);
+    ctx.lineTo(-2.5, 5);
+    ctx.closePath();
+    ctx.fillStyle = "#3d9be9";
+    ctx.fill();
+    if (!presentationMode) {
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#0f2b3b";
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function updateDebug(s, heading) {
     const event = lastEvent(simMs);
     const selection = s.riskSelection;
     const riskValidMs = selection && selection.actual_valid_time
@@ -355,6 +472,7 @@
       ["simulation_time", formatAbsolute(s.time)],
       ["vessel lon/lat", `${s.lon.toFixed(4)} / ${s.lat.toFixed(4)}`],
       ["speed knots", (s.kn ?? 0).toFixed(2)],
+      ["course / heading", `${heading.toFixed(1)}°`],
       ["edge_progress", (s.edge ?? 0).toFixed(4)],
       ["active_plan_revision", s.active],
       ["pending_plan_revision", s.pendingRevision ?? "null"],
@@ -377,6 +495,12 @@
     debugEl.innerHTML = rows
       .map(([key, value]) => `<dt>${key}</dt><dd>${value}</dd>`)
       .join("");
+    if (routeStatusEl) {
+      const pending = s.pendingRoute && s.pendingRoute.revision !== s.active
+        ? ` · pending R${s.pendingRoute.revision}`
+        : "";
+      routeStatusEl.textContent = `Active route R${s.active}${pending}`;
+    }
     if (!selection || selection.availability !== "AVAILABLE") {
       riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} unavailable`;
       riskHorizonStatusEl.textContent = selection
@@ -430,6 +554,7 @@
     presentationMode = !presentationMode;
     debugPanel.hidden = presentationMode;
     toggleDebugBtn.textContent = presentationMode ? "Engineering Debug" : "Presentation Mode";
+    document.body.dataset.mode = presentationMode ? "presentation" : "engineering";
     draw();
   });
 
@@ -480,6 +605,7 @@
           draw();
         }
       },
+      shipHeading: () => shipHeading(stateAt(simMs), routeFor(stateAt(simMs).active)),
       setSimulationMs: (value) => {
         simMs = Math.max(0, Math.min(totalMs, Number(value)));
         playing = false;
@@ -489,6 +615,7 @@
         draw();
       },
     };
+    document.body.dataset.mode = "presentation";
     requestAnimationFrame(frame);
   }
 

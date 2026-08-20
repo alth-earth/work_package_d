@@ -1,5 +1,20 @@
 # 工作包 D 变更记录
 
+## Unreleased - Viewer Presentation Polish（2026-08-21 01:20 +08:00）
+
+- feat: Presentation Mode uses softer exact-cell risk rendering with pixel
+  aligned fills; Engineering Debug keeps the raw cell grid and diagnostics;
+  `LAND` / `DATA_UNAVAILABLE` / `OTHER` remain separate and fail-closed;
+- feat: route rendering adds display-only collinear densification and round
+  joins, without changing authoritative route waypoints, ETA, adoption, or
+  completed-track semantics;
+- feat: replace the white vessel dot with a top-down ship icon rotated from the
+  active authoritative route segment bearing; physical position remains the
+  backend ETA + Simulation Clock contract;
+- test: real Firefox smoke rechecked horizon, ship movement, layer controls,
+  pending/adopted routes, Presentation/Engineering mode, and zero console
+  errors/warnings; D suite remains 54 passed, ruff and JS syntax clean.
+
 ## Unreleased - Viewer Product Mainline（2026-08-20 21:13 +08:00）
 
 - feat: add Current/+6h/+12h/+24h risk horizon controls backed by the

@@ -1,7 +1,7 @@
 # 工作包 D 交接说明
 
-> Status: CURRENT — Replay-driven Viewer adoption（2026-08-20）
-> 更新：2026-08-20。D 现为 **Viewer 唯一实现 owner**（HTML/JS/CSS、
+> Status: CURRENT — Replay-driven Viewer presentation polish（2026-08-21）
+> 更新：2026-08-21。D 现为 **Viewer 唯一实现 owner**（HTML/JS/CSS、
 > Simulation Clock UI、moving ship、静态 server、proof renderer），
 > 消费 orchestrator `scripts/replay_viewer_export.py` 导出的稳定制品
 > （`bundle.json` / `gebco_basemap.png` / `basemap_metadata.json`）。
@@ -35,6 +35,13 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
   Completed Track 可分别开关。
 - 10:30 +6h 的实际 frame 是 16:00（+5h30m，floor）；10:30 +12h/+24h
   因 requested valid time 超出 22:00 frame 范围而 UNAVAILABLE，不复用旧 frame。
+- Presentation polish（2026-08-21）：风险填充使用 presentation-only 的
+  pixel-aligned exact cells，Debug 保留 cell grid；路线只做 collinear display
+  densification/round join；船改为按 active segment bearing 旋转的俯视图标，
+  位置和物理速度合同不变。
+- Bundle 的 `presentation.viewer-presentation.v1` 由 Orchestrator 声明绘制
+  边界：risk/hard 不插值，route densification 不改变 authoritative semantics，
+  ship position 来自 timeline ETA。
 
 真实 Firefox E2E：页面/GEBCO/路线/船/risk overlay 均可见；Play/Pause、scrub、
 1x/2x/4x/8x 已操作；10:00/10:30/11:00 船位为
@@ -85,8 +92,7 @@ temporal provenance。
 ## 下一步
 
 - Pre-demo final（完整答辩流程彩排、恢复演练、独立备份）；
-- **NEXT PHASE（Viewer 产品开发主线）**：route/replanning presentation polish
-  → browser rehearsal → Demo Freeze
+- **NEXT PHASE（Viewer 产品开发主线）**：browser rehearsal → Demo Freeze
   （不再做 governance 修补轮）；
 - v2 后备展示不进入 Demo 主线。
 

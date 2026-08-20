@@ -37,6 +37,12 @@ body {
   gap: 10px;
 }
 
+.subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
 .badges {
   display: flex;
   gap: 8px;
@@ -69,6 +75,7 @@ body {
   background: #05090d;
   overflow: hidden;
   border-radius: 4px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.22);
 }
 
 #map {
@@ -144,6 +151,11 @@ input[type="range"] {
 
 .mode-row {
   margin-top: 10px;
+}
+
+.route-status {
+  margin-top: 8px;
+  color: #b8d7ea;
 }
 
 .horizon-row {
@@ -236,11 +248,37 @@ select {
 }
 
 .sw-vessel {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #ffffff;
+  width: 8px;
+  height: 16px;
+  border-radius: 6px 6px 4px 4px;
+  background: #f5fbff;
   border: 2px solid #0f2b3b;
+}
+
+.sw-risk-2 {
+  background: #83c7df;
+}
+
+.sw-risk-4 {
+  background: #efa26e;
+}
+
+.sw-hard-land {
+  height: 8px;
+  background: #304858;
+  border: 1px dashed #9bb9ca;
+}
+
+.sw-hard-unknown {
+  height: 8px;
+  background: #8a63d2;
+  border: 1px dashed #e4d8ff;
+}
+
+.sw-hard-other {
+  height: 8px;
+  background: #b54f70;
+  border: 1px dashed #f2c1d0;
 }
 
 .sw-risk-1 {

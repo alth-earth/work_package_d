@@ -11,6 +11,7 @@
     <header class="topbar">
       <div class="title">
         <strong>Arctic Route Replay</strong>
+        <span class="subtitle">Causal replay · presentation viewer</span>
         <span id="mode-badge" class="badge">causal_replay</span>
       </div>
       <div class="badges">
@@ -49,6 +50,7 @@
             <span id="risk-status" class="status">risk overlay loading</span>
             <button id="toggle-debug" type="button" class="btn small">Engineering Debug</button>
           </div>
+          <div id="route-status" class="status route-status">active route loading</div>
           <div class="horizon-row">
             <label for="risk-horizon">risk horizon</label>
             <select id="risk-horizon">
@@ -64,10 +66,14 @@
         <section class="block legend">
           <h2>Layers</h2>
           <ul>
-            <li><i class="sw sw-risk-1"></i>risk level 1</li>
-            <li><i class="sw sw-risk-3"></i>risk level 3</li>
-            <li><i class="sw sw-risk-5"></i>risk level 5</li>
-            <li><i class="sw sw-hard"></i>hard / unavailable (not safe)</li>
+            <li><i class="sw sw-risk-1"></i>risk level 1 · low</li>
+            <li><i class="sw sw-risk-2"></i>risk level 2</li>
+            <li><i class="sw sw-risk-3"></i>risk level 3 · medium</li>
+            <li><i class="sw sw-risk-4"></i>risk level 4</li>
+            <li><i class="sw sw-risk-5"></i>risk level 5 · high</li>
+            <li><i class="sw sw-hard-land"></i>LAND · hard unavailable</li>
+            <li><i class="sw sw-hard-unknown"></i>DATA_UNAVAILABLE · unknown</li>
+            <li><i class="sw sw-hard-other"></i>OTHER · hard unavailable</li>
             <li><i class="sw sw-track"></i>completed track</li>
             <li><i class="sw sw-active"></i>authoritative future route</li>
             <li><i class="sw sw-pending"></i>pending route</li>
