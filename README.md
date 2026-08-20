@@ -1,4 +1,59 @@
-# 工作包 D：只读展示层（骨架）
+---
+Document Status: ACTIVE_SUPPORTING
+Scope: work package D README
+Canonical For: D ownership and viewer application
+Branch: demo-engineering
+Last Verified: 2026-08-20
+Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
+---
+
+# Work Package D: Display / Visualization / Presentation
+
+D owns the Replay-driven Viewer application: HTML/JS/CSS, Simulation Clock,
+moving ship rendering, route/track/pending rendering, static server, and proof
+renderer. D consumes only JSON/PNG artifacts produced by the orchestrator's
+`scripts/replay_viewer_export.py` — it never imports orchestrator private
+Python modules.
+
+## Replay-driven Viewer (2026-08-20)
+
+The viewer lives in `viewer/`:
+- `index.html` / `style.css` / `app.js` — browser application
+- `embed.py` — self-contained HTML builder
+- `pngcodec.py` — pure-Python PNG codec (no numpy dependency)
+- `render_proof.py` — offline proof image renderer
+- `README.md` — viewer-specific documentation
+
+The static server lives in `scripts/replay_viewer_serve.py`.
+
+### How to build artifacts (orchestrator side)
+
+```bash
+cd /root/my_project/arctic_route_orchestrator
+./.venv/bin/python scripts/replay_viewer_export.py   /path/to/causal-replay-manifest.json   --data-root /root/my_project/work_package_a/data   --route-id tromso_to_isfjorden_outer   --output-dir /root/my_project/work_package_d/viewer
+```
+
+### How to run the viewer
+
+```bash
+cd /root/my_project/work_package_d
+./.venv/bin/python scripts/replay_viewer_serve.py --viewer-dir viewer --port 8123
+```
+
+### Business principles
+
+- Ship position = route waypoint ETA + simulation_time (NOT pixels/s)
+- Simulation Clock drives all layers (ship, route, risk)
+- REPLAN_DECIDED != REPLAN_ADOPTED (pending route shown separately)
+- Completed track is append-only
+- Replan only changes future route
+- Viewer does not invent speed or bend route geometry
+
+## Legacy Display Layer (pre-Viewer)
+
+The following describes the older D display layer that consumed C published
+route plan artifacts directly. It is still functional but the Replay-driven
+Viewer above is the current active development path.
 
 > 状态：**RC1 真实制品消费 PASS（2026-08-16）**。v3 整组/ v2 后备的读取、分组、
 > 状态机与渲染摘要已实现并消费真实 r6/r7 输出（initial + replanned）；离线本地
@@ -10,12 +65,12 @@
 > Live 按钮 + 进度反馈（`/api/live/start` / `/api/live/status`），仍无任何外部依赖。
 > Route Geospatial Integrity（2026-08-17）：机器审计 48/48 冻结路线 PASS，
 > 修复 Viewer 双投影导致的视觉穿 LAND，gate 并入 `demo preflight`；
-> 见根目录 `ROUTE_GEOSPATIAL_INTEGRITY_AUDIT_20260817.md`。
+> 见 [ROUTE_GEOSPATIAL_INTEGRITY_AUDIT_20260817.md](../arctic_route_governance/reports/audits/ROUTE_GEOSPATIAL_INTEGRITY_AUDIT_20260817.md)。
 > Temporal Semantics Audit（2026-08-17）：`scripts/temporal_semantics_audit.py`
 > 机器审计冻结制品时间语义（145 帧 = 单一 knowledge 快照 × valid_time、
 > +6h replan = 同窗后缀重规划），产物
 > `temporal-semantics-audit.json`；见根目录
-> `TEMPORAL_SEMANTICS_AUDIT_20260817.md`。
+> [TEMPORAL_SEMANTICS_AUDIT_20260817.md](../arctic_route_governance/reports/audits/TEMPORAL_SEMANTICS_AUDIT_20260817.md)。
 > Causal Replay Feasibility（2026-08-17）：A 侧
 > `scripts/causal_replay_feasibility_audit.py` 输出
 > `causal-replay-feasibility.json`（A 19h / B 44h 末期因果窗口）；
@@ -23,7 +78,7 @@
 > 诚实展示。见 `CAUSAL_REPLAY_FEASIBILITY_AUDIT_20260817.md`。
 > Causal Replay Engine MVP（2026-08-18）：orchestrator replay 引擎真实
 > 12h/24h/44h PASS；C 四层 PLANNING-HORIZON BLOCKER。见
-> `CAUSAL_REPLAY_MVP_20260818.md`。
+> [CAUSAL_REPLAY_MVP_20260818.md](../arctic_route_governance/reports/strategy-b/CAUSAL_REPLAY_MVP_20260818.md)。
 > 主线口径：v3 四层 × 三目标（12 路线整组）+ 重规划为演示主线，v2 三目标为强制后备
 > （2026-08-15 确认）。
 
@@ -114,4 +169,4 @@ Frozen loader 同时从发布制品读取 `scenario_mode`（RunContext）与
 
 - [C→D 合同](../work_package_c/docs/CD_CONTRACT.md)
 - [D 展示层选型评估](../D_SELECTION_EVALUATION_v2_vs_v3.md)
-- [顶层系统权威](../ARCTIC_ROUTE_SYSTEM.md)
+- [顶层系统权威](../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md)

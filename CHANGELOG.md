@@ -1,5 +1,24 @@
 # 工作包 D 变更记录
 
+## Unreleased - 2026-08-20（Replay-driven Viewer adoption）
+
+- feat: adopt replay-driven viewer application from orchestrator;
+  D now owns HTML/JS/CSS (`viewer/index.html`, `app.js`, `style.css`),
+  Simulation Clock, moving ship, route/track/pending rendering,
+  static server (`scripts/replay_viewer_serve.py`),
+  and proof renderer (`viewer/render_proof.py`);
+- added `viewer/pngcodec.py`: pure-Python PNG codec (no numpy dependency);
+  fixed bytearray slice bug in `read_png_rgb` (output was a copy, not a view);
+- added `viewer/embed.py`: self-contained HTML builder (copied from orchestrator);
+- added `viewer/README.md`: viewer-specific documentation;
+- added `tests/unit/test_replay_viewer_bundle.py` (moved from orchestrator);
+- added `tests/unit/test_pngcodec.py`: round-trip tests for filters 0/1/4 + RGBA;
+- updated README to reflect D ownership of Replay-driven Viewer;
+- D consumes only JSON/PNG artifacts from orchestrator export; never imports
+  orchestrator private modules;
+- D tests: 50 passed; ruff clean; render_proof produces valid PNG;
+
+
 ## Unreleased - 2026-08-18（Strategy B 关联）
 
 - D 生产代码无改动；文档同步 Strategy B：orchestrator replay 引擎

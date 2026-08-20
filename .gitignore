@@ -8,3 +8,11 @@
 __pycache__/
 *.py[cod]
 output/
+
+# Viewer generated artifacts (produced by orchestrator export)
+viewer/bundle.json
+viewer/gebco_basemap.png
+viewer/basemap_metadata.json
+viewer/replay-viewer-preflight.json
+viewer/index_self_contained.html
+viewer/replay-viewer-proof-*.png
