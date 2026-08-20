@@ -26,6 +26,27 @@ The viewer lives in `viewer/`:
 
 The static server lives in `scripts/replay_viewer_serve.py`.
 
+## Viewer Product Mainline（2026-08-20 21:13 +08:00）
+
+The current D mainline is browser-verified on the real
+`sb-viewer-baseline-12h-det` artifact:
+
+- `bundle.json` carries presentation-ready `bc.risk-frame.v2` spatial frames;
+  D only selects and renders them;
+- one Simulation Clock drives vessel, risk frame, route state, completed
+  track, and events; hourly risk cadence is independent from continuous ship
+  rendering;
+- `LAND`, `DATA_UNAVAILABLE`, and other hard reasons are a separate overlay;
+  unknown is never rendered as safe;
+- active, pending, and superseded future routes remain distinct;
+  `REPLAN_DECIDED` leaves the active route unchanged until `REPLAN_ADOPTED`;
+- Presentation Mode and Engineering Debug Mode are separated by the toggle.
+
+Browser evidence is kept outside Git under
+`/root/my_project/.runtime/viewer-proof/`. Verified environment: Firefox on
+`127.0.0.1:8131`, 30 static requests all HTTP 200, zero console errors or
+warnings. D full tests: 53 passed; ruff and JS syntax are clean.
+
 ### How to build artifacts (orchestrator side)
 
 ```bash
@@ -37,7 +58,7 @@ cd /root/my_project/arctic_route_orchestrator
 
 ```bash
 cd /root/my_project/work_package_d
-./.venv/bin/python scripts/replay_viewer_serve.py --viewer-dir viewer --port 8123
+./.venv/bin/python scripts/replay_viewer_serve.py --root viewer --port 8123
 ```
 
 ### Business principles

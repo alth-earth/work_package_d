@@ -13,6 +13,27 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
 输出 `d.display-snapshot.v1`；并运行 **Replay-driven Viewer**（`viewer/`：
 `app.js`/`index.html`/`style.css` + `pngcodec.py`/`embed.py`/`render_proof.py`）。
 
+## Viewer Product Mainline（2026-08-20 21:13 +08:00）
+
+当前主线已经从 Viewer backend foundation 进入真实浏览器产品基线：
+
+- Orchestrator export 从同一 manifest 目录的 immutable `risk-store/frames/`
+  投影 13 个 replay-window 内的 `bc.risk-frame.v2` hourly frames；D 不读取
+  原始 A/B 数据、不重算 risk；
+- D 的单一 `Simulation Clock` 同时驱动 vessel、risk、route、track、events；
+  risk frame 规则是 `latest_valid_time_at_or_before_simulation_time`；
+- hard reason 独立于 risk level，`LAND`、`DATA_UNAVAILABLE`、`OTHER` 不会被
+  当作低风险/安全；
+- 13:00/13:30 保持 active revision 1 + pending revision 2，15:00 才显示
+  revision 2 adopted；completed track 保持 append-only；
+- Engineering Debug toggle 保留 simulation/risk/replan/L1/L2 诊断，正式图面
+  不堆叠调试文本。
+
+真实 Firefox E2E：页面/GEBCO/路线/船/risk overlay 均可见；Play/Pause、scrub、
+1x/2x/4x/8x 已操作；10:00/10:30/11:00 船位为
+`70.3333/70.4135/70.4938`；console errors/warnings = 0，静态请求全部 200。
+D 当前验证为 53 passed + ruff clean + JS syntax clean。
+
 ## RC1 角色
 
 真实 v3 initial/replanned 制品离线消费 PASS（r6/r7 输出均可生成 complete 快照）。
@@ -57,9 +78,9 @@ temporal provenance。
 ## 下一步
 
 - Pre-demo final（完整答辩流程彩排、恢复演练、独立备份）；
-- **NEXT PHASE（Viewer 产品开发主线）**：Dynamic Risk Overlay → Hard Reason
-  Overlay → Superseded/Replanning Animation → Browser Rehearsal →
-  Presentation Polish → Demo Freeze（不再做 governance 修补轮）；
+- **NEXT PHASE（Viewer 产品开发主线）**：risk horizons（+6/+12/+24）→
+  route/replanning presentation polish → browser rehearsal → Demo Freeze
+  （不再做 governance 修补轮）；
 - v2 后备展示不进入 Demo 主线。
 
 ## 常用命令

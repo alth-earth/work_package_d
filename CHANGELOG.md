@@ -1,5 +1,18 @@
 # 工作包 D 变更记录
 
+## Unreleased - Viewer Product Mainline（2026-08-20 21:13 +08:00）
+
+- added Simulation-Clock-driven current Dynamic Risk overlay from the
+  orchestrator presentation bundle (`bc.risk-frame.v2` frames);
+- added separate hard/availability rendering for `LAND`,
+  `DATA_UNAVAILABLE`, and other hard reasons; unknown is not safe;
+- added superseded future-route rendering and explicit Presentation /
+  Engineering Debug toggle;
+- fixed timeline scrubbing to reconstruct compressed track/pending/superseded
+  state from the timeline prefix, preserving append-only completed track;
+- real Firefox browser E2E passed on `sb-viewer-baseline-12h-det`; D 53 tests,
+  ruff, and JS syntax passed.
+
 ## Unreleased - 2026-08-20（Replay-driven Viewer adoption）
 
 - feat: adopt replay-driven viewer application from orchestrator;

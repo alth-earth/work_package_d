@@ -1,4 +1,4 @@
-/* Replay-driven Viewer MVP. Consumes only the backend presentation bundle. */
+/* Replay-driven Viewer. Rendering consumes only the presentation bundle. */
 (() => {
   "use strict";
 
@@ -10,6 +10,9 @@
   const clockEl = document.getElementById("clock");
   const rangeLabel = document.getElementById("range-label");
   const debugEl = document.getElementById("debug");
+  const debugPanel = document.getElementById("debug-panel");
+  const toggleDebugBtn = document.getElementById("toggle-debug");
+  const riskStatusEl = document.getElementById("risk-status");
 
   let bundle = null;
   let basemap = null;
@@ -20,9 +23,15 @@
   let playing = true;
   let lastTs = null;
   let scale = 60;
-  let refresh = 0;
+  let debugVisible = true;
 
-  const cache = { lastIndex: -1, track: [], pending: null };
+  const RISK_COLORS = {
+    1: "#55c878",
+    2: "#65b8df",
+    3: "#f2c14e",
+    4: "#ef8b3a",
+    5: "#e35d6a",
+  };
 
   function isoToMs(value) {
     return new Date(value).getTime();
@@ -34,6 +43,16 @@
     const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
     const s = String(totalSeconds % 60).padStart(2, "0");
     return `${h}:${m}:${s}`;
+  }
+
+  function formatAbsolute(ms) {
+    return new Date(ms).toISOString().replace("T", " ").slice(0, 19) + "Z";
+  }
+
+  function formatHorizon(validMs, simulationMs) {
+    if (!Number.isFinite(validMs)) return "none";
+    const hours = (validMs - simulationMs) / 3600000;
+    return `${hours >= 0 ? "+" : ""}${hours.toFixed(2)}h`;
   }
 
   function project(lon, lat) {
@@ -55,6 +74,29 @@
     return low;
   }
 
+  function previousTimelineValue(index, key) {
+    for (let i = index; i >= 0; i -= 1) {
+      if (Object.prototype.hasOwnProperty.call(bundle.timeline[i], key)) {
+        return bundle.timeline[i][key];
+      }
+    }
+    return null;
+  }
+
+  function riskAt(ms) {
+    const frames = (bundle.risk && bundle.risk.frames) || [];
+    if (!frames.length) return null;
+    let low = 0;
+    let high = frames.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (isoToMs(frames[mid].valid_time) - startMs <= ms) low = mid;
+      else high = mid - 1;
+    }
+    if (isoToMs(frames[0].valid_time) - startMs > ms) return frames[0];
+    return frames[low];
+  }
+
   function stateAt(ms) {
     const tl = bundle.timeline;
     const i = timelineIndex(ms);
@@ -63,12 +105,9 @@
     const denom = isoToMs(b.t) - isoToMs(a.t) || 1;
     const f = Math.max(0, Math.min(1, (ms - (isoToMs(a.t) - startMs)) / denom));
     const lerp = (x, y) => x + (y - x) * f;
-    cache.lastIndex = i;
-    if (a.track) cache.track = a.track;
-    if (Object.prototype.hasOwnProperty.call(a, "pending")) cache.pending = a.pending;
-    if (a.ctl > cache.track.length) {
-      cache.track = cache.track.slice(0, a.ctl);
-    }
+    const track = previousTimelineValue(i, "track") || [];
+    const pending = previousTimelineValue(i, "pending");
+    const superseded = previousTimelineValue(i, "superseded");
     return {
       time: startMs + ms,
       lon: lerp(a.v.lon, b.v.lon),
@@ -83,8 +122,10 @@
       decisionTime: a.dt,
       effectiveAdoption: a.eat,
       segment: a.seg,
-      track: cache.track,
-      pendingRoute: cache.pending,
+      track: track.slice(0, a.ctl),
+      pendingRoute: pending,
+      supersededRoute: superseded,
+      risk: riskAt(ms),
     };
   }
 
@@ -94,76 +135,134 @@
 
   function lastEvent(ms) {
     let result = null;
+    const priority = {
+      REPLAN_ADOPTED: 100,
+      REPLAN_DECIDED: 95,
+      REPLAN_SKIPPED: 90,
+      PLAN_REUSED: 80,
+      ROUTE_CHANGED: 70,
+    };
     for (const event of bundle.events) {
-      if (isoToMs(event.t) - startMs <= ms) result = event;
+      if (isoToMs(event.t) - startMs <= ms) {
+        if (
+          result === null ||
+          isoToMs(event.t) > isoToMs(result.t) ||
+          (isoToMs(event.t) === isoToMs(result.t) &&
+            (priority[event.type] || 0) >= (priority[result.type] || 0))
+        ) {
+          result = event;
+        }
+      }
       else break;
     }
     return result;
+  }
+
+  function drawRiskFrame(frame) {
+    if (!frame) return;
+    const lats = frame.coordinates.latitude;
+    const lons = frame.coordinates.longitude;
+    const cols = lons.length;
+    const rows = lats.length;
+    const lonStep = Math.abs(lons[1] - lons[0]) ||
+      (basemap.bbox.max_lon - basemap.bbox.min_lon) / cols;
+    const latStep = Math.abs(lats[1] - lats[0]) ||
+      (basemap.bbox.max_lat - basemap.bbox.min_lat) / rows;
+    ctx.save();
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const index = row * cols + col;
+        const reason = frame.hard_reasons[index] || "DATA_UNAVAILABLE";
+        const level = Number(frame.risk_levels[index] || 0);
+        const nw = project(lons[col] - lonStep / 2, lats[row] + latStep / 2);
+        const se = project(lons[col] + lonStep / 2, lats[row] - latStep / 2);
+        const x = Math.min(nw.x, se.x);
+        const y = Math.min(nw.y, se.y);
+        const width = Math.abs(se.x - nw.x) + 1;
+        const height = Math.abs(se.y - nw.y) + 1;
+        if (reason === "NONE" && RISK_COLORS[level]) {
+          ctx.fillStyle = RISK_COLORS[level];
+          ctx.globalAlpha = 0.34;
+          ctx.fillRect(x, y, width, height);
+        } else if (reason !== "NONE") {
+          const color = reason === "LAND" ? "#263746" :
+            reason === "DATA_UNAVAILABLE" ? "#8a63d2" : "#b54f70";
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.45;
+          ctx.fillRect(x, y, width, height);
+          ctx.globalAlpha = 0.72;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.strokeRect(x, y, width, height);
+          ctx.setLineDash([]);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawPath(points, color, width, dash, filterFutureMs = null) {
+    const visible = filterFutureMs === null ? points : points.filter(
+      (point) => !point.eta || isoToMs(point.eta) - startMs >= filterFutureMs
+    );
+    if (visible.length < 2) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
+    ctx.beginPath();
+    visible.forEach((point, index) => {
+      const geo = project(point.lon ?? point.longitude, point.lat ?? point.latitude);
+      if (index === 0) ctx.moveTo(geo.x, geo.y);
+      else ctx.lineTo(geo.x, geo.y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const s = stateAt(simMs);
+    drawRiskFrame(s.risk);
     const pos = project(s.lon, s.lat);
+
+    if (s.supersededRoute && s.supersededRoute.length > 1) {
+      drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs);
+    }
 
     const active = routeFor(s.active);
     if (active) {
-      const future = active.waypoints.filter((w) => isoToMs(w.eta) - startMs >= simMs);
+      const future = active.waypoints.filter(
+        (waypoint) => isoToMs(waypoint.eta) - startMs >= simMs
+      );
       if (future.length) {
         ctx.strokeStyle = "#3d9be9";
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(pos.x, pos.y);
-        for (const w of future) {
-          const p = project(w.lon, w.lat);
-          ctx.lineTo(p.x, p.y);
-        }
+        future.forEach((waypoint) => {
+          const geo = project(waypoint.lon, waypoint.lat);
+          ctx.lineTo(geo.x, geo.y);
+        });
         ctx.stroke();
       }
     }
 
-    if (s.track && s.track.length > 1) {
-      ctx.strokeStyle = "#5cc47a";
-      ctx.lineWidth = 3;
-      ctx.setLineDash([2, 0]);
-      ctx.beginPath();
-      s.track.forEach((p, index) => {
-        const g = project(p.longitude ?? p.lon, p.latitude ?? p.lat);
-        if (index === 0) ctx.moveTo(g.x, g.y);
-        else ctx.lineTo(g.x, g.y);
-      });
-      ctx.stroke();
-      ctx.setLineDash([]);
+    if (s.track.length > 1) {
+      drawPath(s.track, "#5cc47a", 3, []);
     }
 
     if (s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {
-      ctx.strokeStyle = "#f2b134";
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([8, 6]);
-      ctx.beginPath();
-      s.pendingRoute.route.forEach((w, index) => {
-        const p = project(w.lon, w.lat);
-        if (index === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      });
-      ctx.stroke();
-      ctx.setLineDash([]);
+      drawPath(s.pendingRoute.route, "#f2b134", 2.5, [8, 6]);
     }
 
     if (s.segment && s.segment.start_eta && s.segment.end_eta && active) {
       const seg = active.waypoints.filter(
-        (w) => isoToMs(w.eta) >= isoToMs(s.segment.start_eta)
+        (waypoint) => isoToMs(waypoint.eta) >= isoToMs(s.segment.start_eta)
       );
       if (seg.length >= 2) {
-        const a = project(seg[0].lon, seg[0].lat);
-        const b = project(seg[1].lon, seg[1].lat);
-        ctx.strokeStyle = "rgba(255,255,255,0.85)";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
+        drawPath(seg.slice(0, 2), "rgba(255,255,255,0.85)", 1.5, []);
       }
     }
 
@@ -174,14 +273,14 @@
     ctx.lineWidth = 2;
     ctx.strokeStyle = "#0f2b3b";
     ctx.stroke();
-
     updateDebug(s);
   }
 
   function updateDebug(s) {
     const event = lastEvent(simMs);
+    const riskValidMs = s.risk ? isoToMs(s.risk.valid_time) : NaN;
     const rows = [
-      ["simulation_time", new Date(s.time).toISOString().replace("T", " ").slice(0, 19) + "Z"],
+      ["simulation_time", formatAbsolute(s.time)],
       ["vessel lon/lat", `${s.lon.toFixed(4)} / ${s.lat.toFixed(4)}`],
       ["speed knots", (s.kn ?? 0).toFixed(2)],
       ["edge_progress", (s.edge ?? 0).toFixed(4)],
@@ -190,13 +289,22 @@
       ["pending_plan_status", s.pendingStatus ?? "none"],
       ["decision_time", s.decisionTime ?? "null"],
       ["effective_adoption_time", s.effectiveAdoption ?? "null"],
+      ["risk valid_time", s.risk ? s.risk.valid_time : "none"],
+      ["risk presentation horizon", formatHorizon(riskValidMs, s.time)],
+      ["risk level range", bundle.risk ? bundle.risk.level_range.join("-") : "none"],
+      ["hard reason", s.risk ? "separate overlay" : "none"],
       ["last event", event ? `${event.type}@${event.t}` : "none"],
       ["L1", bundle.gates.status || "NOT_RUN"],
       ["L2", bundle.gates.l2_status || "NOT_RUN"],
     ];
     debugEl.innerHTML = rows
-      .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
+      .map(([key, value]) => `<dt>${key}</dt><dd>${value}</dd>`)
       .join("");
+    if (s.risk) {
+      riskStatusEl.textContent = `risk ${s.risk.valid_time} / ${s.risk.provenance || "unknown"}`;
+    } else {
+      riskStatusEl.textContent = "risk overlay unavailable";
+    }
   }
 
   function frame(ts) {
@@ -212,8 +320,7 @@
     lastTs = ts;
     scrub.value = Math.round(simMs);
     clockEl.textContent = formatClock(simMs);
-    refresh += 1;
-    if (refresh % 3 === 0) draw();
+    draw();
     requestAnimationFrame(frame);
   }
 
@@ -227,10 +334,18 @@
     simMs = Number(scrub.value);
     playing = false;
     playBtn.textContent = "Play";
+    clockEl.textContent = formatClock(simMs);
+    draw();
   });
 
   speedSel.addEventListener("change", () => {
     scale = Number(speedSel.value);
+  });
+
+  toggleDebugBtn.addEventListener("click", () => {
+    debugVisible = !debugVisible;
+    debugPanel.hidden = !debugVisible;
+    toggleDebugBtn.textContent = debugVisible ? "Hide engineering" : "Show engineering";
   });
 
   async function start() {
@@ -251,15 +366,26 @@
       canvas.width = basemap.width;
       canvas.height = basemap.height;
       image = new Image();
-      image.onload = () => {
-        requestAnimationFrame(draw);
-      };
+      image.onload = () => draw();
       image.src = window.VIEWER_BASEMAP || "gebco_basemap.png";
     }
+    window.__ARCTIC_VIEWER__ = {
+      stateAt: () => stateAt(simMs),
+      riskAt: () => riskAt(simMs),
+      setSimulationMs: (value) => {
+        simMs = Math.max(0, Math.min(totalMs, Number(value)));
+        playing = false;
+        playBtn.textContent = "Play";
+        scrub.value = Math.round(simMs);
+        clockEl.textContent = formatClock(simMs);
+        draw();
+      },
+    };
     requestAnimationFrame(frame);
   }
 
   start().catch((error) => {
     document.getElementById("hover-info").textContent = `viewer error: ${error}`;
+    console.error(error);
   });
 })();

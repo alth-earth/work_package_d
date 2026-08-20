@@ -99,3 +99,53 @@ def test_replan_skipped_does_not_change_active_revision(bundle: dict) -> None:
     assert at_1100["arv"] == 1
     skipped = [e for e in bundle["events"] if e["type"] == "REPLAN_SKIPPED"]
     assert len(skipped) == 1
+
+
+def test_bundle_projects_current_risk_frames_without_recomputing_them(bundle: dict) -> None:
+    risk = bundle["risk"]
+    assert risk["status"] == "PASS"
+    assert risk["selection_rule"] == "latest_valid_time_at_or_before_simulation_time"
+    assert risk["cadence_seconds"] == 3600
+    assert risk["level_range"] == [1, 5]
+    assert risk["source"]["schema_version"] == "bc.risk-frame.v2"
+    assert risk["source"]["provenance"] == ["formal"]
+    assert len(risk["frames"]) == 13
+    assert [frame["valid_time"] for frame in risk["frames"]] == [
+        f"2026-08-15T{hour:02d}:00:00Z" for hour in range(10, 23)
+    ]
+    hard_reasons = {
+        reason
+        for frame in risk["frames"]
+        for reason in frame["hard_reasons"]
+    }
+    assert {"NONE", "LAND", "DATA_UNAVAILABLE"} <= hard_reasons
+    assert any(
+        reason == "DATA_UNAVAILABLE"
+        for frame in risk["frames"]
+        for reason in frame["hard_reasons"]
+    )
+
+
+def test_pending_and_superseded_routes_are_temporally_distinct(bundle: dict) -> None:
+    timeline = bundle["timeline"]
+    pending_at_1330 = max(
+        entry
+        for entry in timeline
+        if entry["t"] <= "2026-08-15T13:30:00Z" and "pending" in entry
+    )
+    at_1500 = next(entry for entry in timeline if entry["t"] >= "2026-08-15T15:00:00Z")
+    assert pending_at_1330["arv"] == 1
+    assert pending_at_1330["pending"]["revision"] == 2
+    assert "superseded" not in pending_at_1330 or pending_at_1330["superseded"] is None
+    assert at_1500["arv"] == 2
+    assert at_1500["superseded"]
+
+
+def test_completed_track_prefix_is_append_only(bundle: dict) -> None:
+    previous: list[dict] = []
+    for entry in bundle["timeline"]:
+        track = entry.get("track")
+        if track is None:
+            continue
+        assert track[: len(previous)] == previous
+        previous = track

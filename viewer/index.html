@@ -44,11 +44,19 @@
               </select>
             </label>
           </div>
+          <div class="row mode-row">
+            <span id="risk-status" class="status">risk overlay loading</span>
+            <button id="toggle-debug" type="button" class="btn small">Hide engineering</button>
+          </div>
         </section>
 
         <section class="block legend">
           <h2>Layers</h2>
           <ul>
+            <li><i class="sw sw-risk-1"></i>risk level 1</li>
+            <li><i class="sw sw-risk-3"></i>risk level 3</li>
+            <li><i class="sw sw-risk-5"></i>risk level 5</li>
+            <li><i class="sw sw-hard"></i>hard / unavailable (not safe)</li>
             <li><i class="sw sw-track"></i>completed track</li>
             <li><i class="sw sw-active"></i>authoritative future route</li>
             <li><i class="sw sw-pending"></i>pending route</li>
@@ -58,7 +66,7 @@
           </ul>
         </section>
 
-        <section class="block debug">
+        <section id="debug-panel" class="block debug">
           <h2>Debug</h2>
           <dl id="debug"></dl>
         </section>
