@@ -1,11 +1,17 @@
 # 工作包 D 交接说明
 
-> Status: CURRENT — Demo Candidate 2（2026-08-17）
+> Status: CURRENT — Replay-driven Viewer adoption（2026-08-20）
+> 更新：2026-08-20。D 现为 **Viewer 唯一实现 owner**（HTML/JS/CSS、
+> Simulation Clock UI、moving ship、静态 server、proof renderer），
+> 消费 orchestrator `scripts/replay_viewer_export.py` 导出的稳定制品
+> （`bundle.json` / `gebco_basemap.png` / `basemap_metadata.json`）。
+> D 只消费 artifact，**不 import orchestrator 私有 Python 模块**。
 
 ## 当前基线
 
 D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2 后备），
-输出 `d.display-snapshot.v1`。
+输出 `d.display-snapshot.v1`；并运行 **Replay-driven Viewer**（`viewer/`：
+`app.js`/`index.html`/`style.css` + `pngcodec.py`/`embed.py`/`render_proof.py`）。
 
 ## RC1 角色
 
@@ -51,9 +57,9 @@ temporal provenance。
 ## 下一步
 
 - Pre-demo final（完整答辩流程彩排、恢复演练、独立备份）；
-- NEXT PHASE：Simulation Snapshot schema → rolling A→B→C→D replay →
-  GEBCO georeferenced Presentation View → Simulation-clock Viewer →
-  动态 B forecast / C routes / Moving Ship / +6h Replan Event（本轮不实施）；
+- **NEXT PHASE（Viewer 产品开发主线）**：Dynamic Risk Overlay → Hard Reason
+  Overlay → Superseded/Replanning Animation → Browser Rehearsal →
+  Presentation Polish → Demo Freeze（不再做 governance 修补轮）；
 - v2 后备展示不进入 Demo 主线。
 
 ## 常用命令
