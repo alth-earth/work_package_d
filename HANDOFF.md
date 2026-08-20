@@ -20,6 +20,9 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
 - Orchestrator export 从同一 manifest 目录的 immutable `risk-store/frames/`
   投影 13 个 replay-window 内的 `bc.risk-frame.v2` hourly frames；D 不读取
   原始 A/B 数据、不重算 risk；
+- `bundle.json` 额外包含按 Simulation Time 预计算的 Current/+6h/+12h
+  selection index；每项有 requested/actual valid time、actual horizon、
+  selection method、availability 和 fail-closed reason；D 不扫描 risk store；
 - D 的单一 `Simulation Clock` 同时驱动 vessel、risk、route、track、events；
   risk frame 规则是 `latest_valid_time_at_or_before_simulation_time`；
 - hard reason 独立于 risk level，`LAND`、`DATA_UNAVAILABLE`、`OTHER` 不会被
@@ -28,6 +31,10 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
   revision 2 adopted；completed track 保持 append-only；
 - Engineering Debug toggle 保留 simulation/risk/replan/L1/L2 诊断，正式图面
   不堆叠调试文本。
+- Presentation Mode 默认隐藏 Debug；Risk、Hard/Availability、Routes、
+  Completed Track 可分别开关。
+- 10:30 +6h 的实际 frame 是 16:00（+5h30m，floor）；10:30 +12h/+24h
+  因 requested valid time 超出 22:00 frame 范围而 UNAVAILABLE，不复用旧 frame。
 
 真实 Firefox E2E：页面/GEBCO/路线/船/risk overlay 均可见；Play/Pause、scrub、
 1x/2x/4x/8x 已操作；10:00/10:30/11:00 船位为
@@ -78,8 +85,8 @@ temporal provenance。
 ## 下一步
 
 - Pre-demo final（完整答辩流程彩排、恢复演练、独立备份）；
-- **NEXT PHASE（Viewer 产品开发主线）**：risk horizons（+6/+12/+24）→
-  route/replanning presentation polish → browser rehearsal → Demo Freeze
+- **NEXT PHASE（Viewer 产品开发主线）**：route/replanning presentation polish
+  → browser rehearsal → Demo Freeze
   （不再做 governance 修补轮）；
 - v2 后备展示不进入 Demo 主线。
 

@@ -47,8 +47,18 @@
           </div>
           <div class="row mode-row">
             <span id="risk-status" class="status">risk overlay loading</span>
-            <button id="toggle-debug" type="button" class="btn small">Hide engineering</button>
+            <button id="toggle-debug" type="button" class="btn small">Engineering Debug</button>
           </div>
+          <div class="horizon-row">
+            <label for="risk-horizon">risk horizon</label>
+            <select id="risk-horizon">
+              <option value="current">Current</option>
+              <option value="+6h">+6h</option>
+              <option value="+12h">+12h</option>
+              <option value="+24h">+24h</option>
+            </select>
+          </div>
+          <div id="risk-horizon-status" class="status horizon-status">risk horizon loading</div>
         </section>
 
         <section class="block legend">
@@ -67,7 +77,15 @@
           </ul>
         </section>
 
-        <section id="debug-panel" class="block debug">
+        <section class="block layer-controls">
+          <h2>Presentation layers</h2>
+          <label><input id="layer-risk" type="checkbox" checked /> Risk</label>
+          <label><input id="layer-hard" type="checkbox" checked /> Hard / availability</label>
+          <label><input id="layer-routes" type="checkbox" checked /> Routes</label>
+          <label><input id="layer-track" type="checkbox" checked /> Completed track</label>
+        </section>
+
+        <section id="debug-panel" class="block debug" hidden>
           <h2>Debug</h2>
           <dl id="debug"></dl>
         </section>

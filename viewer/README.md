@@ -46,7 +46,8 @@ cd /root/my_project/work_package_d
 ./.venv/bin/python scripts/replay_viewer_serve.py --root viewer --port 8131
 ```
 
-打开 `http://127.0.0.1:8131/`（Play/Pause、scrub、1x/2x/4x/8x、debug panel）。
+打开 `http://127.0.0.1:8131/`（Play/Pause、scrub、1x/2x/4x/8x、Current/
++6h/+12h/+24h horizon、layer toggles、Presentation/Engineering Debug mode）。
 
 无 server 单文件方式：
 
@@ -79,9 +80,12 @@ land_sea_mask: 1 = sea, 0 = land_or_coast
 ## 控件与 Debug
 
 `Simulation Clock`（唯一主时间）；Play / Pause / scrub；1x/2x/4x/8x 只改变
-`simulation seconds / wall-clock second`，不改变业务船速。Debug 面板显示
+`simulation seconds / wall-clock second`，不改变业务船速。Presentation Mode 显示
+requested risk horizon、requested/actual risk valid time、actual horizon、
+availability 和 risk/hard/route legend；Engineering Debug 面板额外显示
 `simulation_time`、vessel lon/lat、speed knots、edge progress、active/pending
-plan revision、decision/effective adoption time、last event、L1/L2 status。
+plan revision、decision/effective adoption time、selection method、risk frame
+id、last event、L1/L2 status。切换 horizon 不改变 Simulation Time。
 
 ## 目录
 
@@ -102,5 +106,7 @@ scripts/replay_viewer_serve.py  D 静态 server + /api/state
   `scripts/replay_viewer_preflight.py`、`scripts/replay_l2_preflight.py`。
 - D 拥有：HTML/JS/CSS、Simulation Clock UI、ship/route/track/pending 渲染、
   GEBCO basemap 展示、静态 server、proof 渲染。
-- 未完成（NEXT）：Dynamic Risk overlay、Hard Reason overlay、superseded route
-  绘制、replanning animation、最终 UI polish。
+- 已完成：Current/+6h/+12h/+24h horizon selection、fail-closed unavailable
+  semantics、Hard Reason overlay、superseded route 绘制和两种展示模式。
+- NEXT：更丰富但不改变业务语义的 replanning animation、最终 UI polish、
+  demo rehearsal、Demo Freeze。

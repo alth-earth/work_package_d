@@ -126,6 +126,35 @@ def test_bundle_projects_current_risk_frames_without_recomputing_them(bundle: di
     )
 
 
+def test_risk_horizon_selection_is_explicit_and_fail_closed(bundle: dict) -> None:
+    risk = bundle["risk"]
+    assert risk["supported_horizons_hours"] == [0, 6, 12, 24]
+    assert risk["horizon_selection_rules"]["current"] == (
+        "latest_valid_time_at_or_before_simulation_time"
+    )
+    assert risk["horizon_selection_rules"]["future"] == (
+        "floor_valid_time_at_or_before_requested_valid_time"
+    )
+
+    at_1000 = next(
+        item for item in risk["horizon_selections"]
+        if item["simulation_time"] == "2026-08-15T10:00:00Z"
+    )
+    at_1030 = next(
+        item for item in risk["horizon_selections"]
+        if item["simulation_time"] == "2026-08-15T10:30:00Z"
+    )
+    assert at_1000["available_horizons"] == ["current", "+6h", "+12h"]
+    assert at_1000["selections"]["+6h"]["selection_method"] == (
+        "exact_requested_valid_time"
+    )
+    assert at_1030["selections"]["+6h"]["actual_valid_time"] == "2026-08-15T16:00:00Z"
+    assert at_1030["selections"]["+6h"]["actual_horizon_seconds"] == 19800
+    assert at_1030["selections"]["+12h"]["availability"] == "UNAVAILABLE"
+    assert at_1030["selections"]["+12h"]["actual_valid_time"] is None
+    assert at_1030["selections"]["+12h"]["frame_index"] is None
+
+
 def test_pending_and_superseded_routes_are_temporally_distinct(bundle: dict) -> None:
     timeline = bundle["timeline"]
     pending_at_1330 = max(

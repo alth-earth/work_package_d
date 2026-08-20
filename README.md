@@ -33,6 +33,9 @@ The current D mainline is browser-verified on the real
 
 - `bundle.json` carries presentation-ready `bc.risk-frame.v2` spatial frames;
   D only selects and renders them;
+- Orchestrator also emits precomputed Current / +6h / +12h / +24h selections
+  per Simulation Time, including requested/actual valid time, actual horizon,
+  selection method, availability, and fail-closed reason;
 - one Simulation Clock drives vessel, risk frame, route state, completed
   track, and events; hourly risk cadence is independent from continuous ship
   rendering;
@@ -41,11 +44,15 @@ The current D mainline is browser-verified on the real
 - active, pending, and superseded future routes remain distinct;
   `REPLAN_DECIDED` leaves the active route unchanged until `REPLAN_ADOPTED`;
 - Presentation Mode and Engineering Debug Mode are separated by the toggle.
+- Presentation layers can be toggled independently: Risk, Hard/Availability,
+  Routes, and Completed Track. Presentation Mode starts with engineering text
+  hidden; Debug Mode exposes the full timing and adoption diagnostics.
 
 Browser evidence is kept outside Git under
 `/root/my_project/.runtime/viewer-proof/`. Verified environment: Firefox on
-`127.0.0.1:8131`, 30 static requests all HTTP 200, zero console errors or
-warnings. D full tests: 53 passed; ruff and JS syntax are clean.
+`127.0.0.1:8131`, final required resources all HTTP 200, zero console errors or
+warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
++12h/+24h = unavailable. D full tests: 54 passed; ruff and JS syntax are clean.
 
 ### How to build artifacts (orchestrator side)
 

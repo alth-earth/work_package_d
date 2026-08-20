@@ -146,6 +146,20 @@ input[type="range"] {
   margin-top: 10px;
 }
 
+.horizon-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.horizon-status {
+  margin-top: 6px;
+  min-height: 18px;
+}
+
 .status {
   color: #9db2c2;
   font-size: 11px;
@@ -177,6 +191,21 @@ select {
   gap: 8px;
   padding: 3px 0;
   color: var(--muted);
+}
+
+.layer-controls {
+  display: grid;
+  gap: 6px;
+}
+
+.layer-controls label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.layer-controls input {
+  accent-color: var(--accent);
+  margin-right: 6px;
 }
 
 .sw {

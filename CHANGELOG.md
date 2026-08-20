@@ -2,6 +2,14 @@
 
 ## Unreleased - Viewer Product Mainline（2026-08-20 21:13 +08:00）
 
+- feat: add Current/+6h/+12h/+24h risk horizon controls backed by the
+  Orchestrator horizon selection index; display requested/actual valid time,
+  actual horizon, selection method, and fail-closed availability;
+- feat: add independent Risk, Hard/Availability, Routes, and Completed Track
+  presentation toggles; Presentation Mode now hides engineering diagnostics
+  by default;
+- test: add horizon exact/floor/unavailable artifact assertions; D suite now
+  passes 54 tests;
 - added Simulation-Clock-driven current Dynamic Risk overlay from the
   orchestrator presentation bundle (`bc.risk-frame.v2` frames);
 - added separate hard/availability rendering for `LAND`,

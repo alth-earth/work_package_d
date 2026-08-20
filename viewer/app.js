@@ -13,6 +13,12 @@
   const debugPanel = document.getElementById("debug-panel");
   const toggleDebugBtn = document.getElementById("toggle-debug");
   const riskStatusEl = document.getElementById("risk-status");
+  const riskHorizonSel = document.getElementById("risk-horizon");
+  const riskHorizonStatusEl = document.getElementById("risk-horizon-status");
+  const layerRisk = document.getElementById("layer-risk");
+  const layerHard = document.getElementById("layer-hard");
+  const layerRoutes = document.getElementById("layer-routes");
+  const layerTrack = document.getElementById("layer-track");
 
   let bundle = null;
   let basemap = null;
@@ -23,7 +29,9 @@
   let playing = true;
   let lastTs = null;
   let scale = 60;
-  let debugVisible = true;
+  let selectedHorizon = "current";
+  let presentationMode = true;
+  const layers = { risk: true, hard: true, routes: true, track: true };
 
   const RISK_COLORS = {
     1: "#55c878",
@@ -49,10 +57,17 @@
     return new Date(ms).toISOString().replace("T", " ").slice(0, 19) + "Z";
   }
 
-  function formatHorizon(validMs, simulationMs) {
-    if (!Number.isFinite(validMs)) return "none";
-    const hours = (validMs - simulationMs) / 3600000;
-    return `${hours >= 0 ? "+" : ""}${hours.toFixed(2)}h`;
+  function formatHorizonSeconds(seconds) {
+    if (!Number.isFinite(seconds)) return "unavailable";
+    const sign = seconds >= 0 ? "+" : "-";
+    const absolute = Math.abs(Math.round(seconds));
+    const hours = Math.floor(absolute / 3600);
+    const minutes = Math.floor((absolute % 3600) / 60);
+    return `${sign}${hours}h${String(minutes).padStart(2, "0")}m`;
+  }
+
+  function horizonLabel(key) {
+    return key === "current" ? "Current" : key;
   }
 
   function project(lon, lat) {
@@ -83,9 +98,20 @@
     return null;
   }
 
-  function riskAt(ms) {
+  function legacyCurrentRiskSelection(ms) {
     const frames = (bundle.risk && bundle.risk.frames) || [];
-    if (!frames.length) return null;
+    const unavailable = {
+      requested_horizon_hours: 0,
+      requested_valid_time: formatAbsolute(startMs + ms),
+      actual_valid_time: null,
+      actual_horizon_seconds: null,
+      selection_method: "unavailable",
+      availability: "UNAVAILABLE",
+      reason: "no_frame_available",
+      frame_index: null,
+      risk_id: null,
+    };
+    if (!frames.length) return unavailable;
     let low = 0;
     let high = frames.length - 1;
     while (low < high) {
@@ -93,8 +119,48 @@
       if (isoToMs(frames[mid].valid_time) - startMs <= ms) low = mid;
       else high = mid - 1;
     }
-    if (isoToMs(frames[0].valid_time) - startMs > ms) return frames[0];
-    return frames[low];
+    if (isoToMs(frames[0].valid_time) - startMs > ms) return unavailable;
+    const actualMs = isoToMs(frames[low].valid_time);
+    return {
+      ...unavailable,
+      actual_valid_time: frames[low].valid_time,
+      actual_horizon_seconds: Math.round((actualMs - (startMs + ms)) / 1000),
+      selection_method: "latest_valid_time_at_or_before_simulation_time",
+      availability: "AVAILABLE",
+      reason: null,
+      frame_index: low,
+      risk_id: frames[low].risk_id,
+    };
+  }
+
+  function riskSelectionAt(ms, horizon = selectedHorizon) {
+    const index = timelineIndex(ms);
+    const indexed = bundle.risk && bundle.risk.horizon_selections;
+    if (indexed && indexed[index] && indexed[index].selections[horizon]) {
+      return indexed[index].selections[horizon];
+    }
+    if (horizon === "current") return legacyCurrentRiskSelection(ms);
+    return {
+      requested_horizon_hours: Number(horizon.replace("+", "").replace("h", "")),
+      requested_valid_time: formatAbsolute(startMs + ms),
+      actual_valid_time: null,
+      actual_horizon_seconds: null,
+      selection_method: "unavailable",
+      availability: "UNAVAILABLE",
+      reason: "horizon_index_missing",
+      frame_index: null,
+      risk_id: null,
+    };
+  }
+
+  function frameForRiskSelection(selection) {
+    if (!selection || selection.availability !== "AVAILABLE") return null;
+    const frames = (bundle.risk && bundle.risk.frames) || [];
+    return Number.isInteger(selection.frame_index) ? frames[selection.frame_index] || null : null;
+  }
+
+  function riskAt(ms) {
+    return frameForRiskSelection(riskSelectionAt(ms));
   }
 
   function stateAt(ms) {
@@ -108,6 +174,7 @@
     const track = previousTimelineValue(i, "track") || [];
     const pending = previousTimelineValue(i, "pending");
     const superseded = previousTimelineValue(i, "superseded");
+    const riskSelection = riskSelectionAt(ms);
     return {
       time: startMs + ms,
       lon: lerp(a.v.lon, b.v.lon),
@@ -125,7 +192,8 @@
       track: track.slice(0, a.ctl),
       pendingRoute: pending,
       supersededRoute: superseded,
-      risk: riskAt(ms),
+      riskSelection,
+      risk: frameForRiskSelection(riskSelection),
     };
   }
 
@@ -164,9 +232,9 @@
     const lons = frame.coordinates.longitude;
     const cols = lons.length;
     const rows = lats.length;
-    const lonStep = Math.abs(lons[1] - lons[0]) ||
+    const lonStep = (lons.length > 1 ? Math.abs(lons[1] - lons[0]) : 0) ||
       (basemap.bbox.max_lon - basemap.bbox.min_lon) / cols;
-    const latStep = Math.abs(lats[1] - lats[0]) ||
+    const latStep = (lats.length > 1 ? Math.abs(lats[1] - lats[0]) : 0) ||
       (basemap.bbox.max_lat - basemap.bbox.min_lat) / rows;
     ctx.save();
     for (let row = 0; row < rows; row += 1) {
@@ -180,11 +248,11 @@
         const y = Math.min(nw.y, se.y);
         const width = Math.abs(se.x - nw.x) + 1;
         const height = Math.abs(se.y - nw.y) + 1;
-        if (reason === "NONE" && RISK_COLORS[level]) {
+        if (reason === "NONE" && layers.risk && RISK_COLORS[level]) {
           ctx.fillStyle = RISK_COLORS[level];
           ctx.globalAlpha = 0.34;
           ctx.fillRect(x, y, width, height);
-        } else if (reason !== "NONE") {
+        } else if (reason !== "NONE" && layers.hard) {
           const color = reason === "LAND" ? "#263746" :
             reason === "DATA_UNAVAILABLE" ? "#8a63d2" : "#b54f70";
           ctx.fillStyle = color;
@@ -227,12 +295,12 @@
     drawRiskFrame(s.risk);
     const pos = project(s.lon, s.lat);
 
-    if (s.supersededRoute && s.supersededRoute.length > 1) {
+    if (layers.routes && s.supersededRoute && s.supersededRoute.length > 1) {
       drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs);
     }
 
     const active = routeFor(s.active);
-    if (active) {
+    if (layers.routes && active) {
       const future = active.waypoints.filter(
         (waypoint) => isoToMs(waypoint.eta) - startMs >= simMs
       );
@@ -249,15 +317,15 @@
       }
     }
 
-    if (s.track.length > 1) {
+    if (layers.track && s.track.length > 1) {
       drawPath(s.track, "#5cc47a", 3, []);
     }
 
-    if (s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {
+    if (layers.routes && s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {
       drawPath(s.pendingRoute.route, "#f2b134", 2.5, [8, 6]);
     }
 
-    if (s.segment && s.segment.start_eta && s.segment.end_eta && active) {
+    if (layers.routes && s.segment && s.segment.start_eta && s.segment.end_eta && active) {
       const seg = active.waypoints.filter(
         (waypoint) => isoToMs(waypoint.eta) >= isoToMs(s.segment.start_eta)
       );
@@ -278,8 +346,12 @@
 
   function updateDebug(s) {
     const event = lastEvent(simMs);
-    const riskValidMs = s.risk ? isoToMs(s.risk.valid_time) : NaN;
+    const selection = s.riskSelection;
+    const riskValidMs = selection && selection.actual_valid_time
+      ? isoToMs(selection.actual_valid_time)
+      : NaN;
     const rows = [
+      ["view mode", presentationMode ? "Presentation" : "Engineering Debug"],
       ["simulation_time", formatAbsolute(s.time)],
       ["vessel lon/lat", `${s.lon.toFixed(4)} / ${s.lat.toFixed(4)}`],
       ["speed knots", (s.kn ?? 0).toFixed(2)],
@@ -289,8 +361,13 @@
       ["pending_plan_status", s.pendingStatus ?? "none"],
       ["decision_time", s.decisionTime ?? "null"],
       ["effective_adoption_time", s.effectiveAdoption ?? "null"],
-      ["risk valid_time", s.risk ? s.risk.valid_time : "none"],
-      ["risk presentation horizon", formatHorizon(riskValidMs, s.time)],
+      ["requested risk horizon", horizonLabel(selectedHorizon)],
+      ["requested risk valid_time", selection ? selection.requested_valid_time : "none"],
+      ["risk availability", selection ? selection.availability : "none"],
+      ["risk selection method", selection ? selection.selection_method : "none"],
+      ["risk frame id", s.risk ? s.risk.risk_id : "none"],
+      ["risk valid_time", selection?.actual_valid_time ?? "none"],
+      ["risk actual horizon", selection ? formatHorizonSeconds(selection.actual_horizon_seconds) : "none"],
       ["risk level range", bundle.risk ? bundle.risk.level_range.join("-") : "none"],
       ["hard reason", s.risk ? "separate overlay" : "none"],
       ["last event", event ? `${event.type}@${event.t}` : "none"],
@@ -300,10 +377,17 @@
     debugEl.innerHTML = rows
       .map(([key, value]) => `<dt>${key}</dt><dd>${value}</dd>`)
       .join("");
-    if (s.risk) {
-      riskStatusEl.textContent = `risk ${s.risk.valid_time} / ${s.risk.provenance || "unknown"}`;
+    if (!selection || selection.availability !== "AVAILABLE") {
+      riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} unavailable`;
+      riskHorizonStatusEl.textContent = selection
+        ? `${horizonLabel(selectedHorizon)} → ${selection.requested_valid_time}: unavailable (${selection.reason})`
+        : "risk horizon unavailable";
     } else {
-      riskStatusEl.textContent = "risk overlay unavailable";
+      const actual = formatHorizonSeconds(selection.actual_horizon_seconds);
+      riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} · ${selection.actual_valid_time} · ${actual}`;
+      riskHorizonStatusEl.textContent =
+        `${horizonLabel(selectedHorizon)} → requested ${selection.requested_valid_time}; ` +
+        `actual ${selection.actual_valid_time} (${actual}), ${selection.selection_method}`;
     }
   }
 
@@ -343,10 +427,24 @@
   });
 
   toggleDebugBtn.addEventListener("click", () => {
-    debugVisible = !debugVisible;
-    debugPanel.hidden = !debugVisible;
-    toggleDebugBtn.textContent = debugVisible ? "Hide engineering" : "Show engineering";
+    presentationMode = !presentationMode;
+    debugPanel.hidden = presentationMode;
+    toggleDebugBtn.textContent = presentationMode ? "Engineering Debug" : "Presentation Mode";
+    draw();
   });
+
+  riskHorizonSel.addEventListener("change", () => {
+    selectedHorizon = riskHorizonSel.value;
+    draw();
+  });
+
+  [[layerRisk, "risk"], [layerHard, "hard"], [layerRoutes, "routes"], [layerTrack, "track"]]
+    .forEach(([control, key]) => {
+      control.addEventListener("change", () => {
+        layers[key] = control.checked;
+        draw();
+      });
+    });
 
   async function start() {
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
@@ -358,6 +456,8 @@
     scrub.max = String(totalMs);
     rangeLabel.textContent = `${bundle.replay.start} -> ${bundle.replay.end}`;
     document.getElementById("mode-badge").textContent = bundle.replay.scenario_mode;
+    debugPanel.hidden = true;
+    toggleDebugBtn.textContent = "Engineering Debug";
     document.getElementById("gate-l1").textContent = `L1 ${bundle.gates.status}`;
     document.getElementById("gate-l2").textContent = `L2 ${bundle.gates.l2_status}`;
     document.getElementById("gate-loop").textContent =
@@ -372,6 +472,14 @@
     window.__ARCTIC_VIEWER__ = {
       stateAt: () => stateAt(simMs),
       riskAt: () => riskAt(simMs),
+      riskSelection: () => riskSelectionAt(simMs),
+      setRiskHorizon: (value) => {
+        if (["current", "+6h", "+12h", "+24h"].includes(value)) {
+          selectedHorizon = value;
+          riskHorizonSel.value = value;
+          draw();
+        }
+      },
       setSimulationMs: (value) => {
         simMs = Math.max(0, Math.min(totalMs, Number(value)));
         playing = false;
