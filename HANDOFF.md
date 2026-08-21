@@ -46,7 +46,7 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
 真实 Firefox E2E：页面/GEBCO/路线/船/risk overlay 均可见；Play/Pause、scrub、
 1x/2x/4x/8x 已操作；10:00/10:30/11:00 船位为
 `70.3333/70.4135/70.4938`；console errors/warnings = 0，静态请求全部 200。
-D 当前验证为 53 passed + ruff clean + JS syntax clean。
+D 当前验证为 57 passed + ruff clean + JS syntax clean。
 
 ## RC1 角色
 
@@ -95,6 +95,24 @@ temporal provenance。
 - **NEXT PHASE（Viewer 产品开发主线）**：browser rehearsal → Demo Freeze
   （不再做 governance 修补轮）；
 - v2 后备展示不进入 Demo 主线。
+
+## Competition Demo Final Polish（2026-08-21 15:30 +08:00）
+
+- 风险分布审计：`scripts/risk_distribution_audit.py` →
+  `RISK_DISTRIBUTION_AUDIT.md`。当前正式制品为 13 个 hourly frames、31×11
+  cells；水域 `NONE` 全为 Level 1，Level 5 只出现在 LAND/DATA_UNAVAILABLE
+  hard cells，根因在 B target-grid/model output，不在 D threshold；
+- Orchestrator export 增加 presentation-only grid/distribution summary，D
+  用它渲染 Risk Forecast Timeline；B 的 risk formula、hard reason 和
+  `bc.risk-frame.v2` 不变；
+- unavailable horizon 现在显示明确的 fail-closed 文案与 formal forecast
+  window；页面默认 Presentation Mode、paused at departure；新增 replay
+  milestone panel；
+- 没有可诚实消费的 Fastest/Low Risk/Recommended 三路线集合，也没有
+  单因素风险/环境场 artifact，因此本轮不伪造这些层；当前 bundle 的五条
+  route revision 仍按 authoritative/pending/superseded 语义展示；
+- 本轮 Firefox、D tests/ruff/JS syntax 和 Orchestrator focused export tests
+  均通过；没有重跑 replay、heavy integration 或修改 A/B/C/contracts。
 
 ## 常用命令
 

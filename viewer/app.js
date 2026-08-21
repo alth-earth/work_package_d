@@ -15,6 +15,10 @@
   const riskStatusEl = document.getElementById("risk-status");
   const riskHorizonSel = document.getElementById("risk-horizon");
   const riskHorizonStatusEl = document.getElementById("risk-horizon-status");
+  const riskProfileStatusEl = document.getElementById("risk-profile-status");
+  const riskTimelineEl = document.getElementById("risk-timeline");
+  const riskProfileWindowEl = document.getElementById("risk-profile-window");
+  const eventTimelineEl = document.getElementById("event-timeline");
   const routeStatusEl = document.getElementById("route-status");
   const layerRisk = document.getElementById("layer-risk");
   const layerHard = document.getElementById("layer-hard");
@@ -28,7 +32,7 @@
   let startMs = 0;
   let totalMs = 0;
   let simMs = 0;
-  let playing = true;
+  let playing = false;
   let lastTs = null;
   let scale = 60;
   let selectedHorizon = "current";
@@ -85,6 +89,152 @@
 
   function horizonLabel(key) {
     return key === "current" ? "Current" : key;
+  }
+
+  function riskFrames() {
+    return (bundle.risk && bundle.risk.frames) || [];
+  }
+
+  function forecastWindowText() {
+    const frames = riskFrames();
+    if (!frames.length) return "none";
+    return `${frames[0].valid_time} – ${frames[frames.length - 1].valid_time}`;
+  }
+
+  function riskHourLabel(value) {
+    return new Date(value).toISOString().slice(11, 16);
+  }
+
+  function buildRiskTimeline() {
+    if (!riskTimelineEl) return;
+    riskTimelineEl.replaceChildren();
+    const frames = riskFrames();
+    const summaries = frames
+      .map((frame) => frame.summary)
+      .filter((summary) => summary && Number.isFinite(summary.risk_score_max));
+    const maxScore = Math.max(
+      0.01,
+      ...summaries.map((summary) => Number(summary.risk_score_max)),
+    );
+    for (const [index, frame] of frames.entries()) {
+      const tick = document.createElement("div");
+      tick.className = "risk-tick";
+      tick.dataset.validTime = frame.valid_time;
+      tick.title = frame.valid_time;
+      const summary = frame.summary;
+      const mean = document.createElement("span");
+      mean.className = "risk-bar risk-mean";
+      const maximum = document.createElement("span");
+      maximum.className = "risk-bar risk-max";
+      const meanScore = Number(summary?.risk_score_mean);
+      const maxFrameScore = Number(summary?.risk_score_max);
+      const meanHeight = Number.isFinite(meanScore) ? meanScore / maxScore * 100 : 0;
+      const maxHeight = Number.isFinite(maxFrameScore) ? maxFrameScore / maxScore * 100 : 0;
+      mean.style.height = `${Math.max(3, Math.min(100, meanHeight))}%`;
+      maximum.style.height = `${Math.max(3, Math.min(100, maxHeight))}%`;
+      const label = document.createElement("span");
+      label.className = "risk-tick-label";
+      label.textContent = index % 2 === 0 || index === frames.length - 1
+        ? riskHourLabel(frame.valid_time)
+        : "";
+      tick.append(mean, maximum, label);
+      riskTimelineEl.append(tick);
+    }
+    if (riskProfileWindowEl) {
+      const grid = bundle.risk?.grid;
+      const gridText = grid ? ` · grid ${grid.rows}×${grid.cols}` : "";
+      riskProfileWindowEl.textContent =
+        `Formal forecast window: ${forecastWindowText()} · ${frames.length} hourly frames${gridText}`;
+    }
+  }
+
+  function buildEventTimeline() {
+    if (!eventTimelineEl) return;
+    eventTimelineEl.replaceChildren();
+    const events = bundle.events || [];
+    const milestones = [
+      {
+        type: "PLAN_COMPUTED",
+        label: "Departure · initial route",
+        fallback: bundle.replay.start,
+      },
+      {
+        type: "RISK_CONTENT_UPDATED",
+        label: "Risk assessment updated",
+        fallback: null,
+      },
+      {
+        type: "REPLAN_DECIDED",
+        label: "Replanning triggered · new route pending",
+        fallback: null,
+      },
+      {
+        type: "REPLAN_ADOPTED",
+        label: "New route adopted · vessel continues",
+        fallback: null,
+      },
+    ];
+    for (const milestone of milestones) {
+      const event = events.find((candidate) => candidate.type === milestone.type);
+      const time = event?.t || milestone.fallback;
+      if (!time) continue;
+      const item = document.createElement("li");
+      item.dataset.eventTime = time;
+      const content = document.createElement("div");
+      const label = document.createElement("span");
+      label.textContent = milestone.label;
+      const clock = document.createElement("span");
+      clock.className = "event-time";
+      clock.textContent = formatAbsolute(isoToMs(time));
+      content.append(label, clock);
+      item.append(content);
+      eventTimelineEl.append(item);
+    }
+  }
+
+  function updateRiskTimeline(s) {
+    if (!riskTimelineEl) return;
+    const actualValidTime = s.riskSelection?.actual_valid_time;
+    const frames = riskFrames();
+    let currentValidTime = null;
+    for (const frame of frames) {
+      if (isoToMs(frame.valid_time) <= s.time) currentValidTime = frame.valid_time;
+      else break;
+    }
+    for (const tick of riskTimelineEl.children) {
+      const validTime = tick.dataset.validTime;
+      tick.classList.toggle("is-current", validTime === currentValidTime);
+      tick.classList.toggle("is-selected", validTime === actualValidTime);
+    }
+    const summary = s.risk?.summary;
+    if (!riskProfileStatusEl) return;
+    if (!summary || !s.riskSelection || s.riskSelection.availability !== "AVAILABLE") {
+      riskProfileStatusEl.textContent =
+        `${horizonLabel(selectedHorizon)} · Risk Forecast unavailable for this simulation time`;
+      riskProfileStatusEl.classList.add("unavailable");
+      return;
+    }
+    riskProfileStatusEl.classList.remove("unavailable");
+    const hardCounts = summary.hard_reason_counts || {};
+    const navigable = hardCounts.NONE || 0;
+    const levelOne = summary.risk_level_counts?.["1"] || 0;
+    riskProfileStatusEl.textContent =
+      `${horizonLabel(selectedHorizon)} · mean ${Number(summary.risk_score_mean).toFixed(3)} ` +
+      `· max ${Number(summary.risk_score_max).toFixed(3)} · water ${levelOne}/${navigable} at L1`;
+  }
+
+  function updateEventTimeline(s) {
+    if (!eventTimelineEl) return;
+    const items = [...eventTimelineEl.children];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const eventMs = isoToMs(item.dataset.eventTime);
+      const nextMs = index + 1 < items.length
+        ? isoToMs(items[index + 1].dataset.eventTime)
+        : Infinity;
+      item.classList.toggle("is-past", s.time >= eventMs);
+      item.classList.toggle("is-current", s.time >= eventMs && s.time < nextMs);
+    }
   }
 
   function project(lon, lat) {
@@ -612,17 +762,22 @@
       routeStatusEl.textContent = routeStatusText(s);
     }
     if (!selection || selection.availability !== "AVAILABLE") {
-      riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} unavailable`;
+      riskStatusEl.classList.add("unavailable");
+      riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} · Risk Forecast unavailable`;
       riskHorizonStatusEl.textContent = selection
-        ? `${horizonLabel(selectedHorizon)} → ${selection.requested_valid_time}: unavailable (${selection.reason})`
-        : "risk horizon unavailable";
+        ? `${horizonLabel(selectedHorizon)} → Risk Forecast unavailable. ` +
+          `Available forecast window: ${forecastWindowText()}. (${selection.reason})`
+        : `Risk Forecast unavailable. Available forecast window: ${forecastWindowText()}.`;
     } else {
+      riskStatusEl.classList.remove("unavailable");
       const actual = formatHorizonSeconds(selection.actual_horizon_seconds);
       riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} · ${selection.actual_valid_time} · ${actual}`;
       riskHorizonStatusEl.textContent =
         `${horizonLabel(selectedHorizon)} → requested ${selection.requested_valid_time}; ` +
         `actual ${selection.actual_valid_time} (${actual}), ${selection.selection_method}`;
     }
+    updateRiskTimeline(s);
+    updateEventTimeline(s);
   }
 
   function frame(ts) {
@@ -693,10 +848,13 @@
     const end = isoToMs(bundle.replay.end);
     totalMs = end - startMs;
     simMs = 0;
+    riskHorizonSel.value = selectedHorizon;
     scrub.max = String(totalMs);
     rangeLabel.textContent = `${bundle.replay.start} -> ${bundle.replay.end}`;
     document.getElementById("mode-badge").textContent = bundle.replay.scenario_mode;
     updateModeUi();
+    buildRiskTimeline();
+    buildEventTimeline();
     document.getElementById("gate-l1").textContent = `L1 ${bundle.gates.status}`;
     document.getElementById("gate-l2").textContent = `L2 ${bundle.gates.l2_status}`;
     document.getElementById("gate-loop").textContent =

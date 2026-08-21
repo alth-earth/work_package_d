@@ -15,11 +15,12 @@ navigation or real-time weather service.
    ```
 
 2. Open `http://127.0.0.1:8131/index.html` in Firefox.
-3. Confirm the page opens in Presentation Mode, the GEBCO map is visible, and
-   the required gate badges are PASS. Keep Risk, Hard/availability, Routes,
-   and Track layers enabled.
-4. Set the scrubber to `10:00` if the page has already advanced. Use Current
-   risk for the main story; use +6h and +24h only at the marked horizon step.
+3. Confirm the page opens in Presentation Mode, paused at `10:00`, with the
+   GEBCO map visible and the required gate badges PASS. Keep Risk,
+   Hard/availability, Routes, and Track layers enabled.
+4. Point out the Risk Forecast Timeline and Replay Milestones panels. Use
+   Current risk for the main story; use +6h and +24h only at the marked
+   horizon step.
 
 ## Three-minute script
 
@@ -27,11 +28,11 @@ navigation or real-time weather service.
 |---|---|---|---|
 | 0:00 | Point to the map and the Simulation Clock. | Real GEBCO basemap, risk/hard overlays, route, vessel icon, and clean Presentation Mode. | The Viewer consumes a deterministic replay artifact with one presentation clock. |
 | 0:20 | Press **Play** and leave speed at 2x. Pause near `10:30`. | The ship moves continuously; the short pale trail follows its actual recent path. | Vessel motion comes from timeline/ETA plus Simulation Clock; the trail is presentation-only. |
-| 0:50 | Select **+6h** in the risk horizon control. | The ship remains at the same simulation time while the risk panel shows the requested and actual risk valid time. | Forecast presentation horizon is independent of vessel time. |
+| 0:50 | Select **+6h** in the risk horizon control. | The ship remains at the same simulation time while the risk panel and Risk Forecast Timeline show the requested and actual risk valid time. | Forecast presentation horizon is independent of vessel time. |
 | 1:20 | Select **Current**, then scrub to `13:00` and briefly resume/stop. | The current risk frame updates with simulation time while the route remains readable. | Risk, vessel, route, and event rendering share one clock. |
 | 1:40 | Scrub to `13:30`. | “New route pending · current route remains authoritative”; the pending route is visibly dashed/amber and has faded in. | `REPLAN_DECIDED` is not adoption; the active route and completed history are preserved. |
 | 2:10 | Scrub to `15:00`. | “New route adopted · authoritative route updated”; the new active route is blue and the transition pulse is visible. A later pending plan may also be visible because the artifact contains same-tick follow-up planning. | `REPLAN_ADOPTED` changes the active future route at the effective time. |
-| 2:40 | Let the ship sit at `15:00` or press Play for a few seconds; point to the risk and route legends. | Ship icon, wake/trail, route states, risk levels, and hard-reason states remain distinct. | Presentation foundation is demo-ready without hiding unknown or hard constraints. |
+| 2:40 | Let the ship sit at `15:00` or press Play for a few seconds; point to the risk timeline and route legends. | Ship icon, wake/trail, route states, risk levels, hard-reason states, and replay milestones remain distinct. | Presentation foundation is demo-ready without hiding unknown or hard constraints. |
 | 3:00 | Stop playback. Optionally click **Engineering Debug** to show provenance and revision details, then return to Presentation Mode. | Clean competition view is restored; debug remains available on demand. | Presentation and engineering inspection are separate modes. |
 
 ## Optional proof moments

@@ -30,7 +30,7 @@
       <aside class="panel">
         <section class="block">
           <div class="sim">
-            <button id="play" type="button" class="btn">Pause</button>
+            <button id="play" type="button" class="btn">Play</button>
             <div id="clock" class="clock">--:--:--</div>
           </div>
           <input id="scrub" type="range" min="0" step="1" value="0" />
@@ -63,6 +63,17 @@
           <div id="risk-horizon-status" class="status horizon-status">risk horizon loading</div>
         </section>
 
+        <section class="block risk-profile">
+          <h2>Risk forecast timeline</h2>
+          <div id="risk-profile-status" class="status">risk profile loading</div>
+          <div id="risk-timeline" class="risk-timeline" aria-label="risk score timeline"></div>
+          <div class="risk-timeline-key">
+            <span><i class="risk-key mean"></i>mean score</span>
+            <span><i class="risk-key max"></i>maximum score</span>
+          </div>
+          <div id="risk-profile-window" class="status"></div>
+        </section>
+
         <section class="block legend">
           <h2>Layers</h2>
           <ul>
@@ -90,6 +101,11 @@
           <label><input id="layer-hard" type="checkbox" checked /> Hard / availability</label>
           <label><input id="layer-routes" type="checkbox" checked /> Routes</label>
           <label><input id="layer-track" type="checkbox" checked /> Track + recent trail</label>
+        </section>
+
+        <section class="block event-timeline">
+          <h2>Replay milestones</h2>
+          <ol id="event-timeline" aria-label="replay milestones"></ol>
         </section>
 
         <section id="debug-panel" class="block debug" hidden>

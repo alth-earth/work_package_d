@@ -131,6 +131,24 @@ def test_bundle_projects_current_risk_frames_without_recomputing_them(bundle: di
     )
 
 
+def test_bundle_exposes_presentation_risk_distribution_summary(bundle: dict) -> None:
+    risk = bundle["risk"]
+    assert risk["grid"] == {
+        "rows": 31,
+        "cols": 11,
+        "latitude_resolution_degrees": pytest.approx(0.3666666667),
+        "longitude_resolution_degrees": pytest.approx(1.2),
+    }
+    first = risk["frames"][0]["summary"]
+    assert first["total_cells"] == 341
+    assert first["risk_level_counts"] == {"1": 255, "2": 0, "3": 0, "4": 0, "5": 86}
+    assert first["hard_reason_counts"] == {
+        "DATA_UNAVAILABLE": 21,
+        "LAND": 65,
+        "NONE": 255,
+    }
+
+
 def test_risk_horizon_selection_is_explicit_and_fail_closed(bundle: dict) -> None:
     risk = bundle["risk"]
     assert risk["supported_horizons_hours"] == [0, 6, 12, 24]

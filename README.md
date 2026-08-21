@@ -52,7 +52,7 @@ Browser evidence is kept outside Git under
 `/root/my_project/.runtime/viewer-proof/`. Verified environment: Firefox on
 `127.0.0.1:8131`, final required resources all HTTP 200, zero console errors or
 warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
-+12h/+24h = unavailable. D full tests: 54 passed; ruff and JS syntax are clean.
++12h/+24h = unavailable. D full tests: 57 passed; ruff and JS syntax are clean.
 
 ## Viewer Presentation Polish（2026-08-21 01:20 +08:00）
 
@@ -70,6 +70,23 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
 - A real Firefox smoke after the polish rechecked horizon availability,
   continuous movement, pending/adopted routes, layer toggles, and both modes;
   console errors/warnings were zero.
+
+## Competition Demo Final Polish（2026-08-21 15:30 +08:00）
+
+- `scripts/risk_distribution_audit.py` produces the read-only
+  `RISK_DISTRIBUTION_AUDIT.md` from the exported bundle. It confirms whether a
+  quiet risk map comes from published B values or a Viewer rendering defect;
+- the Orchestrator presentation bundle carries descriptive per-frame risk
+  summaries and grid metadata. The Viewer renders a compact Risk Forecast
+  Timeline from those summaries and never recalculates risk;
+- unavailable horizons explicitly show `Risk Forecast unavailable` plus the
+  available formal forecast window; no stale frame is reused;
+- Presentation Mode opens paused at the replay departure, and the presentation
+  panel shows replay milestones for departure, risk update, pending replan, and
+  adoption. Engineering Debug and the original layer controls remain available;
+- final Firefox verification: page/map/route/ship/risk/hard layers visible,
+  continuous motion, horizon and replan states correct, 0 console errors and
+  warnings, required local resources HTTP 200.
 
 ### How to build artifacts (orchestrator side)
 

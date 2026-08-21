@@ -1,5 +1,22 @@
 # 工作包 D 变更记录
 
+## Unreleased - Competition Demo Final Polish（2026-08-21 15:30 +08:00）
+
+- audit: add `scripts/risk_distribution_audit.py` and
+  `RISK_DISTRIBUTION_AUDIT.md`; the read-only audit confirms the current
+  low-level water distribution is published B output, while hard cells remain
+  separate and fail-closed;
+- feat: render exported risk distribution summaries as a compact Risk Forecast
+  Timeline without recalculating risk in the browser;
+- fix: unavailable Current/+6h/+12h/+24h selections now state
+  `Risk Forecast unavailable` and the formal available forecast window instead
+  of leaving an unexplained blank layer;
+- feat: add replay milestone presentation for departure, risk update, pending
+  replan, and adoption; default demo opens paused at the replay departure time;
+- test: final Firefox smoke covers risk/horizon, continuous ship movement,
+  pending/adopted route state, layer/mode controls, zero console errors, and
+  HTTP 200 static resources.
+
 ## Unreleased - Viewer Presentation Polish（2026-08-21 01:20 +08:00）
 
 - feat: Presentation Mode uses softer exact-cell risk rendering with pixel
