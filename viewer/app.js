@@ -217,34 +217,45 @@
     if (!eventTimelineEl) return;
     eventTimelineEl.replaceChildren();
     const events = bundle.events || [];
-    const milestones = [
-      {
-        type: "PLAN_COMPUTED",
-        label: "Departure · initial route",
-        fallback: bundle.replay.start,
-      },
-      {
-        type: "RISK_CONTENT_UPDATED",
+    const milestones = [];
+    const initial = events.find((event) => event.type === "PLAN_COMPUTED");
+    milestones.push({
+      event: initial,
+      time: initial?.t || bundle.replay.start,
+      label: "Departure · initial route",
+    });
+    const riskUpdate = events.find((event) => event.type === "RISK_CONTENT_UPDATED");
+    if (riskUpdate) {
+      milestones.push({
+        event: riskUpdate,
+        time: riskUpdate.t,
         label: "Risk assessment updated",
-        fallback: null,
-      },
-      {
-        type: "REPLAN_DECIDED",
-        label: "Replanning triggered · new route pending",
-        fallback: null,
-      },
-      {
-        type: "REPLAN_ADOPTED",
-        label: "New route adopted · vessel continues",
-        fallback: null,
-      },
-    ];
+      });
+    }
+    // Keep every real route revision visible in a long replay. ROUTE_CHANGED
+    // is emitted beside REPLAN_ADOPTED and would duplicate the same adoption.
+    for (const event of events) {
+      if (event.type === "REPLAN_DECIDED") {
+        milestones.push({
+          event,
+          time: event.t,
+          label: `R${event.rev} pending · active route remains authoritative`,
+        });
+      } else if (event.type === "REPLAN_ADOPTED") {
+        milestones.push({
+          event,
+          time: event.t,
+          label: `R${event.rev} adopted · authoritative route updated`,
+        });
+      }
+    }
     for (const milestone of milestones) {
-      const event = events.find((candidate) => candidate.type === milestone.type);
-      const time = event?.t || milestone.fallback;
+      const time = milestone.time;
       if (!time) continue;
       const item = document.createElement("li");
       item.dataset.eventTime = time;
+      item.dataset.eventType = milestone.event?.type || "INITIAL";
+      item.dataset.eventRevision = milestone.event?.rev || "1";
       const content = document.createElement("div");
       const label = document.createElement("span");
       label.textContent = milestone.label;
@@ -1132,6 +1143,13 @@
           candidate_count: routeCandidates().length,
         };
       },
+      routeEvolution: () => (bundle.events || [])
+        .filter((event) => ["REPLAN_DECIDED", "REPLAN_ADOPTED"].includes(event.type))
+        .map((event) => ({
+          type: event.type,
+          revision: Number(event.rev),
+          time: event.t,
+        })),
       setSimulationMs: (value) => {
         simMs = Math.max(0, Math.min(totalMs, Number(value)));
         playing = false;

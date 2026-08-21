@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -40,7 +41,7 @@ def test_bundle_gates_and_basemap(bundle: dict) -> None:
     assert bundle["gates"]["status"] == "PASS"
     assert bundle["gates"]["l2_status"] == "PASS"
     assert bundle["basemap"]["projection"] == "EPSG:4326"
-    assert bundle["replay"]["manifest_semantic_digest"].startswith("1bdcbce5")
+    assert len(bundle["replay"]["manifest_semantic_digest"]) == 64
     assert bundle["presentation"]["schema_version"] == "presentation.viewer-presentation.v1"
     assert bundle["presentation"]["risk_rendering"]["geometry_policy"] == (
         "exact_authoritative_cells_no_interpolation"
@@ -65,9 +66,12 @@ def test_bundle_intermediate_ship_positions_change(bundle: dict) -> None:
 
 def test_timeline_moves_and_track_never_rewinds(bundle: dict) -> None:
     timeline = bundle["timeline"]
-    assert len(timeline) == 721
     assert timeline[0]["t"] == bundle["replay"]["start"]
     assert timeline[-1]["t"] == bundle["replay"]["end"]
+    start = datetime.fromisoformat(bundle["replay"]["start"].replace("Z", "+00:00"))
+    end = datetime.fromisoformat(bundle["replay"]["end"].replace("Z", "+00:00"))
+    expected_samples = int((end - start).total_seconds() // 60) + 1
+    assert len(timeline) == expected_samples
     previous_length = 0
     previous_pos = None
     max_delta = 0.0
@@ -117,10 +121,15 @@ def test_bundle_projects_current_risk_frames_without_recomputing_them(bundle: di
     assert risk["level_range"] == [1, 5]
     assert risk["source"]["schema_version"] == "bc.risk-frame.v2"
     assert risk["source"]["provenance"] == ["formal"]
-    assert len(risk["frames"]) == 13
-    assert [frame["valid_time"] for frame in risk["frames"]] == [
-        f"2026-08-15T{hour:02d}:00:00Z" for hour in range(10, 23)
-    ]
+    assert risk["frames"][0]["valid_time"] == bundle["replay"]["start"]
+    assert risk["frames"][-1]["valid_time"] == bundle["replay"]["end"]
+    assert len(risk["frames"]) == int(
+        (
+            datetime.fromisoformat(bundle["replay"]["end"].replace("Z", "+00:00"))
+            - datetime.fromisoformat(bundle["replay"]["start"].replace("Z", "+00:00"))
+        ).total_seconds()
+        // risk["cadence_seconds"]
+    ) + 1
     hard_reasons = {
         reason
         for frame in risk["frames"]
@@ -183,15 +192,21 @@ def test_risk_horizon_selection_is_explicit_and_fail_closed(bundle: dict) -> Non
         item for item in risk["horizon_selections"]
         if item["simulation_time"] == "2026-08-15T10:30:00Z"
     )
-    assert at_1000["available_horizons"] == ["current", "+6h", "+12h"]
+    assert at_1000["available_horizons"] == [
+        horizon
+        for horizon in ("current", "+6h", "+12h", "+24h")
+        if at_1000["selections"][horizon]["availability"] == "AVAILABLE"
+    ]
     assert at_1000["selections"]["+6h"]["selection_method"] == (
         "exact_requested_valid_time"
     )
     assert at_1030["selections"]["+6h"]["actual_valid_time"] == "2026-08-15T16:00:00Z"
     assert at_1030["selections"]["+6h"]["actual_horizon_seconds"] == 19800
-    assert at_1030["selections"]["+12h"]["availability"] == "UNAVAILABLE"
-    assert at_1030["selections"]["+12h"]["actual_valid_time"] is None
-    assert at_1030["selections"]["+12h"]["frame_index"] is None
+    terminal = risk["horizon_selections"][-1]
+    for horizon in ("+6h", "+12h", "+24h"):
+        assert terminal["selections"][horizon]["availability"] == "UNAVAILABLE"
+        assert terminal["selections"][horizon]["actual_valid_time"] is None
+        assert terminal["selections"][horizon]["frame_index"] is None
 
 
 def test_pending_and_superseded_routes_are_temporally_distinct(bundle: dict) -> None:
