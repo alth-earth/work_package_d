@@ -1,12 +1,19 @@
+---
+Overall Status: ACTIVE
+Content Status:
+  - COMPLETED
+  - PLANNED
+Document Role: CANONICAL
+Scope: work_package_d viewer implementation and runtime
+Branch: research-validation-system
+Last Verified: 2026-08-21
+---
+
 # Replay-driven Viewer（work_package_d 所有）
 
-> Document Status: ACTIVE_CANONICAL
 > Scope: work_package_d `viewer/` 实现与运行
 > Canonical For: Replay-driven Viewer application（Simulation Clock / moving
 > ship / route / completed track / pending adoption / GEBCO basemap）
-> Branch: demo-engineering
-> Last Verified: 2026-08-21
-
 本目录归 **work_package_d** 所有。D 是 Display / Visualization / Presentation
 所有者，负责渲染、时间轴 UI、船位与 route/track/pending 展示。业务语义（Planner、
 Risk、Presentation Adapter、L1/L2 eligibility）由 orchestrator 与 contracts 负责，

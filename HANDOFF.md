@@ -1,3 +1,14 @@
+---
+Overall Status: ACTIVE
+Content Status:
+  - COMPLETED
+  - PLANNED
+Document Role: SUPPORTING
+Scope: work package D handoff
+Branch: research-validation-system
+Last Verified: 2026-08-21
+---
+
 # 工作包 D 交接说明
 
 > Status: CURRENT — Replay-driven Viewer presentation polish（2026-08-21）
@@ -48,7 +59,7 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
 `70.3333/70.4135/70.4938`；console errors/warnings = 0，静态请求全部 200。
 D 当前验证为 58 passed + ruff clean + JS syntax clean。
 
-## RC1 角色
+## RC1 冻结角色（2026-08-21 23:18）
 
 真实 v3 initial/replanned 制品离线消费 PASS（r6/r7 输出均可生成 complete 快照）。
 
@@ -62,9 +73,10 @@ D 当前验证为 58 passed + ruff clean + JS syntax clean。
 
 输入：v3 整组 JSON；输出：渲染快照 JSON（status/layers/group_id）。
 
-## 当前状态
+## 历史静态 Loader 基线（2026-08-21 23:18）
 
-PASS（36 tests）；Viewer = Demo Candidate 2（离线地图 + 交互 + Live API +
+以下为 Demo Candidate 2 的历史验收，不是当前测试总数：PASS（36 tests）；Viewer =
+Demo Candidate 2（离线地图 + 交互 + Live API +
 Route Geospatial Integrity badge）；`demo geo-integrity` 机器审计 48/48
 frozen routes PASS；`demo preflight` 含 Route Geospatial Integrity 硬门；
 Temporal Semantics 机器审计 PASS（38 tests，
