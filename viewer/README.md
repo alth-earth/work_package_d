@@ -6,7 +6,7 @@ Content Status:
 Document Role: CANONICAL
 Scope: work_package_d viewer implementation and runtime
 Branch: research-validation-system
-Last Verified: 2026-08-21
+Last Verified: 2026-08-22
 ---
 
 # Replay-driven Viewer（work_package_d 所有）
@@ -55,6 +55,10 @@ cd /root/my_project/work_package_d
 
 打开 `http://127.0.0.1:8131/`（Play/Pause、scrub、1x/2x/4x/8x、Current/
 +6h/+12h/+24h horizon、layer toggles、Presentation/Engineering Debug mode）。
+
+研究验证分支的 `Navigation aids` 图层默认开启：经纬网格、坐标标签、按地图
+中心纬度估算的比例尺，以及 north-up EPSG:4326 的 grid-north 指示。全部复用
+`project(lon, lat)` 和 bundle 的 basemap metadata；不访问 A/B/C 私有数据。
 
 Presentation Mode 仍逐 cell 消费 formal presentation bundle，但使用像素对齐
 和较柔和 alpha，避免相邻透明 cell 的抗锯齿接缝；没有空间插值。Engineering
@@ -121,6 +125,7 @@ scripts/replay_viewer_serve.py  D 静态 server + /api/state
 - D 拥有：HTML/JS/CSS、Simulation Clock UI、ship/route/track/pending 渲染、
   GEBCO basemap 展示、静态 server、proof 渲染。
 - 已完成：Current/+6h/+12h/+24h horizon selection、fail-closed unavailable
-  semantics、Hard Reason overlay、superseded route 绘制和两种展示模式。
-- NEXT：更丰富但不改变业务语义的 replanning animation、demo rehearsal、
-  Demo Freeze。
+  semantics、Hard Reason overlay、superseded route 绘制、两种展示模式和专业
+  navigation aids。
+- NEXT：只在真实 presentation contract 发布后接入 route candidate compare、
+  provenance/uncertainty 研究视图和正式环境 contributor 图层。

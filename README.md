@@ -7,7 +7,7 @@ Document Role: CANONICAL
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: research-validation-system
-Last Verified: 2026-08-21
+Last Verified: 2026-08-22
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -25,6 +25,22 @@ moving ship rendering, route/track/pending rendering, static server, and proof
 renderer. D consumes only JSON/PNG artifacts produced by the orchestrator's
 `scripts/replay_viewer_export.py` — it never imports orchestrator private
 Python modules.
+
+## Professional navigation aids（2026-08-22 00:17）
+
+The research-validation Viewer adds a bundle-only navigation aid layer:
+
+- latitude/longitude graticules and edge labels use the same canonical
+  `project(lon, lat)` transform as risk cells, routes, track, and vessel;
+- a centre-latitude scale bar reports an EPSG:4326 display-distance estimate;
+- the north indicator denotes grid north for the north-up map, not magnetic
+  bearing;
+- the layer is enabled by default and can be disabled independently without
+  changing the bundle or any A/B/C semantics.
+
+These aids are `IMPLEMENTED` and unit/syntax validated. They consume only
+published basemap projection/bounds metadata and do not fetch environmental
+data or calculate navigation decisions.
 
 ## Replay-driven Viewer (2026-08-20)
 

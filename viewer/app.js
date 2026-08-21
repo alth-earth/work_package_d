@@ -33,6 +33,7 @@
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
   const layerTrack = document.getElementById("layer-track");
+  const layerNavigation = document.getElementById("layer-navigation");
   const gateBadges = document.querySelector(".badges");
 
   let bundle = null;
@@ -48,7 +49,7 @@
   let presentationMode = true;
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
-  const layers = { risk: true, hard: true, routes: true, track: true };
+  const layers = { risk: true, hard: true, routes: true, track: true, navigation: true };
   const TRAIL_WINDOW_MS = 2 * 60 * 60 * 1000;
   const PENDING_FADE_MS = 30 * 60 * 1000;
   const ADOPTION_PULSE_MS = 60 * 60 * 1000;
@@ -379,6 +380,129 @@
     const x = ((lon - b.min_lon) / (b.max_lon - b.min_lon)) * canvas.width;
     const y = ((b.max_lat - lat) / (b.max_lat - b.min_lat)) * canvas.height;
     return { x, y };
+  }
+
+  function niceStep(span, targetLines = 6) {
+    const raw = Math.abs(span) / Math.max(1, targetLines);
+    if (!Number.isFinite(raw) || raw <= 0) return 1;
+    const magnitude = 10 ** Math.floor(Math.log10(raw));
+    const normalized = raw / magnitude;
+    const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    return factor * magnitude;
+  }
+
+  function niceDistanceFloor(distanceKm) {
+    if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 1;
+    const magnitude = 10 ** Math.floor(Math.log10(distanceKm));
+    const normalized = distanceKm / magnitude;
+    const factor = normalized >= 5 ? 5 : normalized >= 2 ? 2 : 1;
+    return factor * magnitude;
+  }
+
+  function formatCoordinate(value, axis) {
+    const absolute = Math.abs(value);
+    const digits = absolute < 10 ? 1 : 0;
+    const suffix = axis === "latitude"
+      ? (value < 0 ? "S" : "N")
+      : (value < 0 ? "W" : "E");
+    return `${absolute.toFixed(digits)}°${suffix}`;
+  }
+
+  function haversineKm(lonA, latA, lonB, latB) {
+    const radians = Math.PI / 180;
+    const phiA = latA * radians;
+    const phiB = latB * radians;
+    const deltaPhi = (latB - latA) * radians;
+    const deltaLambda = (lonB - lonA) * radians;
+    const value = Math.sin(deltaPhi / 2) ** 2
+      + Math.cos(phiA) * Math.cos(phiB) * Math.sin(deltaLambda / 2) ** 2;
+    return 2 * 6371.0088 * Math.asin(Math.min(1, Math.sqrt(value)));
+  }
+
+  function drawNavigationAids() {
+    if (!layers.navigation || !basemap?.bbox) return;
+    const bounds = basemap.bbox;
+    const lonSpan = bounds.max_lon - bounds.min_lon;
+    const latSpan = bounds.max_lat - bounds.min_lat;
+    if (![bounds.min_lon, bounds.max_lon, bounds.min_lat, bounds.max_lat]
+      .every(Number.isFinite) || lonSpan <= 0 || latSpan <= 0) return;
+    const lonStep = niceStep(lonSpan);
+    const latStep = niceStep(latSpan);
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(218, 237, 247, 0.25)";
+    ctx.fillStyle = "rgba(229, 243, 250, 0.88)";
+    ctx.lineWidth = 0.8;
+    ctx.font = "11px Segoe UI, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.setLineDash([4, 5]);
+
+    const firstLon = Math.ceil(bounds.min_lon / lonStep) * lonStep;
+    for (let lon = firstLon; lon < bounds.max_lon; lon += lonStep) {
+      const top = project(lon, bounds.max_lat);
+      ctx.beginPath();
+      ctx.moveTo(top.x, 0);
+      ctx.lineTo(top.x, canvas.height);
+      ctx.stroke();
+      ctx.fillText(formatCoordinate(lon, "longitude"), top.x + 4, canvas.height - 10);
+    }
+
+    const firstLat = Math.ceil(bounds.min_lat / latStep) * latStep;
+    for (let lat = firstLat; lat < bounds.max_lat; lat += latStep) {
+      const left = project(bounds.min_lon, lat);
+      ctx.beginPath();
+      ctx.moveTo(0, left.y);
+      ctx.lineTo(canvas.width, left.y);
+      ctx.stroke();
+      ctx.fillText(formatCoordinate(lat, "latitude"), 6, left.y - 8);
+    }
+    ctx.setLineDash([]);
+
+    // Scale is valid for the displayed EPSG:4326 map at its centre latitude.
+    const centreLat = (bounds.min_lat + bounds.max_lat) / 2;
+    const mapWidthKm = haversineKm(
+      bounds.min_lon,
+      centreLat,
+      bounds.max_lon,
+      centreLat
+    );
+    const maximumScalePixels = Math.min(150, canvas.width * 0.22);
+    const maximumScaleKm = maximumScalePixels / canvas.width * mapWidthKm;
+    const scaleKm = niceDistanceFloor(maximumScaleKm);
+    const scalePixels = scaleKm / mapWidthKm * canvas.width;
+    const scaleX = 20;
+    const scaleY = canvas.height - 30;
+    ctx.strokeStyle = "rgba(245, 251, 255, 0.95)";
+    ctx.fillStyle = "rgba(245, 251, 255, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(scaleX, scaleY - 5);
+    ctx.lineTo(scaleX, scaleY);
+    ctx.lineTo(scaleX + scalePixels, scaleY);
+    ctx.lineTo(scaleX + scalePixels, scaleY - 5);
+    ctx.stroke();
+    ctx.textBaseline = "bottom";
+    ctx.fillText(
+      `${scaleKm} km · ${formatCoordinate(centreLat, "latitude")}`,
+      scaleX,
+      scaleY - 7
+    );
+
+    // EPSG:4326 is north-up here; this is grid north, not a magnetic bearing.
+    const northX = canvas.width - 30;
+    const northY = 25;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.font = "bold 13px Segoe UI, sans-serif";
+    ctx.fillText("N", northX, northY - 7);
+    ctx.beginPath();
+    ctx.moveTo(northX, northY - 5);
+    ctx.lineTo(northX - 6, northY + 9);
+    ctx.lineTo(northX, northY + 5);
+    ctx.lineTo(northX + 6, northY + 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   function coordinateOf(point) {
@@ -865,6 +989,7 @@
     if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const s = stateAt(simMs);
     drawRiskFrame(s.risk);
+    drawNavigationAids();
     const pos = project(s.lon, s.lat);
 
     if (layers.track && s.trail.length > 1) {
@@ -1079,7 +1204,8 @@
     document.body.dataset.mode = presentationMode ? "presentation" : "engineering";
   }
 
-  [[layerRisk, "risk"], [layerHard, "hard"], [layerRoutes, "routes"], [layerTrack, "track"]]
+  [[layerRisk, "risk"], [layerHard, "hard"], [layerRoutes, "routes"],
+    [layerTrack, "track"], [layerNavigation, "navigation"]]
     .forEach(([control, key]) => {
       control.addEventListener("change", () => {
         layers[key] = control.checked;
@@ -1150,6 +1276,11 @@
           revision: Number(event.rev),
           time: event.t,
         })),
+      navigationAids: () => ({
+        enabled: layers.navigation,
+        projection: basemap?.projection,
+        bbox: basemap?.bbox,
+      }),
       setSimulationMs: (value) => {
         simMs = Math.max(0, Math.min(totalMs, Number(value)));
         playing = false;

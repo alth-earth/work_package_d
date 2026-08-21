@@ -6,10 +6,19 @@ Content Status:
 Document Role: SUPPORTING
 Scope: work package D change history
 Branch: research-validation-system
-Last Verified: 2026-08-21
+Last Verified: 2026-08-22
 ---
 
 # 工作包 D 变更记录
+
+## Unreleased - Research Validation Navigation Aids（2026-08-22 00:17 +08:00）
+
+- feat: add optional latitude/longitude graticules, coordinate labels,
+  centre-latitude scale bar, and grid-north indicator to the replay Viewer;
+- architecture: all aids reuse the canonical basemap projection and consume
+  only published bundle metadata; no A/B/C data or semantics are introduced;
+- test: add structural regressions for default layer state, projection reuse,
+  render ordering, and absence of new data fetches.
 
 ## Unreleased - Competition Demo Freeze Validation（2026-08-21 17:15 +08:00）
 
