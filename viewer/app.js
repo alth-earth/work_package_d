@@ -20,6 +20,7 @@
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
   const layerTrack = document.getElementById("layer-track");
+  const gateBadges = document.querySelector(".badges");
 
   let bundle = null;
   let basemap = null;
@@ -33,6 +34,9 @@
   let selectedHorizon = "current";
   let presentationMode = true;
   const layers = { risk: true, hard: true, routes: true, track: true };
+  const TRAIL_WINDOW_MS = 2 * 60 * 60 * 1000;
+  const PENDING_FADE_MS = 30 * 60 * 1000;
+  const ADOPTION_PULSE_MS = 60 * 60 * 1000;
 
   const RISK_COLORS = {
     1: "#55c878",
@@ -156,6 +160,46 @@
     return low;
   }
 
+  // Vessel geometry remains the existing backend/timeline linear ETA
+  // interpolation contract. Presentation-only consumers (trail and icon
+  // wake) call this helper; none of them invent a screen-space velocity.
+  function vesselPointAt(ms) {
+    const timelineMs = Math.max(0, Math.min(totalMs, ms));
+    const tl = bundle.timeline;
+    const i = timelineIndex(timelineMs);
+    const a = tl[i];
+    const b = tl[Math.min(i + 1, tl.length - 1)];
+    const denom = isoToMs(b.t) - isoToMs(a.t) || 1;
+    const f = Math.max(0, Math.min(1, (timelineMs - (isoToMs(a.t) - startMs)) / denom));
+    return {
+      lon: a.v.lon + (b.v.lon - a.v.lon) * f,
+      lat: a.v.lat + (b.v.lat - a.v.lat) * f,
+    };
+  }
+
+  // A short presentation trail sampled from the same authoritative timeline
+  // used by stateAt(). It is deliberately not the completed-track contract:
+  // it is a bounded visual aid for the vessel's recent physical movement.
+  function vesselTrailAt(ms) {
+    const endMs = Math.max(0, Math.min(totalMs, ms));
+    const beginMs = Math.max(0, endMs - TRAIL_WINDOW_MS);
+    const points = [vesselPointAt(beginMs)];
+    const first = timelineIndex(beginMs);
+    const last = timelineIndex(endMs);
+    for (let index = first + 1; index <= last; index += 1) {
+      const pointMs = isoToMs(bundle.timeline[index].t) - startMs;
+      if (pointMs < endMs) {
+        points.push({ lon: bundle.timeline[index].v.lon, lat: bundle.timeline[index].v.lat });
+      }
+    }
+    const current = vesselPointAt(endMs);
+    const previous = points[points.length - 1];
+    if (!previous || previous.lon !== current.lon || previous.lat !== current.lat) {
+      points.push(current);
+    }
+    return points;
+  }
+
   function previousTimelineValue(index, key) {
     for (let i = index; i >= 0; i -= 1) {
       if (Object.prototype.hasOwnProperty.call(bundle.timeline[i], key)) {
@@ -242,10 +286,11 @@
     const pending = previousTimelineValue(i, "pending");
     const superseded = previousTimelineValue(i, "superseded");
     const riskSelection = riskSelectionAt(ms);
+    const vessel = vesselPointAt(ms);
     return {
       time: startMs + ms,
-      lon: lerp(a.v.lon, b.v.lon),
-      lat: lerp(a.v.lat, b.v.lat),
+      lon: vessel.lon,
+      lat: vessel.lat,
       kn: lerp(a.v.kn ?? 0, b.v.kn ?? 0),
       status: a.v.status,
       edge: lerp(a.v.ep ?? 0, b.v.ep ?? 0),
@@ -259,6 +304,7 @@
       track: track.slice(0, a.ctl),
       pendingRoute: pending,
       supersededRoute: superseded,
+      trail: vesselTrailAt(ms),
       riskSelection,
       risk: frameForRiskSelection(riskSelection),
     };
@@ -291,6 +337,46 @@
       else break;
     }
     return result;
+  }
+
+  function latestEventOfType(type, ms) {
+    let result = null;
+    for (const event of bundle.events) {
+      if (isoToMs(event.t) - startMs > ms) break;
+      if (event.type === type) result = event;
+    }
+    return result;
+  }
+
+  function pendingRouteAlpha(s) {
+    if (!s.pendingRoute || s.pendingRoute.revision === s.active) return 1;
+    const decisionMs = s.decisionTime ? isoToMs(s.decisionTime) - startMs : NaN;
+    if (!Number.isFinite(decisionMs)) return presentationMode ? 0.82 : 1;
+    const progress = Math.max(0, Math.min(1, (simMs - decisionMs) / PENDING_FADE_MS));
+    return presentationMode ? 0.2 + 0.72 * progress : 1;
+  }
+
+  function adoptionPulse(s) {
+    // At an adoption tick, the timeline's effective_adoption field already
+    // describes the *next pending* plan. The completed adoption time is the
+    // authoritative event time, so use that event for this visual pulse.
+    const adoption = latestEventOfType("REPLAN_ADOPTED", simMs);
+    if (!adoption) return 0;
+    const adoptionMs = isoToMs(adoption.t) - startMs;
+    const elapsed = simMs - adoptionMs;
+    if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > ADOPTION_PULSE_MS) return 0;
+    return 1 - elapsed / ADOPTION_PULSE_MS;
+  }
+
+  function routeStatusText(s) {
+    const hasPending = s.pendingRoute && s.pendingRoute.revision !== s.active;
+    if (!presentationMode) {
+      const pending = hasPending ? ` · pending R${s.pendingRoute.revision}` : "";
+      return `Active route R${s.active}${pending}`;
+    }
+    if (adoptionPulse(s) > 0.01) return "New route adopted · authoritative route updated";
+    if (hasPending) return "New route pending · current route remains authoritative";
+    return "Authoritative route active";
   }
 
   function drawRiskFrame(frame) {
@@ -357,12 +443,14 @@
     ctx.restore();
   }
 
-  function drawPath(points, color, width, dash, filterFutureMs = null) {
+  function drawPath(points, color, width, dash, filterFutureMs = null, alpha = 1) {
     const visible = filterFutureMs === null ? points : points.filter(
       (point) => !point.eta || isoToMs(point.eta) - startMs >= filterFutureMs
     );
     if (visible.length < 2) return;
     const rendered = densifyPoints(visible);
+    ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
     ctx.lineJoin = "round";
@@ -375,7 +463,7 @@
       else ctx.lineTo(geo.x, geo.y);
     });
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   function draw() {
@@ -384,6 +472,10 @@
     const s = stateAt(simMs);
     drawRiskFrame(s.risk);
     const pos = project(s.lon, s.lat);
+
+    if (layers.track && s.trail.length > 1) {
+      drawPath(s.trail, "#d7e6ed", 2.2, [], null, presentationMode ? 0.72 : 0.45);
+    }
 
     if (layers.routes && s.supersededRoute && s.supersededRoute.length > 1) {
       drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs);
@@ -395,11 +487,14 @@
         (waypoint) => isoToMs(waypoint.eta) - startMs >= simMs
       );
       if (future.length) {
+        const pulse = adoptionPulse(s);
         drawPath(
           [{ lon: s.lon, lat: s.lat, eta: formatAbsolute(s.time) }, ...future],
           "#49a9ed",
-          3.5,
-          []
+          3.5 + pulse * 0.9,
+          [],
+          null,
+          0.88 + pulse * 0.12
         );
       }
     }
@@ -409,7 +504,7 @@
     }
 
     if (layers.routes && s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {
-      drawPath(s.pendingRoute.route, "#f2b134", 2.5, [8, 6]);
+      drawPath(s.pendingRoute.route, "#f2b134", 2.5, [8, 6], null, pendingRouteAlpha(s));
     }
 
     if (layers.routes && s.segment && s.segment.start_eta && s.segment.end_eta && active) {
@@ -422,14 +517,31 @@
     }
 
     const heading = shipHeading(s, active);
-    drawShipIcon(pos, heading);
+    // This phase is derived from simulation time, so playback speed changes
+    // the visual cadence and no independent CSS/timer animation is created.
+    const motionPhase = Math.sin((simMs / 1000) * Math.PI * 2 / 180);
+    drawShipIcon(pos, heading, motionPhase);
     updateDebug(s, heading);
   }
 
-  function drawShipIcon(pos, heading) {
+  function drawShipIcon(pos, heading, motionPhase) {
     ctx.save();
     ctx.translate(pos.x, pos.y);
     ctx.rotate(heading * Math.PI / 180);
+    const wakeAlpha = 0.18 + (motionPhase + 1) * 0.05;
+    const wakeLength = 16 + (motionPhase + 1) * 2;
+    ctx.beginPath();
+    ctx.moveTo(-3.5, 8);
+    ctx.lineTo(-3.5, wakeLength);
+    ctx.moveTo(3.5, 8);
+    ctx.lineTo(3.5, wakeLength);
+    ctx.strokeStyle = "#d7e6ed";
+    ctx.globalAlpha = wakeAlpha;
+    ctx.lineWidth = 1.3;
+    ctx.setLineDash([3, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.moveTo(0, -15);
     ctx.quadraticCurveTo(6, -7, 6, 1);
@@ -479,6 +591,7 @@
       ["pending_plan_status", s.pendingStatus ?? "none"],
       ["decision_time", s.decisionTime ?? "null"],
       ["effective_adoption_time", s.effectiveAdoption ?? "null"],
+      ["recent trail points", s.trail.length],
       ["requested risk horizon", horizonLabel(selectedHorizon)],
       ["requested risk valid_time", selection ? selection.requested_valid_time : "none"],
       ["risk availability", selection ? selection.availability : "none"],
@@ -496,10 +609,7 @@
       .map(([key, value]) => `<dt>${key}</dt><dd>${value}</dd>`)
       .join("");
     if (routeStatusEl) {
-      const pending = s.pendingRoute && s.pendingRoute.revision !== s.active
-        ? ` · pending R${s.pendingRoute.revision}`
-        : "";
-      routeStatusEl.textContent = `Active route R${s.active}${pending}`;
+      routeStatusEl.textContent = routeStatusText(s);
     }
     if (!selection || selection.availability !== "AVAILABLE") {
       riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} unavailable`;
@@ -552,9 +662,7 @@
 
   toggleDebugBtn.addEventListener("click", () => {
     presentationMode = !presentationMode;
-    debugPanel.hidden = presentationMode;
-    toggleDebugBtn.textContent = presentationMode ? "Engineering Debug" : "Presentation Mode";
-    document.body.dataset.mode = presentationMode ? "presentation" : "engineering";
+    updateModeUi();
     draw();
   });
 
@@ -562,6 +670,13 @@
     selectedHorizon = riskHorizonSel.value;
     draw();
   });
+
+  function updateModeUi() {
+    debugPanel.hidden = presentationMode;
+    if (gateBadges) gateBadges.hidden = presentationMode;
+    toggleDebugBtn.textContent = presentationMode ? "Engineering Debug" : "Presentation Mode";
+    document.body.dataset.mode = presentationMode ? "presentation" : "engineering";
+  }
 
   [[layerRisk, "risk"], [layerHard, "hard"], [layerRoutes, "routes"], [layerTrack, "track"]]
     .forEach(([control, key]) => {
@@ -581,8 +696,7 @@
     scrub.max = String(totalMs);
     rangeLabel.textContent = `${bundle.replay.start} -> ${bundle.replay.end}`;
     document.getElementById("mode-badge").textContent = bundle.replay.scenario_mode;
-    debugPanel.hidden = true;
-    toggleDebugBtn.textContent = "Engineering Debug";
+    updateModeUi();
     document.getElementById("gate-l1").textContent = `L1 ${bundle.gates.status}`;
     document.getElementById("gate-l2").textContent = `L2 ${bundle.gates.l2_status}`;
     document.getElementById("gate-loop").textContent =
@@ -606,6 +720,14 @@
         }
       },
       shipHeading: () => shipHeading(stateAt(simMs), routeFor(stateAt(simMs).active)),
+      trailAt: () => stateAt(simMs).trail,
+      transitionState: () => {
+        const current = stateAt(simMs);
+        return {
+          pending_alpha: pendingRouteAlpha(current),
+          adoption_pulse: adoptionPulse(current),
+        };
+      },
       setSimulationMs: (value) => {
         simMs = Math.max(0, Math.min(totalMs, Number(value)));
         playing = false;

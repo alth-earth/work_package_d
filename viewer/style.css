@@ -231,6 +231,11 @@ select {
   background: var(--track);
 }
 
+.sw-trail {
+  background: #d7e6ed;
+  opacity: 0.72;
+}
+
 .sw-active {
   background: var(--accent);
 }
