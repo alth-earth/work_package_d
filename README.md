@@ -1,13 +1,24 @@
 ---
-Document Status: ACTIVE_SUPPORTING
+Overall Status: ACTIVE
+Content Status:
+  - COMPLETED
+  - PLANNED
+Document Role: CANONICAL
 Scope: work package D README
 Canonical For: D ownership and viewer application
-Branch: demo-engineering
+Branch: research-validation-system
 Last Verified: 2026-08-21
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
 # Work Package D: Display / Visualization / Presentation
+
+## Research Validation role（2026-08-21 23:18）
+
+D is the Visualization and Validation Platform and remains the sole Viewer runtime owner.
+The 48h artifact Viewer is the inherited browser-validated baseline. Research work must expose
+published provenance, uncertainty and comparisons; it must not synthesize candidate routes,
+environment contributors or backend semantics.
 
 D owns the Replay-driven Viewer application: HTML/JS/CSS, Simulation Clock,
 moving ship rendering, route/track/pending rendering, static server, and proof
