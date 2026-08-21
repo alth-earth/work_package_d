@@ -88,6 +88,26 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
   continuous motion, horizon and replan states correct, 0 console errors and
   warnings, required local resources HTTP 200.
 
+## Competition Demo Freeze Validation（2026-08-21 17:15 +08:00）
+
+- `DEMO_FREEZE_VALIDATION_REPORT.md` records fresh Firefox validation from the
+  existing formal artifact and an independent copied `viewer/` directory;
+  both load in Presentation Mode, paused at departure, with HTTP 200 required
+  resources and zero console errors/warnings;
+- Presentation Mode now includes a Risk Forecast Summary sourced from exported
+  frame summaries: mean/max score, forecast trend, LAND count,
+  DATA_UNAVAILABLE count, and total hard-cell count;
+- Route Decision shows active revision, published distance and arrival ETA,
+  available route metrics, and the real `REPLAN_DECIDED` / `REPLAN_ADOPTED`
+  event trace. Missing average/max risk metrics remain `not published`;
+- `route_candidates` is a backward-compatible presentation extension. The
+  current artifact publishes an empty candidate set, so the Viewer keeps the
+  single authoritative route and states that comparison is unavailable;
+- `ENVIRONMENT_LAYER_READINESS.md` records that Sea Ice/Wind/Wave/Current/
+  Temperature arrays and contributor fields are not in the current artifact;
+  no synthetic environmental layer is shown;
+- D tests: 58 passed; Ruff and JS syntax are clean.
+
 ### How to build artifacts (orchestrator side)
 
 ```bash

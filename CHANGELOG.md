@@ -1,5 +1,17 @@
 # 工作包 D 变更记录
 
+## Unreleased - Competition Demo Freeze Validation（2026-08-21 17:15 +08:00）
+
+- validation: add `DEMO_FREEZE_VALIDATION_REPORT.md` for source-package and
+  independent-copy Firefox validation;
+- feat: add Risk Forecast Summary from exported frame metadata and Route
+  Decision explanation from published route/event metadata;
+- feat: consume optional `route_candidates` without fabricating an objective
+  comparison when the current artifact publishes no candidates;
+- docs: add `ENVIRONMENT_LAYER_READINESS.md` and extend the rehearsal script;
+- no A/B/C/contracts, risk formula, route semantics, ETA, ship motion, replay,
+  or adoption semantics changed.
+
 ## Unreleased - Competition Demo Final Polish（2026-08-21 15:30 +08:00）
 
 - audit: add `scripts/risk_distribution_audit.py` and

@@ -46,6 +46,9 @@ def test_bundle_gates_and_basemap(bundle: dict) -> None:
         "exact_authoritative_cells_no_interpolation"
     )
     assert bundle["presentation"]["route_rendering"]["authoritative_semantics_unchanged"]
+    assert bundle["route_candidates"]["schema_version"] == "presentation.route-candidates.v1"
+    assert bundle["route_candidates"]["status"] == "NOT_PUBLISHED"
+    assert bundle["route_candidates"]["candidates"] == []
 
 
 def test_bundle_intermediate_ship_positions_change(bundle: dict) -> None:
@@ -147,6 +150,19 @@ def test_bundle_exposes_presentation_risk_distribution_summary(bundle: dict) -> 
         "LAND": 65,
         "NONE": 255,
     }
+    assert first["land_count"] == 65
+    assert first["data_unavailable_count"] == 21
+    assert first["hard_cell_count"] == 86
+    assert risk["forecast_summary"]["trend"] == "decreasing"
+
+
+def test_route_decision_metadata_exposes_authoritative_eta_without_candidates(bundle: dict) -> None:
+    initial = bundle["routes"][0]
+    assert initial["objective"] == "recommended"
+    assert initial["arrival_eta"] == initial["waypoints"][-1]["eta"]
+    assert initial["metrics"]["distance_km"] == initial["distance_km"]
+    assert initial["metrics"]["average_risk"] is None
+    assert initial["metrics"]["maximum_risk"] is None
 
 
 def test_risk_horizon_selection_is_explicit_and_fail_closed(bundle: dict) -> None:

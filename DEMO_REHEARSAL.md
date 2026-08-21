@@ -1,6 +1,6 @@
 # Arctic Route Viewer — 3-Minute Demo Rehearsal
 
-（2026-08-21 12:05 +08:00）
+（2026-08-21 17:15 +08:00）
 
 This runbook is for the offline deterministic artifact
 `sb-viewer-baseline-12h-det`. It is a presentation rehearsal, not a live
@@ -21,6 +21,9 @@ navigation or real-time weather service.
 4. Point out the Risk Forecast Timeline and Replay Milestones panels. Use
    Current risk for the main story; use +6h and +24h only at the marked
    horizon step.
+5. Keep the Risk Forecast Summary and Route Decision panels visible. They use
+   published bundle metadata only; candidate comparison is explicitly marked
+   unavailable for this artifact.
 
 ## Three-minute script
 
@@ -28,11 +31,11 @@ navigation or real-time weather service.
 |---|---|---|---|
 | 0:00 | Point to the map and the Simulation Clock. | Real GEBCO basemap, risk/hard overlays, route, vessel icon, and clean Presentation Mode. | The Viewer consumes a deterministic replay artifact with one presentation clock. |
 | 0:20 | Press **Play** and leave speed at 2x. Pause near `10:30`. | The ship moves continuously; the short pale trail follows its actual recent path. | Vessel motion comes from timeline/ETA plus Simulation Clock; the trail is presentation-only. |
-| 0:50 | Select **+6h** in the risk horizon control. | The ship remains at the same simulation time while the risk panel and Risk Forecast Timeline show the requested and actual risk valid time. | Forecast presentation horizon is independent of vessel time. |
-| 1:20 | Select **Current**, then scrub to `13:00` and briefly resume/stop. | The current risk frame updates with simulation time while the route remains readable. | Risk, vessel, route, and event rendering share one clock. |
-| 1:40 | Scrub to `13:30`. | “New route pending · current route remains authoritative”; the pending route is visibly dashed/amber and has faded in. | `REPLAN_DECIDED` is not adoption; the active route and completed history are preserved. |
-| 2:10 | Scrub to `15:00`. | “New route adopted · authoritative route updated”; the new active route is blue and the transition pulse is visible. A later pending plan may also be visible because the artifact contains same-tick follow-up planning. | `REPLAN_ADOPTED` changes the active future route at the effective time. |
-| 2:40 | Let the ship sit at `15:00` or press Play for a few seconds; point to the risk timeline and route legends. | Ship icon, wake/trail, route states, risk levels, hard-reason states, and replay milestones remain distinct. | Presentation foundation is demo-ready without hiding unknown or hard constraints. |
+| 0:50 | Select **+6h** in the risk horizon control. | The ship remains at the same simulation time; the Risk Forecast Timeline, Summary mean/max, hazard counts, and actual valid time update from the published frame. | Forecast presentation horizon is independent of vessel time, and low risk is explained by the formal summary rather than invented contributors. |
+| 1:20 | Select **Current**, then scrub to `13:00` and briefly resume/stop. | The current risk frame and Risk Summary update with simulation time while Route Decision still shows the authoritative route. | Risk, vessel, route, and event rendering share one clock. |
+| 1:40 | Scrub to `13:30`. | “REPLAN_DECIDED”; R1 remains authoritative, R2 is pending, and the Route Decision panel shows distance/ETA from the published route metadata. | A planning decision is not adoption; the active route and completed history are preserved. |
+| 2:10 | Scrub to `15:00`. | “REPLAN_ADOPTED”; R2 becomes authoritative, the route transition pulse is visible, and the event trace records the adoption. | Adoption changes the active future route at the effective time. |
+| 2:40 | Let the ship sit at `15:00` or press Play for a few seconds; point to the Risk Summary, Route Decision, timeline, and legends. | Ship icon, wake/trail, route states, risk levels, hard reasons, summary metadata, and replay milestones remain distinct. | The system connects environment assessment, route planning, replanning, and navigation without hiding unknown data. |
 | 3:00 | Stop playback. Optionally click **Engineering Debug** to show provenance and revision details, then return to Presentation Mode. | Clean competition view is restored; debug remains available on demand. | Presentation and engineering inspection are separate modes. |
 
 ## Optional proof moments

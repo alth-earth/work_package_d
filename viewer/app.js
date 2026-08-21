@@ -18,8 +18,17 @@
   const riskProfileStatusEl = document.getElementById("risk-profile-status");
   const riskTimelineEl = document.getElementById("risk-timeline");
   const riskProfileWindowEl = document.getElementById("risk-profile-window");
+  const riskSummaryStatusEl = document.getElementById("risk-summary-status");
+  const riskSummaryMetricsEl = document.getElementById("risk-summary-metrics");
+  const riskSummaryHazardsEl = document.getElementById("risk-summary-hazards");
+  const riskSummaryNoteEl = document.getElementById("risk-summary-note");
   const eventTimelineEl = document.getElementById("event-timeline");
   const routeStatusEl = document.getElementById("route-status");
+  const routeDecisionStatusEl = document.getElementById("route-decision-status");
+  const routeDecisionMetricsEl = document.getElementById("route-decision-metrics");
+  const routeDecisionTraceEl = document.getElementById("route-decision-trace");
+  const routeCandidateNoteEl = document.getElementById("route-candidate-note");
+  const routeCandidatesEl = document.getElementById("route-candidates");
   const layerRisk = document.getElementById("layer-risk");
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
@@ -37,6 +46,8 @@
   let scale = 60;
   let selectedHorizon = "current";
   let presentationMode = true;
+  let lastRiskSummaryKey = null;
+  let lastRouteDecisionKey = null;
   const layers = { risk: true, hard: true, routes: true, track: true };
   const TRAIL_WINDOW_MS = 2 * 60 * 60 * 1000;
   const PENDING_FADE_MS = 30 * 60 * 1000;
@@ -89,6 +100,60 @@
 
   function horizonLabel(key) {
     return key === "current" ? "Current" : key;
+  }
+
+  function setDefinitionRows(element, rows) {
+    if (!element) return;
+    element.replaceChildren();
+    for (const [label, value] of rows) {
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const detail = document.createElement("dd");
+      detail.textContent = value;
+      element.append(term, detail);
+    }
+  }
+
+  function setSummaryItems(element, items) {
+    if (!element) return;
+    element.replaceChildren();
+    for (const text of items) {
+      const item = document.createElement("li");
+      item.textContent = text;
+      element.append(item);
+    }
+  }
+
+  function formatScore(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toFixed(3) : "not published";
+  }
+
+  function formatDistance(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? `${number.toFixed(1)} km` : "not published";
+  }
+
+  function formatMetric(value) {
+    if (value === null || value === undefined || value === "") return "not published";
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toFixed(3) : String(value);
+  }
+
+  function routeCandidates() {
+    const value = bundle?.route_candidates;
+    if (Array.isArray(value)) return value;
+    return Array.isArray(value?.candidates) ? value.candidates : [];
+  }
+
+  function routeArrivalEta(route) {
+    if (route?.arrival_eta) return route.arrival_eta;
+    const waypoints = route?.waypoints || [];
+    return waypoints.length ? waypoints[waypoints.length - 1].eta || "not published" : "not published";
+  }
+
+  function routeMetric(route, key) {
+    return route?.metrics?.[key] ?? route?.[key];
   }
 
   function riskFrames() {
@@ -221,6 +286,67 @@
     riskProfileStatusEl.textContent =
       `${horizonLabel(selectedHorizon)} · mean ${Number(summary.risk_score_mean).toFixed(3)} ` +
       `· max ${Number(summary.risk_score_max).toFixed(3)} · water ${levelOne}/${navigable} at L1`;
+  }
+
+  function updateRiskSummary(s) {
+    if (!riskSummaryStatusEl) return;
+    const selection = s.riskSelection;
+    const summary = s.risk?.summary;
+    const key = [
+      selectedHorizon,
+      selection?.availability,
+      selection?.actual_valid_time,
+      s.risk?.risk_id,
+    ].join("|");
+    if (key === lastRiskSummaryKey) return;
+    lastRiskSummaryKey = key;
+
+    if (!summary || !selection || selection.availability !== "AVAILABLE") {
+      riskSummaryStatusEl.classList.add("unavailable");
+      riskSummaryStatusEl.textContent =
+        `${horizonLabel(selectedHorizon)} · Risk Summary unavailable for this frame`;
+      setDefinitionRows(riskSummaryMetricsEl, []);
+      setSummaryItems(riskSummaryHazardsEl, []);
+      if (riskSummaryNoteEl) {
+        riskSummaryNoteEl.textContent =
+          "No stale frame is used; choose an available forecast horizon to inspect its published summary.";
+      }
+      return;
+    }
+
+    riskSummaryStatusEl.classList.remove("unavailable");
+    riskSummaryStatusEl.textContent =
+      `${horizonLabel(selectedHorizon)} · formal frame ${selection.actual_valid_time}`;
+    const forecast = bundle.risk?.forecast_summary || {};
+    const trend = forecast.trend || "not published";
+    setDefinitionRows(riskSummaryMetricsEl, [
+      ["mean score", formatScore(summary.risk_score_mean)],
+      ["maximum score", formatScore(summary.risk_score_max)],
+      ["forecast trend", trend],
+      ["published cells", String(summary.total_cells ?? "not published")],
+    ]);
+
+    const hardCounts = summary.hard_reason_counts || {};
+    const landCount = Number.isFinite(Number(summary.land_count))
+      ? Number(summary.land_count)
+      : Number(hardCounts.LAND || 0);
+    const unavailableCount = Number.isFinite(Number(summary.data_unavailable_count))
+      ? Number(summary.data_unavailable_count)
+      : Number(hardCounts.DATA_UNAVAILABLE || 0);
+    const hardCellCount = Number.isFinite(Number(summary.hard_cell_count))
+      ? Number(summary.hard_cell_count)
+      : Object.entries(hardCounts)
+        .filter(([reason]) => reason !== "NONE")
+        .reduce((total, [, count]) => total + Number(count || 0), 0);
+    setSummaryItems(riskSummaryHazardsEl, [
+      `LAND cells · ${landCount}`,
+      `DATA_UNAVAILABLE cells · ${unavailableCount}`,
+      `Hard cells total · ${hardCellCount}`,
+    ]);
+    if (riskSummaryNoteEl) {
+      riskSummaryNoteEl.textContent =
+        "Level 1 on published NONE water cells is a low-risk assessment; hard reasons remain separate and fail closed.";
+    }
   }
 
   function updateEventTimeline(s) {
@@ -529,6 +655,113 @@
     return "Authoritative route active";
   }
 
+  function updateRouteDecision(s) {
+    if (!routeDecisionStatusEl) return;
+    const active = routeFor(s.active);
+    const pending = s.pendingRoute && s.pendingRoute.revision !== s.active
+      ? routeFor(s.pendingRoute.revision)
+      : null;
+    const adopted = latestEventOfType("REPLAN_ADOPTED", simMs);
+    const decided = latestEventOfType("REPLAN_DECIDED", simMs);
+    const key = [
+      s.active,
+      s.pendingRevision,
+      s.pendingStatus,
+      adopted?.t,
+      decided?.t,
+    ].join("|");
+    if (key === lastRouteDecisionKey) return;
+    lastRouteDecisionKey = key;
+
+    if (!active) {
+      routeDecisionStatusEl.classList.add("unavailable");
+      routeDecisionStatusEl.textContent = "Route decision metadata unavailable";
+      setDefinitionRows(routeDecisionMetricsEl, []);
+      if (routeDecisionTraceEl) routeDecisionTraceEl.textContent = "";
+      if (routeCandidateNoteEl) routeCandidateNoteEl.textContent = "";
+      if (routeCandidatesEl) routeCandidatesEl.hidden = true;
+      return;
+    }
+
+    routeDecisionStatusEl.classList.remove("unavailable");
+    if (adopted && Number(adopted.rev) === Number(active.revision) && adoptionPulse(s) > 0.01) {
+      const next = pending ? `; R${pending.revision} is now pending` : "";
+      routeDecisionStatusEl.textContent =
+        `REPLAN_ADOPTED · R${active.revision} is now authoritative${next}`;
+    } else if (pending) {
+      routeDecisionStatusEl.textContent =
+        `REPLAN_DECIDED · R${pending.revision} pending; R${active.revision} remains authoritative`;
+    } else if (adopted && Number(adopted.rev) === Number(active.revision)) {
+      routeDecisionStatusEl.textContent =
+        `REPLAN_ADOPTED · R${active.revision} is now authoritative`;
+    } else if (Number(active.revision) === 1) {
+      routeDecisionStatusEl.textContent =
+        `Initial route generated · R${active.revision} is authoritative`;
+    } else {
+      routeDecisionStatusEl.textContent =
+        `Authoritative route R${active.revision} is active`;
+    }
+
+    const activeMetrics = active.metrics || {};
+    const rows = [
+      ["active revision", `R${active.revision} · authoritative`],
+      ["route role", "authoritative"],
+      ["distance", formatDistance(active.distance_km)],
+      ["arrival ETA", routeArrivalEta(active)],
+      ["average risk", formatMetric(activeMetrics.average_risk ?? active.average_risk)],
+      ["maximum risk", formatMetric(activeMetrics.maximum_risk ?? active.maximum_risk)],
+    ];
+    if (pending) {
+      rows.push(
+        ["pending revision", `R${pending.revision}`],
+        ["pending distance", formatDistance(pending.distance_km)],
+        ["pending adoption", pending.effective_adoption_time || "not published"],
+      );
+    }
+    setDefinitionRows(routeDecisionMetricsEl, rows);
+
+    const traceEvents = [decided, adopted]
+      .filter(Boolean)
+      .sort((left, right) => bundle.events.indexOf(left) - bundle.events.indexOf(right));
+    const trace = traceEvents.map((event) => `${event.type} R${event.rev} @ ${event.t}`);
+    if (routeDecisionTraceEl) {
+      routeDecisionTraceEl.textContent = trace.length
+        ? `Event trace: ${trace.join(" → ")}`
+        : "Event trace: departure → initial route generated";
+    }
+
+    const candidates = routeCandidates();
+    if (!candidates.length) {
+      if (routeCandidateNoteEl) {
+        routeCandidateNoteEl.textContent =
+          "Candidate comparison is not published in this bundle; the Viewer keeps the authoritative route only.";
+      }
+      if (routeCandidatesEl) {
+        routeCandidatesEl.replaceChildren();
+        routeCandidatesEl.hidden = true;
+      }
+      return;
+    }
+    if (routeCandidateNoteEl) {
+      routeCandidateNoteEl.textContent = `Published route candidates · ${candidates.length}`;
+    }
+    if (routeCandidatesEl) {
+      routeCandidatesEl.replaceChildren();
+      for (const candidate of candidates) {
+        const label = candidate.label || candidate.objective || "candidate";
+        const metrics = [
+          formatDistance(candidate.distance_km ?? candidate.metrics?.distance_km),
+          `ETA ${candidate.arrival_eta || candidate.eta || "not published"}`,
+          `avg risk ${formatMetric(candidate.average_risk ?? candidate.metrics?.average_risk)}`,
+        ];
+        const item = document.createElement("li");
+        item.textContent = `${label} · ${metrics.join(" · ")}`;
+        routeCandidatesEl.append(item);
+      }
+      routeCandidatesEl.hidden = false;
+    }
+  }
+
   function drawRiskFrame(frame) {
     if (!frame) return;
     const lats = frame.coordinates.latitude;
@@ -777,6 +1010,8 @@
         `actual ${selection.actual_valid_time} (${actual}), ${selection.selection_method}`;
     }
     updateRiskTimeline(s);
+    updateRiskSummary(s);
+    updateRouteDecision(s);
     updateEventTimeline(s);
   }
 
@@ -884,6 +1119,17 @@
         return {
           pending_alpha: pendingRouteAlpha(current),
           adoption_pulse: adoptionPulse(current),
+        };
+      },
+      riskSummary: () => stateAt(simMs).risk?.summary || null,
+      routeDecision: () => {
+        const current = stateAt(simMs);
+        return {
+          active_revision: current.active,
+          pending_revision: current.pendingRevision,
+          pending_status: current.pendingStatus,
+          active_route: routeFor(current.active),
+          candidate_count: routeCandidates().length,
         };
       },
       setSimulationMs: (value) => {

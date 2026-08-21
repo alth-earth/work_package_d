@@ -46,7 +46,7 @@ D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2
 真实 Firefox E2E：页面/GEBCO/路线/船/risk overlay 均可见；Play/Pause、scrub、
 1x/2x/4x/8x 已操作；10:00/10:30/11:00 船位为
 `70.3333/70.4135/70.4938`；console errors/warnings = 0，静态请求全部 200。
-D 当前验证为 57 passed + ruff clean + JS syntax clean。
+D 当前验证为 58 passed + ruff clean + JS syntax clean。
 
 ## RC1 角色
 
@@ -113,6 +113,24 @@ temporal provenance。
   route revision 仍按 authoritative/pending/superseded 语义展示；
 - 本轮 Firefox、D tests/ruff/JS syntax 和 Orchestrator focused export tests
   均通过；没有重跑 replay、heavy integration 或修改 A/B/C/contracts。
+
+## Competition Demo Freeze Validation（2026-08-21 17:15 +08:00）
+
+- `DEMO_FREEZE_VALIDATION_REPORT.md`：既有 artifact 和独立复制的 `viewer/`
+  均可由静态 server 启动，Firefox 验证 Presentation Mode、departure pause、
+  Risk Timeline、milestones、ship movement、HTTP 200 与 console 0；
+- Viewer 新增 Risk Forecast Summary，所有数字来自 Orchestrator 导出的
+  frame summary；Risk trend 是 export 层的 first-to-last finite mean score
+  presentation summary，不是新的 B 计算；
+- Viewer 新增 Route Decision panel，展示现有 route revision、distance、
+  endpoint ETA、已有 metrics 和真实 event trace；average/max risk 缺失时
+  明确显示 `not published`；
+- Orchestrator 导出 backward-compatible `route_candidates` 空接口。
+  当前制品没有候选 geometry/metrics，Viewer 不伪造 Fastest/Low Risk/
+  Recommended 比较；
+- `ENVIRONMENT_LAYER_READINESS.md` 明确当前 bundle 没有 Sea Ice、Wind、
+  Wave、Current、Temperature 或 contributor arrays，因此 D 不读取 A 私有
+  数据、不绕过 presentation boundary。
 
 ## 常用命令
 
