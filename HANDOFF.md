@@ -6,7 +6,7 @@ Content Status:
 Document Role: SUPPORTING
 Scope: work package D handoff
 Branch: research-validation-system
-Last Verified: 2026-08-21
+Last Verified: 2026-08-23
 ---
 
 # 工作包 D 交接说明
@@ -20,8 +20,10 @@ Last Verified: 2026-08-21
 
 ## 当前基线
 
-D 0.1.0：只读消费 C 已发布的 `cd.four-layer-route-plan-set.v3`（或 v2 后备），
-输出 `d.display-snapshot.v1`；并运行 **Replay-driven Viewer**（`viewer/`：
+D 0.1.0 的 Legacy Display 只读消费 C 顶层
+`cd.four-layer-route-plan-set.v3`（内含 `cd.route-plan.v3`）或
+`cd.route-plan.v2` 后备，输出 `d.display-snapshot.v1`。当前 **Replay-driven Viewer** 不
+直接读取 C 集合，而只消费 Orchestrator 的 `replay.viewer-bundle.v1`（`viewer/`：
 `app.js`/`index.html`/`style.css` + `pngcodec.py`/`embed.py`/`render_proof.py`）。
 
 ## Viewer Product Mainline（2026-08-20 21:13 +08:00）

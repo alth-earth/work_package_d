@@ -7,7 +7,7 @@ Document Role: CANONICAL
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: research-validation-system
-Last Verified: 2026-08-22
+Last Verified: 2026-08-23
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -165,6 +165,11 @@ The following describes the older D display layer that consumed C published
 route plan artifacts directly. It is still functional but the Replay-driven
 Viewer above is the current active development path.
 
+接口区分：Legacy Display 直接消费顶层 `cd.four-layer-route-plan-set.v3`（其中单路线为
+`cd.route-plan.v3`）或 `cd.route-plan.v2`；当前 Replay Viewer 不直接消费该集合，而只消费
+Orchestrator 发布的 `replay.viewer-bundle.v1`。当前 candidate package 仍为
+`NOT_PUBLISHED`，D 不从 route revisions 推断 12 条候选路线。
+
 > 状态：**RC1 真实制品消费 PASS（2026-08-16）**。v3 整组/ v2 后备的读取、分组、
 > 状态机与渲染摘要已实现并消费真实 r6/r7 输出（initial + replanned）；离线本地
 > schema registry 与 `layers` 数组解析已修复；具体地图/交互页面待后续实现。
@@ -278,5 +283,5 @@ Frozen loader 同时从发布制品读取 `scenario_mode`（RunContext）与
 ## 相关文档
 
 - [C→D 合同](../work_package_c/docs/CD_CONTRACT.md)
-- [D 展示层选型评估](../D_SELECTION_EVALUATION_v2_vs_v3.md)
+- [D 展示层选型评估](../arctic_route_governance/reports/decisions/D_SELECTION_EVALUATION_v2_vs_v3.md)
 - [顶层系统权威](../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md)
