@@ -1,27 +1,27 @@
-# Risk Distribution Audit
+# 风险分布审计
 
-> Generated: 2026-08-21T07:17:24.927496Z
-> Read-only audit of the exported Viewer presentation bundle; no risk value was recomputed.
+> 生成时间：2026-08-21T07:17:24.927496Z
+> 对导出的查看器展示包进行只读审计；未重新计算任何风险值。
 
-## Scope and source
+## 范围与来源
 
-- Bundle: `replay.viewer-bundle.v1` / replay `sb-viewer-baseline-12h-det`
-- Scenario: `tromso_isfjorden_august_2026_demo_v1`
-- Risk source: `presentation.risk-overlay.v1` / provenance `formal`
-- Frames: `13`; cells per frame: `31 × 11 = 341`
-- Risk grid resolution: `0.366667° lat × 1.200000° lon`
-- Approximate cell size: `40.817333 km lat × 36.820741 km lon at mean latitude`
+- 包：`replay.viewer-bundle.v1` / 回放 `sb-viewer-baseline-12h-det`
+- 场景：`tromso_isfjorden_august_2026_demo_v1`
+- 风险来源：`presentation.risk-overlay.v1` / 来源 `formal`
+- 帧：`13`；每帧单元：`31 × 11 = 341`
+- 风险网格分辨率：`0.366667° 纬度 × 1.200000° 经度`
+- 近似单元大小：平均纬度处 `40.817333 km 纬度 × 36.820741 km 经度`
 
-## Published policy metadata
+## 已发布的策略元数据
 
-- B target grid: `0.375° × 1.25°`
-- Risk level policy: `c_equal_width_floor_v1`
-- Formula version: `deterministic_environment_components_v2`
-- Hard-mask policy: `land_sea_mask_threshold_v2`
+- B 目标网格：`0.375° × 1.25°`
+- 风险层级策略：`c_equal_width_floor_v1`
+- 公式版本：`deterministic_environment_components_v2`
+- 硬掩码策略：`land_sea_mask_threshold_v2`
 
-## Per-frame distribution
+## 逐帧分布
 
-| valid_time | L1 | L2 | L3 | L4 | L5 | L1 % | L2 % | L3 % | L4 % | L5 % | score min | score max | score mean | hard reasons |
+| valid_time | L1 | L2 | L3 | L4 | L5 | L1 % | L2 % | L3 % | L4 % | L5 % | 分数最小 | 分数最大 | 分数均值 | 硬原因 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | 2026-08-15T10:00:00Z | 255 | 0 | 0 | 0 | 86 | 74.8% | 0.0% | 0.0% | 0.0% | 25.2% | 0.017027 | 0.151060 | 0.055984 | DATA_UNAVAILABLE=21, LAND=65, NONE=255 |
 | 2026-08-15T11:00:00Z | 255 | 0 | 0 | 0 | 86 | 74.8% | 0.0% | 0.0% | 0.0% | 25.2% | 0.015778 | 0.156399 | 0.055995 | DATA_UNAVAILABLE=21, LAND=65, NONE=255 |
@@ -37,14 +37,14 @@
 | 2026-08-15T21:00:00Z | 255 | 0 | 0 | 0 | 86 | 74.8% | 0.0% | 0.0% | 0.0% | 25.2% | 0.021483 | 0.067706 | 0.048012 | DATA_UNAVAILABLE=21, LAND=65, NONE=255 |
 | 2026-08-15T22:00:00Z | 255 | 0 | 0 | 0 | 86 | 74.8% | 0.0% | 0.0% | 0.0% | 25.2% | 0.022763 | 0.068084 | 0.047120 | DATA_UNAVAILABLE=21, LAND=65, NONE=255 |
 
-## Root-cause conclusion
+## 根因结论
 
-The distribution is consistent across all formal frames: all `NONE` cells are Level 1, while `LAND` and `DATA_UNAVAILABLE` cells are conservatively Level 5. The Viewer does not map a low score into Level 1 incorrectly; it consumes the published level and renders hard reasons in a separate layer.
+分布在所有正式帧上一致：所有 `NONE` 单元为 1 级，而 `LAND` 与 `DATA_UNAVAILABLE` 单元被保守地归为 5 级。查看器不会错误地将低分映射为 1 级；它消费已发布的层级，并在独立图层中渲染硬原因。
 
-Therefore the dominant cause of the visually quiet water area is the published B target-grid/model output and this demo artifact's low normalized scores, not a D color-threshold or coordinate-rendering defect. The 5-level scale is still semantically present, but this artifact does not contain navigable Level 2–4 cells.
+因此，视觉上平静的水域占主导的原因是已发布的 B 目标网格/模型输出以及该演示制品较低的归一化分数，而非 D 的颜色阈值或坐标渲染缺陷。5 级刻度在语义上仍然存在，但该制品不包含可航行的 2–4 级单元。
 
-The hard cells remain visible as `LAND` / `DATA_UNAVAILABLE`; they must not be softened or converted into safe risk colors. A future demo with more visually differentiated risk requires a new validated B artifact or an explicitly approved presentation projection, not an ad-hoc Viewer threshold change.
+硬单元仍作为 `LAND` / `DATA_UNAVAILABLE` 可见；不得被弱化或转换为安全风险颜色。要在视觉上更具区分度的风险，需要一个新的经校验的 B 制品或明确批准的展示投影，而非临时的查看器阈值更改。
 
-## Suggested short-term demo action
+## 建议的短期演示动作
 
-Keep the current exact-cell risk semantics, add the distribution summary/timeline to explain the result, and label the artifact as `demo_unvalidated`. Do not change the risk formula or fabricate intermediate levels in D.
+保持当前精确单元风险语义，添加分布摘要/时间线以解释结果，并将制品标记为 `demo_unvalidated`。不要更改风险公式或在 D 中虚构中间层级。

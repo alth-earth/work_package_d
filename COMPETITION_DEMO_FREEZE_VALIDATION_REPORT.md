@@ -1,38 +1,36 @@
-# Competition Demo Freeze Validation Report
+# 比赛演示冻结校验报告
 
 （2026-08-21 17:30 +08:00）
 
-## 1. Key Delta
+## 1. 关键差异
 
-| Claim | Before | After | Evidence | Verdict |
+| 主张 | 之前 | 之后 | 证据 | 结论 |
 |---|---|---|---|---|
-| Demo freeze validation | Previous browser baseline | Fresh source-package and independent-copy Firefox validation | `DEMO_FREEZE_VALIDATION_REPORT.md`, Firefox | PASS |
-| Risk explanation | Timeline only | Risk Summary: mean/max, trend, LAND, unavailable, hard-cell counts | current bundle + Firefox panel | PASS |
-| C route explanation | Route status only | Route Decision: active/pending revision, distance, ETA, published metrics, event trace | Firefox 13:30/15:00 | PASS |
-| Multi-route comparison | No real candidate set | `route_candidates` interface present, empty and explicit | `bundle.json` | SAFE DEFER |
-| Environment factors | No readiness statement | readiness report records absent fields and required future contract | `ENVIRONMENT_LAYER_READINESS.md` | NOT_READY / HONEST |
-| Demo rehearsal | Existing 3-minute flow | Summary and Route Decision narration added | `DEMO_REHEARSAL.md` | PASS |
+| 演示冻结校验 | 此前的浏览器基线 | 全新的源包与独立副本 Firefox 校验 | `DEMO_FREEZE_VALIDATION_REPORT.md`、Firefox | PASS |
+| 风险解释 | 仅时间线 | 风险摘要：均值/最大值、趋势、LAND、不可用、硬单元计数 | 当前包 + Firefox 面板 | PASS |
+| C 路由解释 | 仅路由状态 | 路由决策：活动/待定修订、距离、ETA、已发布指标、事件轨迹 | Firefox 13:30/15:00 | PASS |
+| 多路由对比 | 无真实候选集 | `route_candidates` 接口存在，为空且显式声明 | `bundle.json` | SAFE DEFER |
+| 环境因子 | 无就绪度声明 | 就绪度报告记录了缺失字段与所需的未来契约 | `ENVIRONMENT_LAYER_READINESS.md` | NOT_READY / HONEST |
+| 演示演练 | 既有的 3 分钟流程 | 新增摘要与路由决策旁白 | `DEMO_REHEARSAL.md` | PASS |
 
 ```text
 DEMO_FREEZE = YES
 ```
 
-This verdict applies to the current deterministic offline artifact and does
-not claim that absent candidate routes or absent environmental factor arrays
-have been implemented.
+该判定针对当前确定性的离线制品，并不声称缺失的候选路由或缺失的环境因子数组已被实现。
 
-## 2. Frozen boundary and artifact
+## 2. 冻结边界与制品
 
-- Formal artifact:
+- 正式制品：
   `/root/my_project/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-12h-det/`
-- Viewer package: `/root/my_project/work_package_d/viewer/`
-- Bundle schema: `replay.viewer-bundle.v1`
-- Timeline: 721 one-minute entries, 2026-08-15 10:00Z–22:00Z
-- Risk: 13 hourly `presentation.risk-overlay.v1` frames, 31×11=341 cells
-- D remains the sole Viewer runtime owner.
-- Orchestrator remains the presentation export/preflight owner.
+- 查看器包：`/root/my_project/work_package_d/viewer/`
+- 包模式：`replay.viewer-bundle.v1`
+- 时间线：721 个一分钟条目，2026-08-15 10:00Z–22:00Z
+- 风险：13 个逐时 `presentation.risk-overlay.v1` 帧，31×11=341 单元
+- D 仍是唯一的查看器运行时所有者。
+- 编排器仍是展示导出/预检所有者。
 
-Unchanged and not modified:
+未改动且不修改：
 
 ```text
 work_package_a
@@ -40,16 +38,16 @@ work_package_b
 work_package_c
 arctic_route_contracts
 
-B risk formula and level policy
-C planner core and route semantics
-ETA and vessel motion semantics
-replay timeline and event semantics
-deferred adoption and completed-track semantics
+B 风险公式与层级策略
+C 规划器核心与路由语义
+ETA 与船舶运动语义
+回放时间线与事件语义
+延迟采纳与已完成航迹语义
 ```
 
-## 3. Freeze validation
+## 3. 冻结校验
 
-The source package was served with:
+源包通过以下命令提供：
 
 ```bash
 cd /root/my_project/work_package_d
@@ -57,26 +55,25 @@ cd /root/my_project/work_package_d
   --root viewer --host 127.0.0.1 --port 8131
 ```
 
-For copy independence, the complete `viewer/` directory was copied to
-`/root/my_project/.runtime/freeze-copy-final-20260821/` and served on port
-8133. The copy loaded without source-repository imports or additional services.
+为验证副本独立性，完整的 `viewer/` 目录被复制到
+`/root/my_project/.runtime/freeze-copy-final-20260821/` 并在端口 8133 提供。
+该副本在加载时无需源仓库导入，也无需额外部署服务。
 
-Fresh Firefox checks on the final copied package confirmed:
+对最终副本包执行的全新 Firefox 校验确认：
 
-- Presentation Mode is default; Engineering Debug is hidden;
-- page is paused at replay departure (`10:00`, Play button visible);
-- GEBCO basemap, risk/hard layers, route, completed track, ship,
-  Risk Forecast Timeline, Risk Summary, Route Decision, and milestones exist;
-- required static resources (`index.html`, `style.css`, `app.js`, `bundle.json`,
-  `favicon.svg`, `gebco_basemap.png`) all return HTTP 200;
-- console errors = 0; console warnings = 0.
+- 默认展示模式；工程调试面板隐藏；
+- 页面暂停在回放出发时刻（`10:00`，播放按钮可见）；
+- GEBCO 底图、风险/硬图层、路由、已完成航迹、船舶、
+  风险预报时间线、风险摘要、路由决策与里程碑均存在；
+- 所需静态资源（`index.html`、`style.css`、`app.js`、`bundle.json`、
+  `favicon.svg`、`gebco_basemap.png`）均返回 HTTP 200；
+- 控制台错误 = 0；控制台警告 = 0。
 
-## 4. Risk Summary
+## 4. 风险摘要
 
-The panel consumes only Orchestrator-exported metadata. It does not scan raw
-weather data or recalculate B risk.
+该面板仅消费编排器导出的元数据，不扫描原始气象数据，也不重新计算 B 风险。
 
-At Current / 10:00:
+在当前 / 10:00：
 
 ```text
 mean score              0.055984
@@ -88,17 +85,13 @@ hard cells total        86
 published cells         341
 ```
 
-The forecast trend is an export-layer descriptive summary using the first to
-last finite published mean score: `0.047120 - 0.055984 = -0.008863`. It is not
-a new risk calculation or threshold policy.
+预报趋势是一个导出层的描述性摘要，使用第一个到最后一个有限发布的均值分数：`0.047120 - 0.055984 = -0.008863`。它不是新的风险计算或阈值策略。
 
-The panel explicitly explains that Level 1 on published `NONE` water cells is
-a low-risk assessment. `LAND` and `DATA_UNAVAILABLE` remain separate hard /
-availability semantics and are never rendered as safe.
+该面板明确解释：已发布的 `NONE` 水域单元上的 1 级是低风险评估。`LAND` 与 `DATA_UNAVAILABLE` 仍保持独立的硬/可用性语义，绝不会被渲染为安全。
 
-## 5. Route Decision
+## 5. 路由决策
 
-The panel uses the published route revisions and event list:
+该面板使用已发布的路由修订与事件列表：
 
 ```text
 Initial:
@@ -119,8 +112,7 @@ Initial:
   REPLAN_ADOPTED R2 → REPLAN_DECIDED R3
 ```
 
-The panel does not turn route revisions into Fastest/Low Risk/Recommended
-candidate comparisons. The current bundle adds:
+该面板不会将路由修订转变为最快/低风险/推荐候选对比。当前包新增：
 
 ```json
 "route_candidates": {
@@ -130,23 +122,17 @@ candidate comparisons. The current bundle adds:
 }
 ```
 
-The Viewer therefore keeps the single authoritative route and states that
-candidate comparison is unavailable.
+因此查看器保留单一权威路由，并声明候选对比不可用。
 
-## 6. Environment layer readiness
+## 6. 环境图层就绪度
 
-[ENVIRONMENT_LAYER_READINESS.md](ENVIRONMENT_LAYER_READINESS.md) records the
-read-only audit. The current presentation bundle has no display-ready arrays
-for Sea Ice, Wind, Wave, Ocean Current, Temperature, or per-cell contributors.
-No synthetic factor layer was added.
+[ENVIRONMENT_LAYER_READINESS.md](ENVIRONMENT_LAYER_READINESS.md) 记录了只读审计。当前展示包没有可用于展示的数组，覆盖海冰、风、浪、海流、温度或逐单元贡献因子。未添加任何合成因子图层。
 
-Future factor layers require a presentation contract containing valid time,
-selection/availability, canonical coordinates, units, provenance, and explicit
-fail-closed behavior. Total risk and individual factors must remain separate.
+未来的因子图层需要一个展示契约，包含有效时间、选择/可用性、规范坐标、单位、溯源，以及明确的失败关闭行为。总风险与单个因子必须保持分离。
 
-## 7. Demo rehearsal
+## 7. 演示演练
 
-[DEMO_REHEARSAL.md](DEMO_REHEARSAL.md) now narrates:
+[DEMO_REHEARSAL.md](DEMO_REHEARSAL.md) 现叙述如下：
 
 ```text
 map and clock
@@ -158,10 +144,9 @@ map and clock
 → summary, route decision, milestones, and debug toggle
 ```
 
-The operator should not claim that the current artifact contains a three-way
-objective comparison or single-factor environmental contributors.
+操作员不应声称当前制品包含三方目标对比或单因子环境贡献。
 
-## 8. Modified files
+## 8. 修改的文件
 
 ### D
 
@@ -173,41 +158,40 @@ objective comparison or single-factor environmental contributors.
 - `README.md`
 - `HANDOFF.md`
 - `CHANGELOG.md`
-- `scripts/risk_distribution_audit.py` and its existing audit report remain
-  part of the product evidence;
+- `scripts/risk_distribution_audit.py` 及其既有审计报告仍作为产品证据的一部分；
 - `DEMO_FREEZE_VALIDATION_REPORT.md`
 - `ENVIRONMENT_LAYER_READINESS.md`
-- this report.
+- 本报告。
 
-### Orchestrator
+### 编排器
 
 - `scripts/replay_viewer_export.py`
 - `tests/unit/test_replay_viewer_export.py`
 - `README.md`
 - `CHANGELOG.md`
-- regenerated `work_package_d/viewer/bundle.json` from the existing manifest;
-  no replay was executed.
+- 基于既有清单重新生成 `work_package_d/viewer/bundle.json`；
+  未执行任何回放。
 
-Runtime screenshots are stored under
-`/root/my_project/.runtime/viewer-proof/` and are not intended as Git inputs.
+运行时截图保存在
+`/root/my_project/.runtime/viewer-proof/` 下，不打算作为 Git 输入。
 
-## 9. Tests and validation levels
+## 9. 测试与校验层级
 
-| Check | Result | Level |
+| 检查 | 结果 | 层级 |
 |---|---:|---|
-| D full pytest | 58 passed | `UNIT_PASS` |
+| D 完整 pytest | 58 passed | `UNIT_PASS` |
 | D Ruff | clean | `UNIT_PASS` |
 | `node --check viewer/app.js` | pass | `SMOKE_PASS` |
-| Orchestrator focused export tests | 7 passed | `UNIT_PASS` |
-| Orchestrator export Ruff | clean | `SMOKE_PASS` |
-| Existing artifact export | preflight PASS, L2 PASS, timeline 721 | `REAL_ARTIFACT_HTTP_SMOKE_PASS` |
-| Source package Firefox | map/UI/controls/state checks pass | `BROWSER_E2E_PASS` |
-| Independent copied package Firefox | same checks pass | `BROWSER_E2E_PASS` |
-| 13:30 route state | active R1, pending R2 | `REAL_E2E_PASS` |
-| 15:00 route state | active R2, pending R3 | `REAL_E2E_PASS` |
-| 12h determinism twin-run | inherited, not rerun | `AUTHORITATIVE_PASS` / `FROZEN_BASELINE` |
+| 编排器聚焦导出测试 | 7 passed | `UNIT_PASS` |
+| 编排器导出 Ruff | clean | `SMOKE_PASS` |
+| 既有制品导出 | preflight PASS, L2 PASS, timeline 721 | `REAL_ARTIFACT_HTTP_SMOKE_PASS` |
+| 源包 Firefox | map/UI/controls/state 检查通过 | `BROWSER_E2E_PASS` |
+| 独立副本包 Firefox | 相同检查通过 | `BROWSER_E2E_PASS` |
+| 13:30 路由状态 | active R1, pending R2 | `REAL_E2E_PASS` |
+| 15:00 路由状态 | active R2, pending R3 | `REAL_E2E_PASS` |
+| 12h 确定性双跑 | 继承，未重跑 | `AUTHORITATIVE_PASS` / `FROZEN_BASELINE` |
 
-Browser motion evidence on the final copied package:
+最终副本包上的浏览器运动证据：
 
 ```text
 10:00 latitude = 70.3333333
@@ -217,91 +201,80 @@ button sequence = Play → Pause → Play
 pixel speed = NO
 ```
 
-The position remains timeline/backend ETA plus Simulation Clock.
+位置仍由时间线/后端 ETA 加仿真时钟决定。
 
-## 10. Performance and elapsed analysis
+## 10. 性能与耗时分析
 
-These are WSL local observations, not a professional benchmark.
+这些是 WSL 本地观测结果，并非专业基准。
 
-### Browser/package
+### 浏览器/包
 
-Final copied-package Firefox warm navigation observation:
+最终副本包 Firefox 预热导航观测：
 
-| Metric | Observation |
+| 指标 | 观测 |
 |---|---:|
 | DOMContentLoaded | 27 ms |
 | load event | 28 ms |
-| `bundle.json` encoded body | 1,442,876 B |
-| `app.js` encoded body | 43,718 B |
-| `style.css` encoded body | 7,681 B |
-| GEBCO PNG encoded body | 13,938 B |
-| risk frames/cells | 13 / 341 |
-| horizon switch | no visible freeze; vessel clock unchanged |
+| `bundle.json` 编码体 | 1,442,876 B |
+| `app.js` 编码体 | 43,718 B |
+| `style.css` 编码体 | 7,681 B |
+| GEBCO PNG 编码体 | 13,938 B |
+| 风险帧/单元 | 13 / 341 |
+| 时界切换 | 无明显卡顿；船舶时钟不变 |
 
-The added summary metadata is small relative to the bundle. The browser still
-consumes presentation-ready summaries and does not process raw grids every
-animation frame.
+新增的摘要元数据相对包体很小。浏览器仍然消费展示就绪的摘要，而非在每帧动画中处理原始网格。
 
-### This round commands
+### 本轮命令
 
-- presentation export from existing manifest/snapshots: 1.92 s wall time,
-  maximum RSS 141,820 KB;
-- D pytest: 1.11 s;
-- Orchestrator focused tests: 0.34 s;
-- no heavy replay, 12h twin-run, 24h replay, or full integration was started.
+- 基于既有清单/快照的展示导出：墙钟时间 1.92 s，最大 RSS 141,820 KB；
+- D pytest：1.11 s；
+- 编排器聚焦测试：0.34 s；
+- 未启动重型回放、12h 双跑、24h 回放或完整集成。
 
-Historical replay/integration timings remain inherited baselines and are not
-mixed with Viewer load time:
+历史回放/集成耗时仍为继承基线，不与查看器加载时间混用：
 
-- authoritative 12h baseline: about 2044.9 s / 34.1 min, inherited;
-- prior full integration suite: about 2495.25 s / 41:35, inherited;
-- recent product integration suite: about 2334.71 s / 38:54, inherited.
+- 权威 12h 基线：约 2044.9 s / 34.1 min，继承；
+- 此前完整集成套件：约 2495.25 s / 41:35，继承；
+- 近期产品集成套件：约 2334.71 s / 38:54，继承。
 
-## 11. Git and freeze state
+## 11. Git 与冻结状态
 
-No commit, reset, rebase, merge, or push was performed.
+未执行任何 commit、reset、rebase、merge 或 push。
 
-Start and end HEAD for this round are unchanged:
+本轮开始与结束的 HEAD 保持不变：
 
-| Repository | Branch | Start = End HEAD | Final state |
+| 仓库 | 分支 | 开始 = 结束 HEAD | 最终状态 |
 |---|---|---|---|
 | governance | `demo-engineering` | `234573d` | clean |
 | contracts | `demo-engineering` | `7e83182` | clean |
-| orchestrator | `demo-engineering` | `a404564` | dirty, presentation export/docs/tests only |
+| orchestrator | `demo-engineering` | `a404564` | dirty，仅展示导出/文档/测试 |
 | A | `demo-engineering` | `c6d0718` | clean |
 | B | `demo-engineering` | `6269420` | clean |
 | C | `demo-engineering` | `42e951c` | clean |
-| D | `demo-engineering` | `9ccabba` | dirty, Viewer/docs/tests/report only |
+| D | `demo-engineering` | `9ccabba` | dirty，仅 Viewer/文档/测试/报告 |
 
-The actual filesystem currently has no `/root/my_project/.git` directory;
-the nested package repositories above are the Git repositories used for this
-round. No Git state was written.
+实际文件系统当前没有 `/root/my_project/.git` 目录；
+上述嵌套的子仓库是本轮使用的 Git 仓库。未写入任何 Git 状态。
 
 ```text
 PUSH = NOT PERFORMED
 ```
 
-## 12. Remaining limitations and competition recommendation
+## 12. 剩余限制与比赛建议
 
-Remaining limitations:
+剩余限制：
 
-1. No real candidate geometry/metrics for Fastest, Low Risk, and Recommended
-   comparison.
-2. No presentation-ready Sea Ice/Wind/Wave/Current/Temperature arrays.
-3. No contributor-backed risk explanation beyond published frame summaries and
-   hard-reason counts.
-4. Formal risk grid remains coarse by design; no D interpolation changes its
-   semantics.
+1. 没有用于最快、低风险、推荐三方对比的真实候选几何/指标。
+2. 没有展示就绪的海冰/风/浪/海流/温度数组。
+3. 除已发布帧摘要与硬原因计数外，没有基于贡献因子的风险解释。
+4. 正式风险网格按设计仍为粗粒度；D 的任何插值都不改变其语义。
 
-Competition recommendation:
+比赛建议：
 
-- demonstrate the causal chain, Risk Summary, continuous vessel motion, and
-  deferred replan adoption;
-- use the explicit unavailable state as evidence of fail-closed behavior if
-  asked about forecast range;
-- do not claim multi-objective route comparison or environmental factor layers
-  for this artifact;
-- freeze the current demo package for the competition rehearsal.
+- 展示因果链、风险摘要、连续船舶运动，以及延迟的 replan 采纳；
+- 若被问及预报范围，使用显式的不可用状态作为失败关闭行为的证据；
+- 不要为本制品声称多目标路由对比或环境因子图层；
+- 为比赛演练冻结当前演示包。
 
 ```text
 DEMO_FREEZE = YES
