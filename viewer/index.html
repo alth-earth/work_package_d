@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Arctic Route Research Validation Viewer</title>
+    <title>Arctic Navigation Decision Simulation</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="title">
-        <strong>Arctic Route Research Validation</strong>
-        <span class="subtitle">Environment → risk field → route decision</span>
-        <span id="mode-badge" class="badge">causal_replay</span>
+        <strong>Arctic Navigation Decision Simulation</strong>
+        <span class="subtitle">Environment → risk assessment → route decision → voyage execution</span>
+        <span id="mode-badge" class="badge">navigation_simulation</span>
       </div>
       <div class="badges">
         <span id="gate-l1" class="badge gate">L1 -</span>
@@ -29,15 +29,23 @@
 
       <aside class="panel">
         <section class="block">
+          <h2>Navigation simulation</h2>
           <div class="sim">
-            <button id="play" type="button" class="btn">Play</button>
-            <div id="clock" class="clock">--:--:--</div>
+            <button id="play" type="button" class="btn">Run</button>
+            <div class="simulation-time">
+              <span>Simulation Time</span>
+              <time id="clock" class="clock">--</time>
+            </div>
           </div>
-          <input id="scrub" type="range" min="0" step="1" value="0" />
+          <div class="voyage-progress-heading">
+            <label id="progress-axis-label" for="scrub">Voyage Progress</label>
+            <strong id="voyage-progress-value">-- km / -- km</strong>
+          </div>
+          <input id="scrub" type="range" min="0" step="1" value="0" aria-label="Voyage progress" />
           <div class="row">
             <span id="range-label"></span>
             <label>
-              speed
+              Simulation Speed
               <select id="speed">
                 <option value="30">1x</option>
                 <option value="60" selected>2x</option>
@@ -52,7 +60,7 @@
               view
               <select id="view-mode">
                 <option value="research">Research Validation</option>
-                <option value="presentation">Operational Replay</option>
+                <option value="presentation">Navigation Simulation</option>
                 <option value="engineering">Engineering Debug</option>
               </select>
             </label>
@@ -60,9 +68,9 @@
           </div>
           <div id="route-status" class="status route-status">active route loading</div>
           <div class="horizon-row">
-            <label for="risk-horizon">risk horizon</label>
+            <label for="risk-horizon">Risk Forecast Horizon</label>
             <select id="risk-horizon">
-              <option value="current">Current</option>
+              <option value="current">Now</option>
               <option value="+6h">+6h</option>
               <option value="+12h">+12h</option>
               <option value="+24h">+24h</option>
@@ -72,8 +80,9 @@
         </section>
 
         <section id="research-panel" class="block research-panel" hidden>
-          <h2>Research validation</h2>
+          <h2>Navigation decision</h2>
           <div id="research-status" class="status">research artifact loading</div>
+          <div id="current-strategy" class="current-strategy">Current Strategy · loading</div>
           <p class="evidence-chain" aria-label="scientific evidence chain">
             Environment change <span>→</span> Risk field change <span>→</span> Route decision change
           </p>
@@ -93,7 +102,7 @@
         </section>
 
         <section class="block risk-profile">
-          <h2>Risk forecast timeline</h2>
+          <h2>Risk Forecast Horizon</h2>
           <div id="risk-profile-status" class="status">risk profile loading</div>
           <div id="risk-timeline" class="risk-timeline" aria-label="risk score timeline"></div>
           <div class="risk-timeline-key">
@@ -115,7 +124,7 @@
         </section>
 
         <section class="block route-decision">
-          <h2>Route decision</h2>
+          <h2>Execution decision state</h2>
           <div id="route-decision-status" class="status">route decision loading</div>
           <dl id="route-decision-metrics" class="summary-grid"></dl>
           <div id="route-decision-trace" class="status summary-note"></div>
@@ -156,7 +165,7 @@
         </section>
 
         <section class="block event-timeline">
-          <h2>Route evolution timeline</h2>
+          <h2>Navigation decision timeline</h2>
           <ol id="event-timeline" aria-label="replay milestones"></ol>
         </section>
 

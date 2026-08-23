@@ -1,4 +1,4 @@
-/* Replay-driven Viewer. Rendering consumes only the presentation bundle. */
+/* Navigation decision simulation Viewer. Rendering consumes only presentation artifacts. */
 (() => {
   "use strict";
 
@@ -9,6 +9,8 @@
   const speedSel = document.getElementById("speed");
   const clockEl = document.getElementById("clock");
   const rangeLabel = document.getElementById("range-label");
+  const progressAxisLabelEl = document.getElementById("progress-axis-label");
+  const voyageProgressValueEl = document.getElementById("voyage-progress-value");
   const debugEl = document.getElementById("debug");
   const debugPanel = document.getElementById("debug-panel");
   const toggleDebugBtn = document.getElementById("toggle-debug");
@@ -31,6 +33,7 @@
   const routeFallbackNoteEl = document.getElementById("route-fallback-note");
   const researchPanel = document.getElementById("research-panel");
   const researchStatusEl = document.getElementById("research-status");
+  const currentStrategyEl = document.getElementById("current-strategy");
   const experimentMetadataEl = document.getElementById("experiment-metadata");
   const routeLayerSel = document.getElementById("route-layer");
   const routeCandidateNoteEl = document.getElementById("route-candidate-note");
@@ -42,6 +45,7 @@
   const layerTrack = document.getElementById("layer-track");
   const layerNavigation = document.getElementById("layer-navigation");
   const gateBadges = document.querySelector(".badges");
+  const modeBadge = document.getElementById("mode-badge");
 
   let bundle = null;
   let basemap = null;
@@ -59,6 +63,7 @@
   let selectedRouteLayer = "full_voyage";
   let highlightedCandidateId = null;
   let candidateInspection = null;
+  let voyageProgress = null;
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
@@ -121,7 +126,7 @@
   }
 
   function horizonLabel(key) {
-    return key === "current" ? "Current" : key;
+    return key === "current" ? "Now" : key;
   }
 
   function setDefinitionRows(element, rows) {
@@ -195,6 +200,11 @@
     return candidatesForLayer().find(
       (candidate) => candidate.candidate_id === highlightedCandidateId
     ) || defaultCandidateForLayer(selectedRouteLayer);
+  }
+
+  function canonicalSelectedCandidate() {
+    const canonicalId = bundle?.route_candidates?.selected_candidate_id;
+    return routeCandidates().find((candidate) => candidate.candidate_id === canonicalId) || null;
   }
 
   function candidateGeometryPoints(candidate) {
@@ -453,9 +463,9 @@
     return factor * magnitude;
   }
 
-  function formatCoordinate(value, axis) {
+  function formatCoordinate(value, axis, precision = null) {
     const absolute = Math.abs(value);
-    const digits = absolute < 10 ? 1 : 0;
+    const digits = precision === null ? (absolute < 10 ? 1 : 0) : precision;
     const suffix = axis === "latitude"
       ? (value < 0 ? "S" : "N")
       : (value < 0 ? "W" : "E");
@@ -471,6 +481,107 @@
     const value = Math.sin(deltaPhi / 2) ** 2
       + Math.cos(phiA) * Math.cos(phiB) * Math.sin(deltaLambda / 2) ** 2;
     return 2 * 6371.0088 * Math.asin(Math.min(1, Math.sqrt(value)));
+  }
+
+  // The progress axis is derived once from the published vessel timeline. It
+  // changes presentation coordinates only: simulation time remains the single
+  // authoritative state and vesselPointAt() remains the position contract.
+  function buildVoyageProgress() {
+    const timeline = bundle?.timeline || [];
+    if (!timeline.length) return null;
+    const timesMs = [];
+    const distancesKm = [];
+    let cumulativeKm = 0;
+    for (let index = 0; index < timeline.length; index += 1) {
+      const entry = timeline[index];
+      const relativeMs = isoToMs(entry.t) - startMs;
+      if (!Number.isFinite(relativeMs) || !Number.isFinite(entry.v?.lon) ||
+          !Number.isFinite(entry.v?.lat)) return null;
+      if (index > 0) {
+        const previous = timeline[index - 1].v;
+        if (relativeMs <= timesMs[index - 1]) return null;
+        const segmentKm = haversineKm(
+          previous.lon,
+          previous.lat,
+          entry.v.lon,
+          entry.v.lat
+        );
+        // A pure distance axis cannot represent a stationary time interval
+        // without collapsing simulation states. Fall back to the time axis
+        // instead of silently skipping such an interval.
+        if (!Number.isFinite(segmentKm) || segmentKm <= 1e-9) return null;
+        cumulativeKm += segmentKm;
+      }
+      timesMs.push(relativeMs);
+      distancesKm.push(cumulativeKm);
+    }
+    if (!Number.isFinite(cumulativeKm) || cumulativeKm <= 0) return null;
+    return { timesMs, distancesKm, totalKm: cumulativeKm };
+  }
+
+  function voyageDistanceAt(ms) {
+    if (!voyageProgress) return null;
+    const index = timelineIndex(ms);
+    const nextIndex = Math.min(index + 1, voyageProgress.distancesKm.length - 1);
+    const startTime = voyageProgress.timesMs[index];
+    const endTime = voyageProgress.timesMs[nextIndex];
+    const fraction = endTime === startTime
+      ? 0
+      : Math.max(0, Math.min(1, (ms - startTime) / (endTime - startTime)));
+    const startDistance = voyageProgress.distancesKm[index];
+    const endDistance = voyageProgress.distancesKm[nextIndex];
+    return startDistance + (endDistance - startDistance) * fraction;
+  }
+
+  function simulationMsAtVoyageDistance(distanceKm) {
+    if (!voyageProgress) return Math.max(0, Math.min(totalMs, distanceKm));
+    const target = Math.max(0, Math.min(voyageProgress.totalKm, distanceKm));
+    const distances = voyageProgress.distancesKm;
+    let low = 0;
+    let high = distances.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (distances[mid] <= target) low = mid;
+      else high = mid - 1;
+    }
+    const next = Math.min(low + 1, distances.length - 1);
+    const span = distances[next] - distances[low];
+    const fraction = span > 0 ? (target - distances[low]) / span : 0;
+    return voyageProgress.timesMs[low] +
+      (voyageProgress.timesMs[next] - voyageProgress.timesMs[low]) * fraction;
+  }
+
+  function setRunButtonState() {
+    playBtn.textContent = playing ? "Pause" : "Run";
+  }
+
+  function updateSimulationReadout(s) {
+    clockEl.textContent = formatAbsolute(s.time);
+    if (!voyageProgress) {
+      progressAxisLabelEl.textContent = "Simulation Progress";
+      scrub.setAttribute("aria-label", "Simulation progress");
+      voyageProgressValueEl.textContent = `${formatClock(simMs)} elapsed`;
+      rangeLabel.textContent = `${bundle.replay.start} → ${bundle.replay.end}`;
+      return;
+    }
+    const distanceKm = voyageDistanceAt(simMs);
+    progressAxisLabelEl.textContent = "Voyage Progress";
+    scrub.setAttribute("aria-label", "Voyage progress");
+    const initialDistance = Number(bundle?.routes?.[0]?.distance_km);
+    const plannedText = Number.isFinite(initialDistance)
+      ? ` · ${initialDistance.toFixed(1)} km initial plan`
+      : "";
+    voyageProgressValueEl.textContent =
+      `${distanceKm.toFixed(1)} km / ${voyageProgress.totalKm.toFixed(1)} km simulated`;
+    rangeLabel.textContent =
+      `Current position ${formatCoordinate(s.lat, "latitude", 4)}, ` +
+      `${formatCoordinate(s.lon, "longitude", 4)}${plannedText}`;
+  }
+
+  function syncScrubToSimulation() {
+    scrub.value = voyageProgress
+      ? String(Math.round(voyageDistanceAt(simMs) * 1000))
+      : String(Math.round(simMs));
   }
 
   function drawNavigationAids() {
@@ -969,12 +1080,24 @@
         routeCandidatesEl.hidden = true;
       }
       if (routeHighlightNoteEl) routeHighlightNoteEl.textContent = "";
+      if (currentStrategyEl) {
+        currentStrategyEl.classList.add("fallback");
+        currentStrategyEl.textContent =
+          "Current Strategy · authoritative single-route execution (candidate comparison not published)";
+      }
       return;
     }
 
     researchStatusEl.classList.remove("unavailable");
     researchStatusEl.textContent =
       `PUBLISHED · 4 layers × 3 objectives · ${candidates.length} artifact routes`;
+    const canonicalCandidate = canonicalSelectedCandidate();
+    if (currentStrategyEl) {
+      currentStrategyEl.classList.remove("fallback");
+      currentStrategyEl.textContent = canonicalCandidate
+        ? `Current Strategy · ${objectiveLabel(canonicalCandidate.objective)} Route · C selected_candidate_id`
+        : "Current Strategy · not published";
+    }
     setDefinitionRows(experimentMetadataEl, experimentMetadataRows());
     const layerCandidates = candidatesForLayer();
     if (routeCandidateNoteEl) {
@@ -1004,8 +1127,8 @@
       list.className = "route-card-metrics";
       const rows = [
         ["Distance", formatResearchMetric(candidate.distance_km, 3, " km")],
-        ["ETA", formatResearchMetric(candidate.travel_hours, 3, " h")],
-        ["Arrival", candidate.arrival_eta || "not published"],
+        ["Travel time", formatResearchMetric(candidate.travel_hours, 3, " h")],
+        ["Arrival ETA", candidate.arrival_eta || "not published"],
         ["Avg risk", formatResearchMetric(metrics.average_risk)],
         ["Max risk", formatResearchMetric(metrics.maximum_risk)],
         ["Integrated", formatResearchMetric(metrics.integrated_risk_hours, 6, " risk·h")],
@@ -1138,6 +1261,7 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const s = stateAt(simMs);
+    updateSimulationReadout(s);
     drawRiskFrame(s.risk);
     drawNavigationAids();
     const pos = project(s.lon, s.lat);
@@ -1256,6 +1380,8 @@
     const rows = [
       ["view mode", viewMode],
       ["simulation_time", formatAbsolute(s.time)],
+      ["voyage progress km", voyageProgress ? formatResearchMetric(voyageDistanceAt(simMs), 3) : "unavailable"],
+      ["simulated track km", voyageProgress ? formatResearchMetric(voyageProgress.totalKm, 3) : "unavailable"],
       ["vessel lon/lat", `${s.lon.toFixed(4)} / ${s.lat.toFixed(4)}`],
       ["speed knots", (s.kn ?? 0).toFixed(2)],
       ["course / heading", `${heading.toFixed(1)}°`],
@@ -1318,29 +1444,30 @@
       if (simMs >= totalMs) {
         simMs = totalMs;
         playing = false;
-        playBtn.textContent = "Play";
+        setRunButtonState();
       }
     }
     lastTs = ts;
     if (shouldDraw) {
-      scrub.value = Math.round(simMs);
-      clockEl.textContent = formatClock(simMs);
+      syncScrubToSimulation();
       draw();
     }
     requestAnimationFrame(frame);
   }
 
   playBtn.addEventListener("click", () => {
+    if (!playing && simMs >= totalMs) simMs = 0;
     playing = !playing;
-    playBtn.textContent = playing ? "Pause" : "Play";
+    setRunButtonState();
     lastTs = null;
   });
 
   scrub.addEventListener("input", () => {
-    simMs = Number(scrub.value);
+    simMs = voyageProgress
+      ? simulationMsAtVoyageDistance(Number(scrub.value) / 1000)
+      : Number(scrub.value);
     playing = false;
-    playBtn.textContent = "Play";
-    clockEl.textContent = formatClock(simMs);
+    setRunButtonState();
     draw();
   });
 
@@ -1407,8 +1534,13 @@
     debugPanel.hidden = viewMode !== "engineering";
     if (gateBadges) gateBadges.hidden = viewMode !== "engineering";
     toggleDebugBtn.textContent = viewMode === "engineering"
-      ? (previousNonEngineeringMode === "research" ? "Research Validation" : "Operational Replay")
+      ? (previousNonEngineeringMode === "research" ? "Research Validation" : "Navigation Simulation")
       : "Engineering Debug";
+    if (modeBadge) {
+      modeBadge.textContent = viewMode === "engineering"
+        ? bundle?.replay?.scenario_mode || "unknown_mode"
+        : "navigation_simulation";
+    }
     document.body.dataset.mode = viewMode;
   }
 
@@ -1437,10 +1569,13 @@
     const end = isoToMs(bundle.replay.end);
     totalMs = end - startMs;
     simMs = 0;
+    voyageProgress = buildVoyageProgress();
     riskHorizonSel.value = selectedHorizon;
-    scrub.max = String(totalMs);
-    rangeLabel.textContent = `${bundle.replay.start} -> ${bundle.replay.end}`;
-    document.getElementById("mode-badge").textContent = bundle.replay.scenario_mode;
+    scrub.max = voyageProgress
+      ? String(Math.round(voyageProgress.totalKm * 1000))
+      : String(totalMs);
+    scrub.step = voyageProgress ? "100" : "1";
+    syncScrubToSimulation();
     updateModeUi();
     buildRiskTimeline();
     buildEventTimeline();
@@ -1535,11 +1670,16 @@
       setSimulationMs: (value) => {
         simMs = Math.max(0, Math.min(totalMs, Number(value)));
         playing = false;
-        playBtn.textContent = "Play";
-        scrub.value = Math.round(simMs);
-        clockEl.textContent = formatClock(simMs);
+        setRunButtonState();
+        syncScrubToSimulation();
         draw();
       },
+      voyageProgress: () => ({
+        available: Boolean(voyageProgress),
+        current_km: voyageDistanceAt(simMs),
+        total_km: voyageProgress?.totalKm ?? null,
+        simulation_time: formatAbsolute(startMs + simMs),
+      }),
     };
     requestAnimationFrame(frame);
   }

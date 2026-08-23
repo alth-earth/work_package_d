@@ -6,16 +6,16 @@ Content Status:
 Document Role: CANONICAL
 Scope: work_package_d viewer implementation and runtime
 Branch: research-validation-system
-Last Verified: 2026-08-22
+Last Verified: 2026-08-23
 ---
 
-# Replay-driven Viewer（work_package_d 所有）
+# Navigation Decision Simulation Viewer（work_package_d 所有）
 
 > Scope: work_package_d `viewer/` 实现与运行
-> Canonical For: Replay-driven Viewer application（Simulation Clock / moving
+> Canonical For: Navigation Decision Simulation Viewer application（Simulation Clock / moving
 > ship / route / completed track / pending adoption / GEBCO basemap）
 本目录归 **work_package_d** 所有。D 是 Display / Visualization / Presentation
-所有者，负责渲染、时间轴 UI、船位与 route/track/pending 展示。业务语义（Planner、
+所有者，负责渲染、voyage progress UI、船位与 route/track/pending 展示。业务语义（Planner、
 Risk、Presentation Adapter、L1/L2 eligibility）由 orchestrator 与 contracts 负责，
 Viewer 不重新解释、不猜航速、不修改 route geometry。
 
@@ -53,9 +53,30 @@ cd /root/my_project/work_package_d
 ./.venv/bin/python scripts/replay_viewer_serve.py --root viewer --port 8131
 ```
 
-打开 `http://127.0.0.1:8131/`（Play/Pause、scrub、1x/2x/4x/8x、Current/
-+6h/+12h/+24h horizon、layer toggles、Research Validation / Operational Replay /
+打开 `http://127.0.0.1:8131/`（Run/Pause、Voyage Progress、1x/2x/4x/8x、Now/
++6h/+12h/+24h horizon、layer toggles、Research Validation / Navigation Simulation /
 Engineering Debug mode）。
+
+## Navigation Decision Simulation Phase 2（2026-08-23 18:11 +08:00）
+
+默认 presentation UI 使用 `Run`、`Simulation Time`、`Voyage Progress` 和
+`Simulation Speed`，不再将确定性仿真描述为媒体 playback。内部唯一主状态仍是
+`simulation_time`；Voyage Progress 只是根据已发布 vessel timeline 预计算的累计航程
+坐标。用户拖动公里轴时，Viewer 通过同一单调轨迹索引映射回 `simulation_time`，随后仍由
+既有 `vesselPointAt(simulation_time)` 计算船位。
+
+该展示坐标不计算或修改 route distance、ETA、risk metrics、candidate ranking、route
+geometry 或 `selected_candidate_id`。如果 timeline 不能形成有效累计航程，控件 fail closed
+回相对 Simulation Time。当前 frozen 48h bundle 的仿真窗口累计轨迹为约 865.2 km，初始
+route artifact 发布 909.7 km；界面分别标注，禁止把未覆盖的航程伪装成已执行。
+
+Research Validation 下的 Navigation Decision panel 继续直接展示
+`presentation.route-candidates.v1` 的 `fastest`、`low_risk`、`recommended` 三目标；
+`Current Strategy` 只引用 C 的 canonical `selected_candidate_id`。当前 frozen bundle 为
+`NOT_PUBLISHED`，因此真实 Firefox 回归仍诚实显示 `SINGLE_ROUTE_FALLBACK`。
+
+本轮完整证据见
+[D_NAVIGATION_SIMULATION_PHASE2_REPORT.md](D_NAVIGATION_SIMULATION_PHASE2_REPORT.md)。
 
 ## Research Presentation Mode（2026-08-23 16:59 +08:00）
 
@@ -115,8 +136,8 @@ land_sea_mask: 1 = sea, 0 = land_or_coast
 
 ## 控件与 Debug
 
-`Simulation Clock`（唯一主时间）；Play / Pause / scrub；1x/2x/4x/8x 只改变
-`simulation seconds / wall-clock second`，不改变业务船速。Operational Replay 显示
+`Simulation Clock`（唯一主时间）；Run / Pause / Voyage Progress；1x/2x/4x/8x 只改变
+`simulation seconds / wall-clock second`，不改变业务船速。Navigation Simulation 显示
 requested risk horizon、requested/actual risk valid time、actual horizon、
 availability 和 risk/hard/route legend；Research Validation 在合法 4×3 sidecar 上增加
 实验 identity、layer/objective compare 与 candidate geometry；Engineering Debug 面板额外显示
