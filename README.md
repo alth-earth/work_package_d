@@ -26,6 +26,16 @@ renderer. D consumes only JSON/PNG artifacts produced by the orchestrator's
 `scripts/replay_viewer_export.py` — it never imports orchestrator private
 Python modules.
 
+## Winter route candidate intake（2026-08-23 10:20 +08:00）
+
+D 已可读取 Orchestrator 发布的 `presentation.route-candidates.v1`：候选列表使用
+`candidate_id/layer/objective`、C 原始 ETA/距离和 `risk_metrics`，并按
+`selected_candidate_id` 标记 full-voyage recommended。缺失 sidecar 或
+`status=NOT_PUBLISHED` 时仍保持单 authoritative route。
+
+该状态是 `INTERFACE_READY`，不是 `WINTER_VIEWER_COMPLETED`：地图上的多候选几何、
+Winter RiskFrame 组合 bundle 与浏览器研究视图属于下一轮 D 工作。
+
 ## Professional navigation aids（2026-08-22 00:17）
 
 The research-validation Viewer adds a bundle-only navigation aid layer:

@@ -882,15 +882,20 @@
     }
     if (routeCandidatesEl) {
       routeCandidatesEl.replaceChildren();
+      const selectedCandidateId = bundle?.route_candidates?.selected_candidate_id;
       for (const candidate of candidates) {
-        const label = candidate.label || candidate.objective || "candidate";
+        const selected = candidate.candidate_id === selectedCandidateId;
+        const label = candidate.label ||
+          `${candidate.layer || "route"} / ${candidate.objective || "candidate"}`;
         const metrics = [
           formatDistance(candidate.distance_km ?? candidate.metrics?.distance_km),
           `ETA ${candidate.arrival_eta || candidate.eta || "not published"}`,
-          `avg risk ${formatMetric(candidate.average_risk ?? candidate.metrics?.average_risk)}`,
+          `avg risk ${formatMetric(candidate.average_risk ?? candidate.metrics?.average_risk ?? candidate.risk_metrics?.average_risk)}`,
+          `max risk ${formatMetric(candidate.maximum_risk ?? candidate.metrics?.maximum_risk ?? candidate.risk_metrics?.maximum_risk)}`,
         ];
         const item = document.createElement("li");
-        item.textContent = `${label} · ${metrics.join(" · ")}`;
+        item.textContent = `${selected ? "Recommended · " : ""}${label} · ${metrics.join(" · ")}`;
+        item.dataset.selected = selected ? "true" : "false";
         routeCandidatesEl.append(item);
       }
       routeCandidatesEl.hidden = false;

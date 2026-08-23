@@ -11,6 +11,14 @@ Last Verified: 2026-08-22
 
 # 工作包 D 变更记录
 
+## Unreleased - Winter Route Candidate Intake（2026-08-23 10:20 +08:00）
+
+- feat: consume `presentation.route-candidates.v1` 的 `selected_candidate_id` 与 canonical
+  `risk_metrics.average_risk/maximum_risk`；
+- compatibility: 缺失或 `NOT_PUBLISHED` 时继续只显示 authoritative route；
+- boundary: 本轮只闭合输入字段与文本消费，不实现 Winter Viewer 或 candidate map layer，
+  不修改路线、ETA、风险或 replay 语义。
+
 ## Unreleased - Research Validation Navigation Aids（2026-08-22 00:17 +08:00）
 
 - feat: add optional latitude/longitude graticules, coordinate labels,
