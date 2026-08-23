@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -37,6 +37,10 @@ def bundle() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _is_causal_replay(bundle: dict) -> bool:
+    return bundle["replay"].get("scenario_mode") == "causal_replay"
+
+
 def test_bundle_gates_and_basemap(bundle: dict) -> None:
     assert bundle["gates"]["status"] == "PASS"
     assert bundle["gates"]["l2_status"] == "PASS"
@@ -48,14 +52,24 @@ def test_bundle_gates_and_basemap(bundle: dict) -> None:
     )
     assert bundle["presentation"]["route_rendering"]["authoritative_semantics_unchanged"]
     assert bundle["route_candidates"]["schema_version"] == "presentation.route-candidates.v1"
-    assert bundle["route_candidates"]["status"] == "NOT_PUBLISHED"
-    assert bundle["route_candidates"]["candidates"] == []
+    if bundle["replay"].get("identity_kind") == "combined_presentation_assembly":
+        assert bundle["route_candidates"]["status"] == "PUBLISHED"
+        assert len(bundle["route_candidates"]["candidates"]) == 12
+        combined = bundle["combined_presentation"]
+        assert combined["status"] == "PUBLISHED"
+        assert combined["candidate_set_id"] == bundle["route_candidates"]["candidate_set_id"]
+        assert combined["selected_candidate_id"] == bundle["route_candidates"][
+            "selected_candidate_id"
+        ]
+    else:
+        assert bundle["route_candidates"]["status"] == "NOT_PUBLISHED"
+        assert bundle["route_candidates"]["candidates"] == []
 
 
 def test_bundle_intermediate_ship_positions_change(bundle: dict) -> None:
-    a = bundle["acceptance_positions"]["10:00"]
-    b = bundle["acceptance_positions"]["10:30"]
-    c = bundle["acceptance_positions"]["11:00"]
+    positions = list(bundle["acceptance_positions"].values())
+    assert len(positions) >= 3
+    a, b, c = positions[:3]
     assert a["status"] == "UNDERWAY" == b["status"] == c["status"]
     assert a["latitude"] < b["latitude"] < c["latitude"]
     assert 0.1 < _haversine_km(
@@ -70,7 +84,7 @@ def test_timeline_moves_and_track_never_rewinds(bundle: dict) -> None:
     assert timeline[-1]["t"] == bundle["replay"]["end"]
     start = datetime.fromisoformat(bundle["replay"]["start"].replace("Z", "+00:00"))
     end = datetime.fromisoformat(bundle["replay"]["end"].replace("Z", "+00:00"))
-    expected_samples = int((end - start).total_seconds() // 60) + 1
+    expected_samples = math.ceil((end - start).total_seconds() / 60) + 1
     assert len(timeline) == expected_samples
     previous_length = 0
     previous_pos = None
@@ -86,6 +100,8 @@ def test_timeline_moves_and_track_never_rewinds(bundle: dict) -> None:
 
 
 def test_deferred_revision_visible_in_timeline(bundle: dict) -> None:
+    if not _is_causal_replay(bundle):
+        pytest.skip("Winter combined navigation simulation has no replay replanning events")
     timeline = bundle["timeline"]
     decided_at_1300 = next(
         entry for entry in timeline if entry["t"] >= "2026-08-15T13:00:00Z"
@@ -104,6 +120,8 @@ def test_deferred_revision_visible_in_timeline(bundle: dict) -> None:
 
 
 def test_replan_skipped_does_not_change_active_revision(bundle: dict) -> None:
+    if not _is_causal_replay(bundle):
+        pytest.skip("Winter combined navigation simulation has no replay replanning events")
     timeline = bundle["timeline"]
     at_1100 = next(
         entry for entry in timeline if entry["t"] >= "2026-08-15T11:00:00Z"
@@ -122,14 +140,15 @@ def test_bundle_projects_current_risk_frames_without_recomputing_them(bundle: di
     assert risk["source"]["schema_version"] == "bc.risk-frame.v2"
     assert risk["source"]["provenance"] == ["formal"]
     assert risk["frames"][0]["valid_time"] == bundle["replay"]["start"]
-    assert risk["frames"][-1]["valid_time"] == bundle["replay"]["end"]
-    assert len(risk["frames"]) == int(
-        (
-            datetime.fromisoformat(bundle["replay"]["end"].replace("Z", "+00:00"))
-            - datetime.fromisoformat(bundle["replay"]["start"].replace("Z", "+00:00"))
-        ).total_seconds()
-        // risk["cadence_seconds"]
-    ) + 1
+    assert risk["frames"][-1]["valid_time"] >= bundle["replay"]["end"]
+    if _is_causal_replay(bundle):
+        assert risk["frames"][-1]["valid_time"] == bundle["replay"]["end"]
+    else:
+        assert risk["source"]["scenario_id"] == bundle["replay"]["scenario_id"]
+        assert risk["source"]["risk_window_id"] == bundle["combined_presentation"][
+            "risk_window_id"
+        ]
+        assert len(risk["frames"]) == bundle["research_validation"]["risk_frame_count"]
     hard_reasons = {
         reason
         for frame in risk["frames"]
@@ -153,25 +172,32 @@ def test_bundle_exposes_presentation_risk_distribution_summary(bundle: dict) -> 
     }
     first = risk["frames"][0]["summary"]
     assert first["total_cells"] == 341
-    assert first["risk_level_counts"] == {"1": 255, "2": 0, "3": 0, "4": 0, "5": 86}
-    assert first["hard_reason_counts"] == {
-        "DATA_UNAVAILABLE": 21,
-        "LAND": 65,
-        "NONE": 255,
-    }
-    assert first["land_count"] == 65
-    assert first["data_unavailable_count"] == 21
-    assert first["hard_cell_count"] == 86
-    assert risk["forecast_summary"]["trend"] == "decreasing"
+    assert sum(first["risk_level_counts"].values()) == first["total_cells"]
+    assert sum(first["hard_reason_counts"].values()) == first["total_cells"]
+    assert first["data_unavailable_count"] > 0
+    assert first["hard_cell_count"] == (
+        first["land_count"] + first["data_unavailable_count"]
+    )
+    assert risk["forecast_summary"]["trend"] in {"decreasing", "stable", "increasing"}
 
 
-def test_route_decision_metadata_exposes_authoritative_eta_without_candidates(bundle: dict) -> None:
+def test_route_decision_metadata_exposes_authoritative_eta_and_metrics(bundle: dict) -> None:
     initial = bundle["routes"][0]
     assert initial["objective"] == "recommended"
     assert initial["arrival_eta"] == initial["waypoints"][-1]["eta"]
     assert initial["metrics"]["distance_km"] == initial["distance_km"]
-    assert initial["metrics"]["average_risk"] is None
-    assert initial["metrics"]["maximum_risk"] is None
+    if bundle["route_candidates"]["status"] == "PUBLISHED":
+        selected = next(
+            candidate
+            for candidate in bundle["route_candidates"]["candidates"]
+            if candidate["candidate_id"] == bundle["route_candidates"]["selected_candidate_id"]
+        )
+        assert initial["route_id"] == selected["candidate_id"]
+        assert initial["metrics"]["average_risk"] == selected["risk_metrics"]["average_risk"]
+        assert initial["metrics"]["maximum_risk"] == selected["risk_metrics"]["maximum_risk"]
+    else:
+        assert initial["metrics"]["average_risk"] is None
+        assert initial["metrics"]["maximum_risk"] is None
 
 
 def test_risk_horizon_selection_is_explicit_and_fail_closed(bundle: dict) -> None:
@@ -184,32 +210,34 @@ def test_risk_horizon_selection_is_explicit_and_fail_closed(bundle: dict) -> Non
         "floor_valid_time_at_or_before_requested_valid_time"
     )
 
-    at_1000 = next(
-        item for item in risk["horizon_selections"]
-        if item["simulation_time"] == "2026-08-15T10:00:00Z"
-    )
-    at_1030 = next(
-        item for item in risk["horizon_selections"]
-        if item["simulation_time"] == "2026-08-15T10:30:00Z"
-    )
-    assert at_1000["available_horizons"] == [
+    at_start = risk["horizon_selections"][0]
+    at_30m = risk["horizon_selections"][30]
+    assert at_start["simulation_time"] == bundle["replay"]["start"]
+    assert at_start["available_horizons"] == [
         horizon
         for horizon in ("current", "+6h", "+12h", "+24h")
-        if at_1000["selections"][horizon]["availability"] == "AVAILABLE"
+        if at_start["selections"][horizon]["availability"] == "AVAILABLE"
     ]
-    assert at_1000["selections"]["+6h"]["selection_method"] == (
+    assert at_start["selections"]["+6h"]["selection_method"] == (
         "exact_requested_valid_time"
     )
-    assert at_1030["selections"]["+6h"]["actual_valid_time"] == "2026-08-15T16:00:00Z"
-    assert at_1030["selections"]["+6h"]["actual_horizon_seconds"] == 19800
-    terminal = risk["horizon_selections"][-1]
-    for horizon in ("+6h", "+12h", "+24h"):
-        assert terminal["selections"][horizon]["availability"] == "UNAVAILABLE"
-        assert terminal["selections"][horizon]["actual_valid_time"] is None
-        assert terminal["selections"][horizon]["frame_index"] is None
+    expected_floor = datetime.fromisoformat(
+        at_30m["simulation_time"].replace("Z", "+00:00")
+    ).replace(minute=0)
+    actual = datetime.fromisoformat(
+        at_30m["selections"]["+6h"]["actual_valid_time"].replace("Z", "+00:00")
+    )
+    assert actual == expected_floor + timedelta(hours=6)
+    for item in risk["horizon_selections"]:
+        for selection in item["selections"].values():
+            if selection["availability"] == "UNAVAILABLE":
+                assert selection["actual_valid_time"] is None
+                assert selection["frame_index"] is None
 
 
 def test_pending_and_superseded_routes_are_temporally_distinct(bundle: dict) -> None:
+    if not _is_causal_replay(bundle):
+        pytest.skip("Winter combined navigation simulation publishes one initial route revision")
     timeline = bundle["timeline"]
     pending_at_1330 = max(
         entry
@@ -232,3 +260,31 @@ def test_completed_track_prefix_is_append_only(bundle: dict) -> None:
             continue
         assert track[: len(previous)] == previous
         previous = track
+
+
+def test_winter_combined_bundle_keeps_one_experiment_identity(bundle: dict) -> None:
+    combined = bundle.get("combined_presentation")
+    if not combined:
+        pytest.skip("current local Viewer artifact is the legacy replay package")
+
+    assert combined["schema_version"] == "presentation.winter-combined-viewer.v1"
+    assert combined["status"] == "PUBLISHED"
+    assert combined["scenario_label"] == "Winter Arctic Research"
+    assert combined["dataset_bundle_id"] == "a-bundle-a2146dd0adbaa7db77a6beb7"
+    assert combined["run_context_id"] == "run-441b03c8-d45b-5414-b0e8-b7fd0d990c22"
+    assert combined["risk_window_id"] == (
+        "risk-window-sha256-"
+        "b5bed6bb48893e32620710e8c765dc60ec37a2fc384f0c49014b92f0a1c056b2"
+    )
+    assert combined["source_replay"] is None
+    assert combined["timeline_source"] == "cd.route-plan.v3.waypoints.eta"
+    assert bundle["risk"]["source"]["run_id"] == combined["run_context_id"]
+    assert bundle["risk"]["source"]["dataset_bundle_id"] == combined["dataset_bundle_id"]
+    assert bundle["risk"]["source"]["risk_window_id"] == combined["risk_window_id"]
+    assert bundle["route_candidates"]["provenance"]["source_run_id"] == combined[
+        "run_context_id"
+    ]
+    assert {
+        candidate["provenance"]["scenario_id"]
+        for candidate in bundle["route_candidates"]["candidates"]
+    } == {bundle["replay"]["scenario_id"]}

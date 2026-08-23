@@ -19,6 +19,23 @@ Last Verified: 2026-08-23
 Risk、Presentation Adapter、L1/L2 eligibility）由 orchestrator 与 contracts 负责，
 Viewer 不重新解释、不猜航速、不修改 route geometry。
 
+## Winter Combined Package（2026-08-23 20:14 +08:00）
+
+Winter Research Viewer 使用同一 package 中发布的：
+
+```text
+a-bundle-a2146dd0adbaa7db77a6beb7
+run-441b03c8-d45b-5414-b0e8-b7fd0d990c22
+risk-window-sha256-b5bed6bb48893e32620710e8c765dc60ec37a2fc384f0c49014b92f0a1c056b2
+route-candidates-sha256-46baf02084d67ffe5b0b734b2ad1b27631b7970b6e25a28011cd917dd23a4ffd
+```
+
+`combined_presentation` 与 `risk.source`、`route_candidates.provenance`、
+`research_validation` 必须一致，否则 Research View fail closed。航行时间线来自 C
+selected full-voyage recommended route 的 waypoint ETA，标记为
+`cd.route-plan.v3.waypoints.eta`；它不是 causal replay，不包含 replan event。RiskWindow
+保留完整 145 个 hourly frames，risk/hard cell 均原样投影。
+
 ## 输入：Orchestrator Presentation Package
 
 D 只消费 orchestrator 导出的稳定制品，不 import orchestrator Python 内部模块：
@@ -168,6 +185,7 @@ scripts/replay_viewer_serve.py  D 静态 server + /api/state
 - 已完成：Current/+6h/+12h/+24h horizon selection、fail-closed unavailable
   semantics、Hard Reason overlay、superseded route 绘制、三种展示模式、专业
   navigation aids，以及真实 Winter 12-route sidecar 的 Phase 1 candidate compare。
-- NEXT：由 Orchestrator 发布同一 Winter experiment identity 下的 combined
-  risk/replay/candidate bundle，再执行 Winter Research Browser E2E；环境 contributor
-  图层仍需正式 presentation contract，D 不读取 A/B/C 私有数据补齐。
+- 已完成：Orchestrator 发布同一 Winter identity 的 combined risk/route/ETA-simulation
+  package，Winter Research Firefox E2E PASS。
+- NEXT：如需 Winter dynamic replanning，必须由正式 Winter causal replay/snapshots 发布；
+  环境 contributor 图层仍需正式 presentation contract，D 不读取 A/B/C 私有数据补齐。

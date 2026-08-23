@@ -63,6 +63,7 @@
   let selectedRouteLayer = "full_voyage";
   let highlightedCandidateId = null;
   let candidateInspection = null;
+  let combinedIdentityInspection = null;
   let voyageProgress = null;
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
@@ -99,6 +100,45 @@
     low_risk: { color: "#62d6a7", dash: [3, 5], width: 2.6 },
     recommended: { color: "#f5f8fb", dash: [], width: 3.1 },
   };
+
+  function inspectCombinedIdentity(value, routeInspection) {
+    const combined = value?.combined_presentation;
+    if (!combined) {
+      return Object.freeze({ valid: true, reason: null, mode: "legacy_bundle" });
+    }
+    const replay = value?.replay || {};
+    const riskSource = value?.risk?.source || {};
+    const research = value?.research_validation || {};
+    const candidatePackage = value?.route_candidates || {};
+    const fail = (reason) => Object.freeze({ valid: false, reason, mode: "combined" });
+    if (combined.schema_version !== "presentation.winter-combined-viewer.v1" ||
+        combined.status !== "PUBLISHED") {
+      return fail("combined presentation identity is absent or unsupported");
+    }
+    if (!routeInspection?.valid) return fail(routeInspection?.reason || "route candidates invalid");
+    if (replay.identity_kind !== "combined_presentation_assembly" ||
+        replay.scenario_id !== riskSource.scenario_id) {
+      return fail("simulation and RiskFrame scenario identities differ");
+    }
+    if (combined.run_context_id !== riskSource.run_id ||
+        combined.run_context_id !== candidatePackage.provenance?.source_run_id ||
+        combined.run_context_id !== research.run_context_id) {
+      return fail("RunContext identity differs across presentation sources");
+    }
+    if (combined.dataset_bundle_id !== riskSource.dataset_bundle_id ||
+        combined.dataset_bundle_id !== research.dataset_bundle_id) {
+      return fail("DatasetBundle identity differs across presentation sources");
+    }
+    if (combined.risk_window_id !== riskSource.risk_window_id ||
+        combined.risk_window_id !== research.risk_window_id) {
+      return fail("RiskWindow identity differs across presentation sources");
+    }
+    if (combined.candidate_set_id !== candidatePackage.candidate_set_id ||
+        combined.selected_candidate_id !== candidatePackage.selected_candidate_id) {
+      return fail("route candidate identity differs from combined presentation identity");
+    }
+    return Object.freeze({ valid: true, reason: null, mode: "combined" });
+  }
 
   function isoToMs(value) {
     return new Date(value).getTime();
@@ -1040,18 +1080,25 @@
     const candidates = routeCandidates();
     const first = candidates[0];
     const research = bundle?.research_validation || {};
+    const combined = bundle?.combined_presentation || {};
     const riskSource = bundle?.risk?.source || {};
     const grid = bundle?.risk?.grid;
     return [
       ["experiment", research.label || "Route candidate validation"],
-      ["scenario", first?.provenance?.scenario_id || bundle?.replay?.scenario_id || "not published"],
+      ["scenario", research.scenario_label || first?.provenance?.scenario_id ||
+        bundle?.replay?.scenario_id || "not published"],
+      ["scenario id", bundle?.replay?.scenario_id || "not published"],
       ["run", bundle?.route_candidates?.provenance?.source_run_id || first?.provenance?.run_id || "not published"],
-      ["DatasetBundle", research.dataset_bundle_id || bundle?.replay?.dataset_bundle_id || "not published in Viewer artifact"],
+      ["RunContext", research.run_context_id || combined.run_context_id || "not published"],
+      ["DatasetBundle", research.dataset_bundle_id || bundle?.replay?.dataset_bundle_id ||
+        "not published in Viewer artifact"],
+      ["RiskWindow", riskSource.risk_window_id || research.risk_window_id || "not published"],
       ["RiskFrame", riskSource.schema_version || research.risk_schema || "not published"],
       ["grid", grid ? `${grid.rows} × ${grid.cols}` : "not published"],
       ["frames", String(bundle?.risk?.frames?.length ?? research.risk_frame_count ?? "not published")],
       ["routes", String(candidates.length)],
       ["candidate set", bundle?.route_candidates?.candidate_set_id || "not published"],
+      ["assembly", combined.assembly_id || "legacy Viewer bundle"],
     ];
   }
 
@@ -1555,10 +1602,18 @@
 
   async function start() {
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
-    candidateInspection = candidateTools.inspect(
+    const routeInspection = candidateTools.inspect(
       bundle.route_candidates,
       bundle?.replay?.scenario_id || null
     );
+    combinedIdentityInspection = inspectCombinedIdentity(bundle, routeInspection);
+    candidateInspection = combinedIdentityInspection.valid
+      ? routeInspection
+      : Object.freeze({
+        valid: false,
+        reason: combinedIdentityInspection.reason,
+        candidates: Object.freeze([]),
+      });
     viewMode = candidateInspection.valid ? "research" : "presentation";
     previousNonEngineeringMode = viewMode;
     selectedRouteLayer = "full_voyage";
@@ -1631,6 +1686,7 @@
         candidates: candidatesForLayer(),
         metadata: Object.fromEntries(experimentMetadataRows()),
       }),
+      identitySafety: () => ({ ...combinedIdentityInspection }),
       inspectRouteCandidates: (value, scenarioId = null) => candidateTools.inspect(value, scenarioId),
       setViewMode: (value) => {
         if (!["research", "presentation", "engineering"].includes(value)) return;

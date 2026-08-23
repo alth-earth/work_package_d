@@ -11,6 +11,17 @@ Last Verified: 2026-08-22
 
 # 工作包 D 变更记录
 
+## Unreleased - Winter Combined Research Viewer（2026-08-23 20:14 +08:00）
+
+- feat: 对 combined presentation 的 scenario、RunContext、DatasetBundle、RiskWindow、
+  candidate set 与 selected candidate 执行浏览器端 fail-closed identity 校验；
+- feat: Research metadata panel 显示 Winter scenario label/ID、RunContext、DatasetBundle、
+  RiskWindow 和 assembly identity；
+- compatibility: legacy replay bundle 不要求 combined metadata，Summer single-route fallback
+  与 causal replay tests 保持有效；
+- validation: D 77 passed / 3 causal-replay-only skipped，Ruff/JS syntax PASS，Firefox
+  Winter E2E console errors/warnings 0、required resources 全部 HTTP 200。
+
 ## Unreleased - Research Visualization Phase 1（2026-08-23 16:59 +08:00）
 
 - feat: 在既有 Replay Viewer 中增加 `Research Validation` / `Operational Replay` /

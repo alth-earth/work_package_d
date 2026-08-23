@@ -13,6 +13,19 @@ Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_R
 
 # Work Package D: Display / Visualization / Presentation
 
+## Winter Combined Research Viewer（2026-08-23 20:14 +08:00）
+
+D 已通过同一 Winter experiment identity 的 combined package 完成 Firefox E2E。Viewer
+显示真实 Winter 145 个 hourly RiskFrame、独立 LAND/`DATA_UNAVAILABLE` hard layer、
+四层 × 三目标共 12 条 C route candidates，以及 full-voyage recommended waypoint ETA
+驱动的 53.4 h navigation simulation。页面显式显示 scenario、RunContext、DatasetBundle、
+RiskWindow 与 assembly identity。
+
+combined identity 在浏览器内继续 fail closed：scenario/run/bundle/risk-window/candidate set
+或 canonical selected route 不一致时不启用 Research View。该时间线是 C route ETA 的
+presentation projection，`source_replay=null`，不是新生成的 causal replay；D 不重算风险、
+ETA、route geometry 或 route ranking。既有 Summer single-route fallback 保持可用。
+
 ## Research Validation role（2026-08-21 23:18）
 
 D is the Visualization and Validation Platform and remains the sole Viewer runtime owner.
@@ -33,8 +46,8 @@ D 已可读取 Orchestrator 发布的 `presentation.route-candidates.v1`：候�
 `selected_candidate_id` 标记 full-voyage recommended。缺失 sidecar 或
 `status=NOT_PUBLISHED` 时仍保持单 authoritative route。
 
-该状态是 `INTERFACE_READY`；地图候选 geometry 与 Research Presentation Mode 的
-Phase 1 实现见下一节。Winter RiskFrame 组合 bundle 与完整浏览器验收仍未完成。
+该接口现已进入 Winter combined package 并通过完整浏览器验收；地图候选 geometry 与
+Research Presentation Mode 的实现见下一节。
 
 ## Research Presentation Mode Phase 1（2026-08-23 16:59 +08:00）
 
@@ -49,11 +62,10 @@ Research View 按 source publication order 展示指定 layer 的 `fastest`、`l
 average/maximum/integrated risk 均直接显示 artifact 数值。用户选择只改变高亮，
 不改 C 的 `selected_candidate_id`、排序、route geometry、ETA 或风险指标。
 
-当前 frozen 48h Viewer 的 sidecar 仍为 `NOT_PUBLISHED`，所以真实 Firefox 回归继续以
-Operational Replay 打开，并明确显示 `SINGLE_ROUTE_FALLBACK`。真实 Winter sidecar 的
-12-route contract/metrics 已通过 D test 消费，但 Winter combined risk/replay bundle
-尚未发布，因此 Phase 1 的 Winter Research View 成熟度为 `UNIT_PASS`，不能写成
-Winter Browser E2E。
+当前 frozen 48h Summer Viewer 的 sidecar 仍为 `NOT_PUBLISHED`，继续明确显示
+`SINGLE_ROUTE_FALLBACK`。独立 Winter combined package 已把真实 RiskWindow、12-route
+sidecar 与 ETA simulation 绑定，并通过 Firefox `REAL_E2E_PASS`；它不覆盖 Summer frozen
+artifact，也不将 ETA projection 写成 replay evidence。
 
 ## Professional navigation aids（2026-08-22 00:17）
 

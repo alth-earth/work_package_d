@@ -186,15 +186,34 @@ def test_candidate_validator_rejects_scenario_mismatch() -> None:
     }
 
 
-def test_current_not_published_bundle_keeps_single_route_fallback() -> None:
-    bundle = json.loads((VIEWER / "bundle.json").read_text(encoding="utf-8"))
-    result = _inspect_with_node(bundle["route_candidates"], bundle["replay"]["scenario_id"])
+def test_not_published_package_keeps_single_route_fallback() -> None:
+    package = {
+        "schema_version": "presentation.route-candidates.v1",
+        "status": "NOT_PUBLISHED",
+        "candidates": [],
+        "reason": "candidate_geometry_and_metrics_not_published",
+    }
+    result = _inspect_with_node(package, "summer")
 
     assert result == {
         "valid": False,
         "reason": "candidate_geometry_and_metrics_not_published",
         "candidates": [],
     }
+
+
+def test_combined_identity_guard_binds_scenario_run_dataset_and_risk_window() -> None:
+    script = (VIEWER / "app.js").read_text(encoding="utf-8")
+    guard = script[
+        script.index("function inspectCombinedIdentity") : script.index("function isoToMs")
+    ]
+
+    assert "combined.run_context_id !== riskSource.run_id" in guard
+    assert "combined.dataset_bundle_id !== riskSource.dataset_bundle_id" in guard
+    assert "combined.risk_window_id !== riskSource.risk_window_id" in guard
+    assert "replay.scenario_id !== riskSource.scenario_id" in guard
+    assert "combined.selected_candidate_id !== candidatePackage.selected_candidate_id" in guard
+    assert "RiskWindow identity differs" in guard
 
 
 def test_real_winter_candidate_artifact_has_three_objectives_per_layer() -> None:
