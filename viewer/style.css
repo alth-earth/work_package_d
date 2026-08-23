@@ -418,6 +418,30 @@ select {
   line-height: 1.35;
 }
 
+.risk-explanation {
+  border-color: rgba(98, 214, 167, 0.42);
+}
+
+.risk-explanation h3 {
+  margin: 10px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.risk-explanation .summary-list li {
+  align-items: baseline;
+}
+
+.risk-explanation .contributor-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-explanation .producer-main {
+  color: #62d6a7;
+}
+
 .research-panel {
   border-color: rgba(74, 167, 232, 0.62);
   background: linear-gradient(145deg, #132432, #111e29);

@@ -25,6 +25,14 @@
   const riskSummaryMetricsEl = document.getElementById("risk-summary-metrics");
   const riskSummaryHazardsEl = document.getElementById("risk-summary-hazards");
   const riskSummaryNoteEl = document.getElementById("risk-summary-note");
+  const riskExplanationStatusEl = document.getElementById("risk-explanation-status");
+  const riskExplanationCellEl = document.getElementById("risk-explanation-cell");
+  const riskExplanationMetricsEl = document.getElementById("risk-explanation-metrics");
+  const riskExplanationContributorsEl = document.getElementById("risk-explanation-contributors");
+  const riskExplanationContributorListEl = document.getElementById(
+    "risk-explanation-contributor-list"
+  );
+  const riskExplanationDetailsEl = document.getElementById("risk-explanation-details");
   const eventTimelineEl = document.getElementById("event-timeline");
   const routeStatusEl = document.getElementById("route-status");
   const routeDecisionStatusEl = document.getElementById("route-decision-status");
@@ -64,10 +72,14 @@
   let highlightedCandidateId = null;
   let candidateInspection = null;
   let combinedIdentityInspection = null;
+  let riskExplanationInspection = null;
+  let riskExplanationRevision = 0;
+  let selectedRiskCell = null;
   let voyageProgress = null;
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
+  let lastRiskExplanationKey = null;
   const layers = { risk: true, hard: true, routes: true, track: true, navigation: true };
   const TRAIL_WINDOW_MS = 2 * 60 * 60 * 1000;
   const PENDING_FADE_MS = 30 * 60 * 1000;
@@ -94,6 +106,8 @@
   };
   const candidateTools = window.ArcticRouteCandidates;
   if (!candidateTools) throw new Error("research candidate validator is not loaded");
+  const riskExplanationTools = window.ArcticRiskExplanation;
+  if (!riskExplanationTools) throw new Error("risk explanation validator is not loaded");
   const { ROUTE_LAYERS } = candidateTools;
   const CANDIDATE_STYLES = {
     fastest: { color: "#f0b35b", dash: [9, 5], width: 2.4 },
@@ -210,6 +224,126 @@
   function formatResearchMetric(value, digits = 6, suffix = "") {
     const number = Number(value);
     return Number.isFinite(number) ? `${number.toFixed(digits)}${suffix}` : "not published";
+  }
+
+  function riskCellSnapshot(frame, row, column) {
+    if (!frame || !Number.isInteger(row) || !Number.isInteger(column)) return null;
+    const rows = frame.coordinates?.latitude?.length || 0;
+    const columns = frame.coordinates?.longitude?.length || 0;
+    if (row < 0 || column < 0 || row >= rows || column >= columns) return null;
+    const index = row * columns + column;
+    return {
+      row,
+      column,
+      latitude: frame.coordinates.latitude[row],
+      longitude: frame.coordinates.longitude[column],
+      risk_level: frame.risk_levels[index],
+      risk_score: frame.risk_scores[index],
+      confidence: frame.confidences[index],
+    };
+  }
+
+  function setExplanationUnavailable(note = "Explanation unavailable") {
+    riskExplanationStatusEl.textContent = `Explanation Status: UNAVAILABLE · ${note}`;
+    riskExplanationStatusEl.classList.add("unavailable");
+    riskExplanationContributorsEl.hidden = true;
+    setSummaryItems(riskExplanationContributorListEl, []);
+    setDefinitionRows(riskExplanationDetailsEl, []);
+  }
+
+  function renderRiskExplanation(state) {
+    if (!riskExplanationStatusEl) return;
+    const renderKey = [
+      riskExplanationRevision,
+      state.risk?.risk_id || "no-frame",
+      selectedRiskCell?.row ?? "no-row",
+      selectedRiskCell?.column ?? "no-column",
+    ].join("|");
+    if (renderKey === lastRiskExplanationKey) return;
+    lastRiskExplanationKey = renderKey;
+    if (!selectedRiskCell || !state.risk) {
+      riskExplanationCellEl.textContent =
+        "Click a risk cell to inspect its published RiskFrame values.";
+      setDefinitionRows(riskExplanationMetricsEl, []);
+      setExplanationUnavailable();
+      return;
+    }
+
+    const snapshot = riskCellSnapshot(
+      state.risk,
+      selectedRiskCell.row,
+      selectedRiskCell.column
+    );
+    if (!snapshot) {
+      riskExplanationCellEl.textContent = "Selected cell is outside the displayed RiskFrame grid.";
+      setDefinitionRows(riskExplanationMetricsEl, []);
+      setExplanationUnavailable();
+      return;
+    }
+    riskExplanationCellEl.textContent =
+      `Cell ${snapshot.row},${snapshot.column} · ` +
+      `${formatCoordinate(snapshot.latitude, "latitude", 4)}, ` +
+      `${formatCoordinate(snapshot.longitude, "longitude", 4)}`;
+    setDefinitionRows(riskExplanationMetricsEl, [
+      ["Risk Level", snapshot.risk_level === null || snapshot.risk_level === undefined
+        ? "not published"
+        : String(snapshot.risk_level)],
+      ["Risk Score", formatScore(snapshot.risk_score)],
+      ["Confidence", formatScore(snapshot.confidence)],
+    ]);
+
+    if (!riskExplanationInspection?.valid) {
+      setExplanationUnavailable();
+      return;
+    }
+    const key = riskExplanationTools.cellKey(
+      state.risk.risk_id,
+      snapshot.row,
+      snapshot.column
+    );
+    const explanation = riskExplanationInspection.cells[key];
+    if (!explanation || explanation.explanation_status === "UNAVAILABLE") {
+      setExplanationUnavailable();
+      return;
+    }
+
+    riskExplanationStatusEl.textContent =
+      `Explanation Status: ${explanation.explanation_status}`;
+    riskExplanationStatusEl.classList.remove("unavailable");
+    riskExplanationContributorListEl.replaceChildren();
+    const producerMainIds = new Set(explanation.reason.main_contributor_ids);
+    for (const contributor of explanation.contributors) {
+      const item = document.createElement("li");
+      const label = document.createElement("span");
+      label.textContent = contributor.display_name;
+      if (producerMainIds.has(contributor.contributor_id)) {
+        label.classList.add("producer-main");
+        label.title = "Producer-designated main contributor";
+      }
+      const value = document.createElement("span");
+      value.className = "contributor-value";
+      value.textContent = `contribution ${formatMetric(contributor.contribution)}`;
+      item.append(label, value);
+      riskExplanationContributorListEl.append(item);
+    }
+    riskExplanationContributorsEl.hidden = explanation.contributors.length === 0;
+
+    const details = [
+      ["Reason", `${explanation.reason.text} · ${explanation.reason.code}`],
+      ["Uncertainty", explanation.uncertainty.status],
+    ];
+    if (explanation.uncertainty.missing_data.length) {
+      details.push([
+        "Missing data",
+        explanation.uncertainty.missing_data.map(
+          (item) => `${item.data_type}: ${item.cause}${item.detail ? ` (${item.detail})` : ""}`
+        ).join("; "),
+      ]);
+    }
+    if (explanation.uncertainty.explanation_gaps.length) {
+      details.push(["Explanation gaps", explanation.uncertainty.explanation_gaps.join(", ")]);
+    }
+    setDefinitionRows(riskExplanationDetailsEl, details);
   }
 
   function objectiveLabel(objective) {
@@ -1309,6 +1443,7 @@
     if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const s = stateAt(simMs);
     updateSimulationReadout(s);
+    renderRiskExplanation(s);
     drawRiskFrame(s.risk);
     drawNavigationAids();
     const pos = project(s.lon, s.lat);
@@ -1564,6 +1699,35 @@
     draw();
   });
 
+  canvas.addEventListener("click", (event) => {
+    const frame = riskAt(simMs);
+    if (!frame || !basemap?.bbox) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = (event.clientX - rect.left) / rect.width * canvas.width;
+    const y = (event.clientY - rect.top) / rect.height * canvas.height;
+    const lon = basemap.bbox.min_lon + x / canvas.width *
+      (basemap.bbox.max_lon - basemap.bbox.min_lon);
+    const lat = basemap.bbox.max_lat - y / canvas.height *
+      (basemap.bbox.max_lat - basemap.bbox.min_lat);
+    const lats = frame.coordinates.latitude;
+    const lons = frame.coordinates.longitude;
+    const nearestIndex = (values, target) => values.reduce(
+      (best, value, index) => Math.abs(value - target) < Math.abs(values[best] - target)
+        ? index
+        : best,
+      0
+    );
+    const row = nearestIndex(lats, lat);
+    const column = nearestIndex(lons, lon);
+    const latStep = lats.length > 1 ? Math.abs(lats[1] - lats[0]) : Infinity;
+    const lonStep = lons.length > 1 ? Math.abs(lons[1] - lons[0]) : Infinity;
+    if (Math.abs(lats[row] - lat) > latStep / 2 ||
+        Math.abs(lons[column] - lon) > lonStep / 2) return;
+    selectedRiskCell = { row, column };
+    renderRiskExplanation(stateAt(simMs));
+  });
+
   riskHorizonSel.addEventListener("change", () => {
     selectedHorizon = riskHorizonSel.value;
     draw();
@@ -1602,6 +1766,9 @@
 
   async function start() {
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
+    const sidecar = window.RISK_EXPLANATION_SIDECAR ?? bundle.risk_explanation ?? null;
+    riskExplanationInspection = riskExplanationTools.inspect(sidecar, bundle);
+    riskExplanationRevision += 1;
     const routeInspection = candidateTools.inspect(
       bundle.route_candidates,
       bundle?.replay?.scenario_id || null
@@ -1687,6 +1854,32 @@
         metadata: Object.fromEntries(experimentMetadataRows()),
       }),
       identitySafety: () => ({ ...combinedIdentityInspection }),
+      riskExplanation: () => ({
+        valid: Boolean(riskExplanationInspection?.valid),
+        mode: riskExplanationInspection?.mode || "missing",
+        reason: riskExplanationInspection?.reason || null,
+        publication_status: riskExplanationInspection?.publication_status || "UNAVAILABLE",
+        selected_cell: selectedRiskCell ? { ...selectedRiskCell } : null,
+      }),
+      inspectRiskExplanation: (value) => riskExplanationTools.inspect(value, bundle),
+      setRiskExplanationSidecar: (value) => {
+        riskExplanationInspection = riskExplanationTools.inspect(value, bundle);
+        riskExplanationRevision += 1;
+        renderRiskExplanation(stateAt(simMs));
+        return {
+          valid: riskExplanationInspection.valid,
+          mode: riskExplanationInspection.mode,
+          reason: riskExplanationInspection.reason,
+          publication_status: riskExplanationInspection.publication_status,
+        };
+      },
+      selectRiskCell: (row, column) => {
+        const frame = riskAt(simMs);
+        if (!riskCellSnapshot(frame, Number(row), Number(column))) return false;
+        selectedRiskCell = { row: Number(row), column: Number(column) };
+        renderRiskExplanation(stateAt(simMs));
+        return true;
+      },
       inspectRouteCandidates: (value, scenarioId = null) => candidateTools.inspect(value, scenarioId),
       setViewMode: (value) => {
         if (!["research", "presentation", "engineering"].includes(value)) return;

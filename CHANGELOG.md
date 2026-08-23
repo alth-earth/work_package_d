@@ -6,10 +6,24 @@ Content Status:
 Document Role: SUPPORTING
 Scope: work package D change history
 Branch: research-validation-system
-Last Verified: 2026-08-22
+Last Verified: 2026-08-23
 ---
 
 # 工作包 D 变更记录
+
+## Unreleased - Risk Explanation Consumer（2026-08-23 21:51 +08:00）
+
+- feat: 增加可选 `risk-explanation.v1` strict consumer 与点击 risk cell explanation panel；
+- compatibility: sidecar 缺失、unsupported、identity/grid/risk mismatch 只关闭 explanation，
+  基础 RiskFrame、risk/hard layer、route 与 simulation 保持运行；
+- boundary: Risk Level/Score/Confidence 只读 RiskFrame；contributors/reason/uncertainty 只读
+  producer 字段，不排序、不补零、不生成业务结论；
+- validation: missing/invalid/PARTIAL/COMPLETE tests PASS；D 全量 `91 passed / 3 skipped`；
+  Firefox E2E 8 个静态资源 HTTP 200、console errors/warnings 0；COMPLETE/PARTIAL 使用明确
+  标注的 synthetic B fixture，不冒充真实 producer artifact；
+- performance: sidecar 缺失时 browser code raw 增量 27,876 bytes（合并 gzip 增量
+  6,127 bytes），其中 validator 为 18,274 bytes；静态请求 7→8。100 万次 missing-path
+  inspection 70.50 ms（约 0.070 µs/次）；无真实 sidecar，payload 增量 N/A。
 
 ## Unreleased - Winter Combined Research Viewer（2026-08-23 20:14 +08:00）
 

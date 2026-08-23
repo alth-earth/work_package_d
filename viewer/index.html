@@ -123,6 +123,22 @@
           </div>
         </section>
 
+        <section class="block risk-explanation" aria-live="polite">
+          <h2>Risk explanation</h2>
+          <div id="risk-explanation-status" class="status unavailable">
+            Explanation Status: UNAVAILABLE · Explanation unavailable
+          </div>
+          <div id="risk-explanation-cell" class="status summary-note">
+            Click a risk cell to inspect its published RiskFrame values.
+          </div>
+          <dl id="risk-explanation-metrics" class="summary-grid"></dl>
+          <div id="risk-explanation-contributors" hidden>
+            <h3>Main Contributors</h3>
+            <ul id="risk-explanation-contributor-list" class="summary-list"></ul>
+          </div>
+          <dl id="risk-explanation-details" class="summary-grid"></dl>
+        </section>
+
         <section class="block route-decision">
           <h2>Execution decision state</h2>
           <div id="route-decision-status" class="status">route decision loading</div>
@@ -176,6 +192,7 @@
       </aside>
     </main>
     <script src="research_candidates.js"></script>
+    <script src="risk_explanation.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

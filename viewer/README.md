@@ -19,6 +19,23 @@ Last Verified: 2026-08-23
 Risk、Presentation Adapter、L1/L2 eligibility）由 orchestrator 与 contracts 负责，
 Viewer 不重新解释、不猜航速、不修改 route geometry。
 
+## Optional Risk Explanation（2026-08-23 21:51 +08:00）
+
+Viewer 接受 presentation package 顶层可选 `risk_explanation`，其 schema 为
+`risk-explanation.v1`；自包含测试/交付也可在启动前设置
+`window.RISK_EXPLANATION_SIDECAR`。未提供 sidecar 时不发起额外网络请求，点击格点仍显示
+RiskFrame 的 Risk Level、Risk Score、Confidence，并明确显示 `Explanation unavailable`。
+
+`risk_explanation.js` 在启用解释前检查 schema、RiskWindow、run/scenario、RiskFrame id/time、
+grid rows/columns/CRS、逐格坐标以及 RiskFrame 风险镜像。任一 mismatch 会拒绝整个 sidecar，
+但不影响 RiskFrame、risk/hard layer、route 或 Simulation Clock。`PARTIAL` 只按 producer
+顺序显示已发布 contributor，不补 wave/wind/ice 的零值或文案；`COMPLETE` 显示 producer
+提供的 contributors/contribution/reason/uncertainty。面板从 RiskFrame 读取 risk level/score/
+confidence，绝不使用 sidecar 覆盖。
+
+当前 Firefox E2E 的 explanation 内容来自明确标记为 `synthetic/design_example` 的 B 测试
+fixture，只验证 D consumer。真实 B producer 与 Orchestrator immutable transport 尚未发布。
+
 ## Winter Combined Package（2026-08-23 20:14 +08:00）
 
 Winter Research Viewer 使用同一 package 中发布的：
@@ -167,6 +184,7 @@ id、last event、L1/L2 status。切换 horizon 不改变 Simulation Time。
 ```text
 viewer/index.html         页面结构
 viewer/research_candidates.js  route candidate strict validation（browser + Node）
+viewer/risk_explanation.js  optional risk explanation strict validation（browser + Node）
 viewer/app.js             渲染 + timeline（只读 bundle）
 viewer/style.css          样式
 viewer/embed.py           单文件内嵌（bundle + basemap）

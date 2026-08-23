@@ -13,6 +13,25 @@ Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_R
 
 # Work Package D: Display / Visualization / Presentation
 
+## Risk Explanation optional consumer（2026-08-23 21:51 +08:00）
+
+D 已实现可选 `risk-explanation.v1` consumer。Winter Viewer 点击 risk cell 后，Risk Level、
+Risk Score 与 Confidence 始终读取当前显示的 `bc.risk-frame.v2`；只有 sidecar 通过
+`schema_version`、RiskWindow、RiskFrame 和 grid/坐标 identity 对照后，才按 producer
+发布顺序显示 contributors、contribution、reason 与 uncertainty。D 不排序贡献、不补零、
+不生成 reason，也不修改 RiskFrame、地图图层、路线或仿真状态。
+
+sidecar 可由 presentation package 的可选 `risk_explanation` 字段传入；自包含模式可使用
+`window.RISK_EXPLANATION_SIDECAR`。字段缺失不触发额外请求，面板显示
+`Explanation Status: UNAVAILABLE · Explanation unavailable`，原 Viewer 行为保持不变。
+无效或 identity mismatch 的 sidecar 仅在 explanation gate 内失败关闭，基础 RiskFrame
+继续显示。
+
+验证：D `91 passed / 3 causal-replay-only skipped`；Firefox 对真实 Winter bundle 的 missing /
+invalid fallback 以及 synthetic B fixture 的 PARTIAL / COMPLETE rendering E2E 通过，8 个静态
+资源 HTTP 200，console errors/warnings 为 0。真实 B producer artifact 和 Orchestrator
+immutable transport 尚未实现，因此当前不能声称真实风险贡献解释已发布。
+
 ## Winter Combined Research Viewer（2026-08-23 20:14 +08:00）
 
 D 已通过同一 Winter experiment identity 的 combined package 完成 Firefox E2E。Viewer
