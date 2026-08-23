@@ -11,6 +11,19 @@ Last Verified: 2026-08-22
 
 # 工作包 D 变更记录
 
+## Unreleased - Research Visualization Phase 1（2026-08-23 16:59 +08:00）
+
+- feat: 在既有 Replay Viewer 中增加 `Research Validation` / `Operational Replay` /
+  `Engineering Debug` 三态，不替换 frozen demo runtime；
+- feat: 对 `presentation.route-candidates.v1` 执行 4×3 原子完整性、identity、geometry、
+  canonical metrics、hard violation 与 scenario 一致性检查；不完整时 fail closed 回到
+  `SINGLE_ROUTE_FALLBACK`；
+- feat: 增加四层 selector、三目标 candidate comparison、地图 geometry overlay、实验
+  metadata 与权威 `selected_candidate_id`/display-only highlight 区分；
+- boundary: D 不 rank、不重算风险或 ETA、不改变 geometry、不推断缺失字段；
+- validation: D 78 tests PASS、Ruff clean、两份 JS syntax PASS；现有 48h frozen bundle 的
+  Firefox fallback regression PASS（console errors/warnings 0，required resources 200）。
+
 ## Unreleased - Winter Route Candidate Intake（2026-08-23 10:20 +08:00）
 
 - feat: consume `presentation.route-candidates.v1` 的 `selected_candidate_id` 与 canonical

@@ -46,3 +46,14 @@ def test_canvas_preserves_the_canonical_map_aspect_ratio() -> None:
     map_style = stylesheet[stylesheet.index("#map {") : stylesheet.index(".hover-info")]
     assert "object-fit: contain" in map_style
     assert "object-position: center" in map_style
+
+
+def test_paused_viewer_does_not_redraw_the_full_canvas_every_animation_frame() -> None:
+    script = (VIEWER / "app.js").read_text(encoding="utf-8")
+    frame = script[script.index("function frame(ts)") : script.index(
+        "playBtn.addEventListener"
+    )]
+
+    assert "const shouldDraw = playing || lastTs === null" in frame
+    assert "if (shouldDraw)" in frame
+    assert frame.index("if (shouldDraw)") < frame.index("draw();")

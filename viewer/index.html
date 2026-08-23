@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Arctic Route Replay Viewer</title>
+    <title>Arctic Route Research Validation Viewer</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="title">
-        <strong>Arctic Route Replay</strong>
-        <span class="subtitle">Causal replay · presentation viewer</span>
+        <strong>Arctic Route Research Validation</strong>
+        <span class="subtitle">Environment → risk field → route decision</span>
         <span id="mode-badge" class="badge">causal_replay</span>
       </div>
       <div class="badges">
@@ -48,6 +48,14 @@
           </div>
           <div class="row mode-row">
             <span id="risk-status" class="status">risk overlay loading</span>
+            <label class="view-mode-control" for="view-mode">
+              view
+              <select id="view-mode">
+                <option value="research">Research Validation</option>
+                <option value="presentation">Operational Replay</option>
+                <option value="engineering">Engineering Debug</option>
+              </select>
+            </label>
             <button id="toggle-debug" type="button" class="btn small">Engineering Debug</button>
           </div>
           <div id="route-status" class="status route-status">active route loading</div>
@@ -61,6 +69,27 @@
             </select>
           </div>
           <div id="risk-horizon-status" class="status horizon-status">risk horizon loading</div>
+        </section>
+
+        <section id="research-panel" class="block research-panel" hidden>
+          <h2>Research validation</h2>
+          <div id="research-status" class="status">research artifact loading</div>
+          <p class="evidence-chain" aria-label="scientific evidence chain">
+            Environment change <span>→</span> Risk field change <span>→</span> Route decision change
+          </p>
+          <dl id="experiment-metadata" class="summary-grid research-metadata"></dl>
+          <div class="route-layer-control">
+            <label for="route-layer">route layer</label>
+            <select id="route-layer">
+              <option value="full_voyage">Full voyage</option>
+              <option value="main_corridor_24_72h">Main corridor · 24–72h</option>
+              <option value="rolling_0_24h">Rolling · 0–24h</option>
+              <option value="executable_0_6h">Executable · 0–6h</option>
+            </select>
+          </div>
+          <div id="route-candidate-note" class="status summary-note"></div>
+          <div id="route-candidates" class="route-comparison" hidden></div>
+          <div id="route-highlight-note" class="status summary-note"></div>
         </section>
 
         <section class="block risk-profile">
@@ -90,8 +119,7 @@
           <div id="route-decision-status" class="status">route decision loading</div>
           <dl id="route-decision-metrics" class="summary-grid"></dl>
           <div id="route-decision-trace" class="status summary-note"></div>
-          <div id="route-candidate-note" class="status summary-note"></div>
-          <ul id="route-candidates" class="summary-list" hidden></ul>
+          <div id="route-fallback-note" class="status summary-note"></div>
         </section>
 
         <section class="block legend">
@@ -108,6 +136,9 @@
             <li><i class="sw sw-trail"></i>recent vessel trail · presentation</li>
             <li><i class="sw sw-track"></i>completed track</li>
             <li><i class="sw sw-active"></i>authoritative future route</li>
+            <li class="research-only"><i class="sw sw-candidate-fastest"></i>candidate · fastest</li>
+            <li class="research-only"><i class="sw sw-candidate-low-risk"></i>candidate · low risk</li>
+            <li class="research-only"><i class="sw sw-candidate-recommended"></i>candidate · recommended</li>
             <li><i class="sw sw-pending"></i>pending route</li>
             <li><i class="sw sw-superseded"></i>superseded route</li>
             <li><i class="sw sw-segment"></i>current segment</li>
@@ -135,6 +166,7 @@
         </section>
       </aside>
     </main>
+    <script src="research_candidates.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -33,8 +33,27 @@ D 已可读取 Orchestrator 发布的 `presentation.route-candidates.v1`：候�
 `selected_candidate_id` 标记 full-voyage recommended。缺失 sidecar 或
 `status=NOT_PUBLISHED` 时仍保持单 authoritative route。
 
-该状态是 `INTERFACE_READY`，不是 `WINTER_VIEWER_COMPLETED`：地图上的多候选几何、
-Winter RiskFrame 组合 bundle 与浏览器研究视图属于下一轮 D 工作。
+该状态是 `INTERFACE_READY`；地图候选 geometry 与 Research Presentation Mode 的
+Phase 1 实现见下一节。Winter RiskFrame 组合 bundle 与完整浏览器验收仍未完成。
+
+## Research Presentation Mode Phase 1（2026-08-23 16:59 +08:00）
+
+D 在既有 Replay Viewer 上新增三态视图：`Research Validation`、
+`Operational Replay`、`Engineering Debug`。只有经过 D fail-closed 检查的
+`presentation.route-candidates.v1` 原子发布才启用 Research View：必须恰好覆盖
+四层 × 三目标、12 个唯一 `candidate_id`、合法 `LineString` geometry、完整 canonical
+metrics、`hard_violation_count=0`，且 candidate scenario 与 Viewer bundle 一致。
+
+Research View 按 source publication order 展示指定 layer 的 `fastest`、`low_risk`、
+`recommended`，地图只绘制 sidecar 提供的 geometry；距离、travel hours、arrival ETA、
+average/maximum/integrated risk 均直接显示 artifact 数值。用户选择只改变高亮，
+不改 C 的 `selected_candidate_id`、排序、route geometry、ETA 或风险指标。
+
+当前 frozen 48h Viewer 的 sidecar 仍为 `NOT_PUBLISHED`，所以真实 Firefox 回归继续以
+Operational Replay 打开，并明确显示 `SINGLE_ROUTE_FALLBACK`。真实 Winter sidecar 的
+12-route contract/metrics 已通过 D test 消费，但 Winter combined risk/replay bundle
+尚未发布，因此 Phase 1 的 Winter Research View 成熟度为 `UNIT_PASS`，不能写成
+Winter Browser E2E。
 
 ## Professional navigation aids（2026-08-22 00:17）
 
@@ -177,8 +196,9 @@ Viewer above is the current active development path.
 
 接口区分：Legacy Display 直接消费顶层 `cd.four-layer-route-plan-set.v3`（其中单路线为
 `cd.route-plan.v3`）或 `cd.route-plan.v2`；当前 Replay Viewer 不直接消费该集合，而只消费
-Orchestrator 发布的 `replay.viewer-bundle.v1`。当前 candidate package 仍为
-`NOT_PUBLISHED`，D 不从 route revisions 推断 12 条候选路线。
+Orchestrator 发布的 `replay.viewer-bundle.v1`。frozen 48h bundle 的 candidate package 仍为
+`NOT_PUBLISHED`；Winter Research sidecar 已 `PUBLISHED` 12 条真实路线。D 在两种状态下都不从
+route revisions 推断候选路线。
 
 > 状态：**RC1 真实制品消费 PASS（2026-08-16）**。v3 整组/ v2 后备的读取、分组、
 > 状态机与渲染摘要已实现并消费真实 r6/r7 输出（initial + replanned）；离线本地

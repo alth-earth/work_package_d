@@ -12,6 +12,7 @@
   const debugEl = document.getElementById("debug");
   const debugPanel = document.getElementById("debug-panel");
   const toggleDebugBtn = document.getElementById("toggle-debug");
+  const viewModeSel = document.getElementById("view-mode");
   const riskStatusEl = document.getElementById("risk-status");
   const riskHorizonSel = document.getElementById("risk-horizon");
   const riskHorizonStatusEl = document.getElementById("risk-horizon-status");
@@ -27,8 +28,14 @@
   const routeDecisionStatusEl = document.getElementById("route-decision-status");
   const routeDecisionMetricsEl = document.getElementById("route-decision-metrics");
   const routeDecisionTraceEl = document.getElementById("route-decision-trace");
+  const routeFallbackNoteEl = document.getElementById("route-fallback-note");
+  const researchPanel = document.getElementById("research-panel");
+  const researchStatusEl = document.getElementById("research-status");
+  const experimentMetadataEl = document.getElementById("experiment-metadata");
+  const routeLayerSel = document.getElementById("route-layer");
   const routeCandidateNoteEl = document.getElementById("route-candidate-note");
   const routeCandidatesEl = document.getElementById("route-candidates");
+  const routeHighlightNoteEl = document.getElementById("route-highlight-note");
   const layerRisk = document.getElementById("layer-risk");
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
@@ -46,9 +53,15 @@
   let lastTs = null;
   let scale = 60;
   let selectedHorizon = "current";
+  let viewMode = "presentation";
+  let previousNonEngineeringMode = "presentation";
   let presentationMode = true;
+  let selectedRouteLayer = "full_voyage";
+  let highlightedCandidateId = null;
+  let candidateInspection = null;
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
+  let lastResearchPanelKey = null;
   const layers = { risk: true, hard: true, routes: true, track: true, navigation: true };
   const TRAIL_WINDOW_MS = 2 * 60 * 60 * 1000;
   const PENDING_FADE_MS = 30 * 60 * 1000;
@@ -72,6 +85,14 @@
     LAND: "#304858",
     DATA_UNAVAILABLE: "#8a63d2",
     OTHER: "#b54f70",
+  };
+  const candidateTools = window.ArcticRouteCandidates;
+  if (!candidateTools) throw new Error("research candidate validator is not loaded");
+  const { ROUTE_LAYERS } = candidateTools;
+  const CANDIDATE_STYLES = {
+    fastest: { color: "#f0b35b", dash: [9, 5], width: 2.4 },
+    low_risk: { color: "#62d6a7", dash: [3, 5], width: 2.6 },
+    recommended: { color: "#f5f8fb", dash: [], width: 3.1 },
   };
 
   function isoToMs(value) {
@@ -141,10 +162,43 @@
     return Number.isFinite(number) ? number.toFixed(3) : String(value);
   }
 
+  function formatResearchMetric(value, digits = 6, suffix = "") {
+    const number = Number(value);
+    return Number.isFinite(number) ? `${number.toFixed(digits)}${suffix}` : "not published";
+  }
+
+  function objectiveLabel(objective) {
+    return {
+      fastest: "Fastest",
+      low_risk: "Low risk",
+      recommended: "Recommended",
+    }[objective] || objective;
+  }
+
   function routeCandidates() {
-    const value = bundle?.route_candidates;
-    if (Array.isArray(value)) return value;
-    return Array.isArray(value?.candidates) ? value.candidates : [];
+    return candidateInspection?.valid ? candidateInspection.candidates : [];
+  }
+
+  function candidatesForLayer(layer = selectedRouteLayer) {
+    return routeCandidates().filter((candidate) => candidate.layer === layer);
+  }
+
+  function defaultCandidateForLayer(layer) {
+    const candidates = candidatesForLayer(layer);
+    const canonicalId = bundle?.route_candidates?.selected_candidate_id;
+    return candidates.find((candidate) => candidate.candidate_id === canonicalId) ||
+      candidates.find((candidate) => candidate.objective === "recommended") ||
+      candidates[0] || null;
+  }
+
+  function highlightedCandidate() {
+    return candidatesForLayer().find(
+      (candidate) => candidate.candidate_id === highlightedCandidateId
+    ) || defaultCandidateForLayer(selectedRouteLayer);
+  }
+
+  function candidateGeometryPoints(candidate) {
+    return (candidate?.geometry?.coordinates || []).map(([lon, lat]) => ({ lon, lat }));
   }
 
   function routeArrivalEta(route) {
@@ -813,8 +867,7 @@
       routeDecisionStatusEl.textContent = "Route decision metadata unavailable";
       setDefinitionRows(routeDecisionMetricsEl, []);
       if (routeDecisionTraceEl) routeDecisionTraceEl.textContent = "";
-      if (routeCandidateNoteEl) routeCandidateNoteEl.textContent = "";
-      if (routeCandidatesEl) routeCandidatesEl.hidden = true;
+      if (routeFallbackNoteEl) routeFallbackNoteEl.textContent = "NO_ROUTE_PUBLISHED";
       return;
     }
 
@@ -865,40 +918,115 @@
         : "Event trace: departure → initial route generated";
     }
 
+    if (routeFallbackNoteEl) {
+      routeFallbackNoteEl.textContent = candidateInspection?.valid
+        ? "Research candidates are published; use Research Validation view for the 4×3 comparison."
+        : `SINGLE_ROUTE_FALLBACK · ${candidateInspection?.reason || "candidate comparison not published"}`;
+    }
+  }
+
+  function experimentMetadataRows() {
     const candidates = routeCandidates();
-    if (!candidates.length) {
+    const first = candidates[0];
+    const research = bundle?.research_validation || {};
+    const riskSource = bundle?.risk?.source || {};
+    const grid = bundle?.risk?.grid;
+    return [
+      ["experiment", research.label || "Route candidate validation"],
+      ["scenario", first?.provenance?.scenario_id || bundle?.replay?.scenario_id || "not published"],
+      ["run", bundle?.route_candidates?.provenance?.source_run_id || first?.provenance?.run_id || "not published"],
+      ["DatasetBundle", research.dataset_bundle_id || bundle?.replay?.dataset_bundle_id || "not published in Viewer artifact"],
+      ["RiskFrame", riskSource.schema_version || research.risk_schema || "not published"],
+      ["grid", grid ? `${grid.rows} × ${grid.cols}` : "not published"],
+      ["frames", String(bundle?.risk?.frames?.length ?? research.risk_frame_count ?? "not published")],
+      ["routes", String(candidates.length)],
+      ["candidate set", bundle?.route_candidates?.candidate_set_id || "not published"],
+    ];
+  }
+
+  function updateResearchPanel() {
+    if (!researchPanel) return;
+    const panelKey = [
+      candidateInspection?.valid,
+      candidateInspection?.reason,
+      selectedRouteLayer,
+      highlightedCandidateId,
+    ].join("|");
+    if (panelKey === lastResearchPanelKey) return;
+    lastResearchPanelKey = panelKey;
+    const candidates = routeCandidates();
+    if (!candidateInspection?.valid) {
+      researchStatusEl.classList.add("unavailable");
+      researchStatusEl.textContent =
+        `Research candidate comparison unavailable · ${candidateInspection?.reason || "not published"}`;
+      setDefinitionRows(experimentMetadataEl, experimentMetadataRows());
       if (routeCandidateNoteEl) {
         routeCandidateNoteEl.textContent =
-          "Candidate comparison is not published in this bundle; the Viewer keeps the authoritative route only.";
+          "No candidate route is inferred. Existing authoritative replay remains active.";
       }
       if (routeCandidatesEl) {
         routeCandidatesEl.replaceChildren();
         routeCandidatesEl.hidden = true;
       }
+      if (routeHighlightNoteEl) routeHighlightNoteEl.textContent = "";
       return;
     }
+
+    researchStatusEl.classList.remove("unavailable");
+    researchStatusEl.textContent =
+      `PUBLISHED · 4 layers × 3 objectives · ${candidates.length} artifact routes`;
+    setDefinitionRows(experimentMetadataEl, experimentMetadataRows());
+    const layerCandidates = candidatesForLayer();
     if (routeCandidateNoteEl) {
-      routeCandidateNoteEl.textContent = `Published route candidates · ${candidates.length}`;
+      routeCandidateNoteEl.textContent =
+        `${selectedRouteLayer} · ${layerCandidates.length} routes in source publication order`;
     }
-    if (routeCandidatesEl) {
-      routeCandidatesEl.replaceChildren();
-      const selectedCandidateId = bundle?.route_candidates?.selected_candidate_id;
-      for (const candidate of candidates) {
-        const selected = candidate.candidate_id === selectedCandidateId;
-        const label = candidate.label ||
-          `${candidate.layer || "route"} / ${candidate.objective || "candidate"}`;
-        const metrics = [
-          formatDistance(candidate.distance_km ?? candidate.metrics?.distance_km),
-          `ETA ${candidate.arrival_eta || candidate.eta || "not published"}`,
-          `avg risk ${formatMetric(candidate.average_risk ?? candidate.metrics?.average_risk ?? candidate.risk_metrics?.average_risk)}`,
-          `max risk ${formatMetric(candidate.maximum_risk ?? candidate.metrics?.maximum_risk ?? candidate.risk_metrics?.maximum_risk)}`,
-        ];
-        const item = document.createElement("li");
-        item.textContent = `${selected ? "Recommended · " : ""}${label} · ${metrics.join(" · ")}`;
-        item.dataset.selected = selected ? "true" : "false";
-        routeCandidatesEl.append(item);
+    if (!routeCandidatesEl) return;
+    routeCandidatesEl.replaceChildren();
+    const canonicalId = bundle.route_candidates.selected_candidate_id;
+    const highlight = highlightedCandidate();
+    highlightedCandidateId = highlight?.candidate_id || null;
+    for (const candidate of layerCandidates) {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = `route-card route-card-${candidate.objective}`;
+      card.dataset.candidateId = candidate.candidate_id;
+      card.dataset.highlighted = candidate.candidate_id === highlightedCandidateId ? "true" : "false";
+      card.dataset.canonical = candidate.candidate_id === canonicalId ? "true" : "false";
+
+      const heading = document.createElement("strong");
+      heading.textContent = objectiveLabel(candidate.objective);
+      const identity = document.createElement("span");
+      identity.className = "route-card-id";
+      identity.textContent = candidate.candidate_id;
+      const metrics = candidate.risk_metrics;
+      const list = document.createElement("dl");
+      list.className = "route-card-metrics";
+      const rows = [
+        ["Distance", formatResearchMetric(candidate.distance_km, 3, " km")],
+        ["ETA", formatResearchMetric(candidate.travel_hours, 3, " h")],
+        ["Arrival", candidate.arrival_eta || "not published"],
+        ["Avg risk", formatResearchMetric(metrics.average_risk)],
+        ["Max risk", formatResearchMetric(metrics.maximum_risk)],
+        ["Integrated", formatResearchMetric(metrics.integrated_risk_hours, 6, " risk·h")],
+      ];
+      for (const [label, value] of rows) {
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const detail = document.createElement("dd");
+        detail.textContent = value;
+        list.append(term, detail);
       }
-      routeCandidatesEl.hidden = false;
+      card.append(heading, identity, list);
+      routeCandidatesEl.append(card);
+    }
+    routeCandidatesEl.hidden = false;
+    if (routeHighlightNoteEl) {
+      const canonical = highlight?.candidate_id === canonicalId;
+      routeHighlightNoteEl.textContent = highlight
+        ? `Map highlight: ${objectiveLabel(highlight.objective)} · ${highlight.candidate_id}` +
+          `${canonical ? " · C selected_candidate_id" : " · display-only comparison selection"}`
+        : "No route highlighted";
     }
   }
 
@@ -989,6 +1117,23 @@
     ctx.restore();
   }
 
+  function drawResearchCandidateRoutes() {
+    if (viewMode !== "research" || !layers.routes || !candidateInspection?.valid) return;
+    const highlight = highlightedCandidate();
+    for (const candidate of candidatesForLayer()) {
+      const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
+      const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
+      drawPath(
+        candidateGeometryPoints(candidate),
+        style.color,
+        style.width + (isHighlighted ? 1.8 : 0),
+        style.dash,
+        null,
+        isHighlighted ? 0.96 : 0.48
+      );
+    }
+  }
+
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -1000,6 +1145,11 @@
     if (layers.track && s.trail.length > 1) {
       drawPath(s.trail, "#d7e6ed", 2.2, [], null, presentationMode ? 0.72 : 0.45);
     }
+
+    // Candidate geometry is rendered exactly as published by the presentation
+    // sidecar. The local highlight changes paint only: C's selected_candidate_id,
+    // ranking, geometry, risk metrics and ETA remain untouched.
+    drawResearchCandidateRoutes();
 
     if (layers.routes && s.supersededRoute && s.supersededRoute.length > 1) {
       drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs);
@@ -1104,7 +1254,7 @@
       ? isoToMs(selection.actual_valid_time)
       : NaN;
     const rows = [
-      ["view mode", presentationMode ? "Presentation" : "Engineering Debug"],
+      ["view mode", viewMode],
       ["simulation_time", formatAbsolute(s.time)],
       ["vessel lon/lat", `${s.lon.toFixed(4)} / ${s.lat.toFixed(4)}`],
       ["speed knots", (s.kn ?? 0).toFixed(2)],
@@ -1125,6 +1275,9 @@
       ["risk actual horizon", selection ? formatHorizonSeconds(selection.actual_horizon_seconds) : "none"],
       ["risk level range", bundle.risk ? bundle.risk.level_range.join("-") : "none"],
       ["hard reason", s.risk ? "separate overlay" : "none"],
+      ["candidate interface", candidateInspection?.valid ? "PUBLISHED / 12" : "single-route fallback"],
+      ["candidate layer", selectedRouteLayer],
+      ["candidate highlight", highlightedCandidateId || "none"],
       ["last event", event ? `${event.type}@${event.t}` : "none"],
       ["L1", bundle.gates.status || "NOT_RUN"],
       ["L2", bundle.gates.l2_status || "NOT_RUN"],
@@ -1153,10 +1306,12 @@
     updateRiskTimeline(s);
     updateRiskSummary(s);
     updateRouteDecision(s);
+    updateResearchPanel();
     updateEventTimeline(s);
   }
 
   function frame(ts) {
+    const shouldDraw = playing || lastTs === null;
     if (lastTs !== null && playing) {
       const delta = (ts - lastTs) / 1000;
       simMs += delta * scale * 1000;
@@ -1167,9 +1322,11 @@
       }
     }
     lastTs = ts;
-    scrub.value = Math.round(simMs);
-    clockEl.textContent = formatClock(simMs);
-    draw();
+    if (shouldDraw) {
+      scrub.value = Math.round(simMs);
+      clockEl.textContent = formatClock(simMs);
+      draw();
+    }
     requestAnimationFrame(frame);
   }
 
@@ -1192,8 +1349,44 @@
   });
 
   toggleDebugBtn.addEventListener("click", () => {
-    presentationMode = !presentationMode;
+    if (viewMode === "engineering") {
+      viewMode = previousNonEngineeringMode;
+    } else {
+      previousNonEngineeringMode = viewMode;
+      viewMode = "engineering";
+    }
     updateModeUi();
+    draw();
+  });
+
+  viewModeSel.addEventListener("change", () => {
+    const requested = viewModeSel.value;
+    if (requested === "research" && !candidateInspection?.valid) {
+      viewMode = "presentation";
+    } else {
+      viewMode = requested;
+      if (viewMode !== "engineering") previousNonEngineeringMode = viewMode;
+    }
+    updateModeUi();
+    draw();
+  });
+
+  routeLayerSel.addEventListener("change", () => {
+    selectedRouteLayer = routeLayerSel.value;
+    highlightedCandidateId = defaultCandidateForLayer(selectedRouteLayer)?.candidate_id || null;
+    updateResearchPanel();
+    draw();
+  });
+
+  routeCandidatesEl.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-candidate-id]");
+    if (!card || !candidateInspection?.valid) return;
+    const candidate = candidatesForLayer().find(
+      (item) => item.candidate_id === card.dataset.candidateId
+    );
+    if (!candidate) return;
+    highlightedCandidateId = candidate.candidate_id;
+    updateResearchPanel();
     draw();
   });
 
@@ -1203,10 +1396,20 @@
   });
 
   function updateModeUi() {
-    debugPanel.hidden = presentationMode;
-    if (gateBadges) gateBadges.hidden = presentationMode;
-    toggleDebugBtn.textContent = presentationMode ? "Engineering Debug" : "Presentation Mode";
-    document.body.dataset.mode = presentationMode ? "presentation" : "engineering";
+    presentationMode = viewMode !== "engineering";
+    const researchAvailable = Boolean(candidateInspection?.valid);
+    const researchOption = viewModeSel.querySelector('option[value="research"]');
+    if (researchOption) researchOption.disabled = !researchAvailable;
+    if (viewMode === "research" && !researchAvailable) viewMode = "presentation";
+    viewModeSel.value = viewMode;
+    routeLayerSel.disabled = !researchAvailable;
+    researchPanel.hidden = viewMode !== "research";
+    debugPanel.hidden = viewMode !== "engineering";
+    if (gateBadges) gateBadges.hidden = viewMode !== "engineering";
+    toggleDebugBtn.textContent = viewMode === "engineering"
+      ? (previousNonEngineeringMode === "research" ? "Research Validation" : "Operational Replay")
+      : "Engineering Debug";
+    document.body.dataset.mode = viewMode;
   }
 
   [[layerRisk, "risk"], [layerHard, "hard"], [layerRoutes, "routes"],
@@ -1220,6 +1423,15 @@
 
   async function start() {
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
+    candidateInspection = candidateTools.inspect(
+      bundle.route_candidates,
+      bundle?.replay?.scenario_id || null
+    );
+    viewMode = candidateInspection.valid ? "research" : "presentation";
+    previousNonEngineeringMode = viewMode;
+    selectedRouteLayer = "full_voyage";
+    routeLayerSel.value = selectedRouteLayer;
+    highlightedCandidateId = defaultCandidateForLayer(selectedRouteLayer)?.candidate_id || null;
     basemap = bundle.basemap;
     startMs = isoToMs(bundle.replay.start);
     const end = isoToMs(bundle.replay.end);
@@ -1274,6 +1486,40 @@
           candidate_count: routeCandidates().length,
         };
       },
+      researchPresentation: () => ({
+        available: Boolean(candidateInspection?.valid),
+        reason: candidateInspection?.reason || null,
+        view_mode: viewMode,
+        selected_layer: selectedRouteLayer,
+        highlighted_candidate_id: highlightedCandidateId,
+        canonical_selected_candidate_id: bundle?.route_candidates?.selected_candidate_id || null,
+        candidates: candidatesForLayer(),
+        metadata: Object.fromEntries(experimentMetadataRows()),
+      }),
+      inspectRouteCandidates: (value, scenarioId = null) => candidateTools.inspect(value, scenarioId),
+      setViewMode: (value) => {
+        if (!["research", "presentation", "engineering"].includes(value)) return;
+        if (value === "research" && !candidateInspection?.valid) return;
+        viewMode = value;
+        if (viewMode !== "engineering") previousNonEngineeringMode = viewMode;
+        updateModeUi();
+        draw();
+      },
+      setRouteLayer: (value) => {
+        if (!ROUTE_LAYERS.includes(value) || !candidateInspection?.valid) return;
+        selectedRouteLayer = value;
+        routeLayerSel.value = value;
+        highlightedCandidateId = defaultCandidateForLayer(value)?.candidate_id || null;
+        updateResearchPanel();
+        draw();
+      },
+      highlightCandidate: (candidateId) => {
+        const candidate = candidatesForLayer().find((item) => item.candidate_id === candidateId);
+        if (!candidate) return;
+        highlightedCandidateId = candidate.candidate_id;
+        updateResearchPanel();
+        draw();
+      },
       routeEvolution: () => (bundle.events || [])
         .filter((event) => ["REPLAN_DECIDED", "REPLAN_ADOPTED"].includes(event.type))
         .map((event) => ({
@@ -1295,7 +1541,6 @@
         draw();
       },
     };
-    document.body.dataset.mode = "presentation";
     requestAnimationFrame(frame);
   }
 

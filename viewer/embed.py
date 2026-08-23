@@ -18,6 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     viewer = args.viewer_dir
     html = (viewer / "index.html").read_text(encoding="utf-8")
     css = (viewer / "style.css").read_text(encoding="utf-8")
+    research_candidates = (viewer / "research_candidates.js").read_text(encoding="utf-8")
     app = (viewer / "app.js").read_text(encoding="utf-8")
     bundle = (viewer / "bundle.json").read_bytes()
     basemap = (viewer / "gebco_basemap.png").read_bytes()
@@ -37,10 +38,14 @@ def main(argv: list[str] | None = None) -> int:
         + ";\n"
         "</script>\n"
         "<script>\n"
+        + research_candidates
+        + "\n</script>\n"
+        + "<script>\n"
         + app
         + "\n</script>\n"
     )
     html = html.replace('<link rel="stylesheet" href="style.css" />', "")
+    html = html.replace('<script src="research_candidates.js"></script>\n    ', "")
     html = html.replace('<script src="app.js"></script>', inline)
     output = args.output or viewer / "index_self_contained.html"
     output.write_text(html, encoding="utf-8")

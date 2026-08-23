@@ -54,7 +54,25 @@ cd /root/my_project/work_package_d
 ```
 
 打开 `http://127.0.0.1:8131/`（Play/Pause、scrub、1x/2x/4x/8x、Current/
-+6h/+12h/+24h horizon、layer toggles、Presentation/Engineering Debug mode）。
++6h/+12h/+24h horizon、layer toggles、Research Validation / Operational Replay /
+Engineering Debug mode）。
+
+## Research Presentation Mode（2026-08-23 16:59 +08:00）
+
+当 bundle 内 `route_candidates` 为合法的 `presentation.route-candidates.v1` PUBLISHED
+package 时，Viewer 默认进入 `Research Validation`。该模式显示：
+
+- 四个 planning layer selector；
+- 每层 source-order 的 `fastest` / `low_risk` / `recommended` 三条路线；
+- artifact 原样提供的 route ID、distance、travel hours、arrival ETA、average/max/
+  integrated risk；
+- source run、scenario、RiskFrame schema、grid、frame count、candidate set identity；
+- candidate geometry 地图对比与 display-only highlight。
+
+Research View 不修改 `selected_candidate_id`。若 sidecar 缺失、`NOT_PUBLISHED`、不满
+4×3、scenario 不匹配、geometry/metrics 不完整或出现 hard violation，Research 选项禁用，
+Viewer 明确回退为既有 authoritative 单路线。`DATA_UNAVAILABLE` 仍由独立 hard overlay
+显示，不参与 route metric 推断。
 
 研究验证分支的 `Navigation aids` 图层默认开启：经纬网格、坐标标签、按地图
 中心纬度估算的比例尺，以及 north-up EPSG:4326 的 grid-north 指示。全部复用
@@ -98,9 +116,10 @@ land_sea_mask: 1 = sea, 0 = land_or_coast
 ## 控件与 Debug
 
 `Simulation Clock`（唯一主时间）；Play / Pause / scrub；1x/2x/4x/8x 只改变
-`simulation seconds / wall-clock second`，不改变业务船速。Presentation Mode 显示
+`simulation seconds / wall-clock second`，不改变业务船速。Operational Replay 显示
 requested risk horizon、requested/actual risk valid time、actual horizon、
-availability 和 risk/hard/route legend；Engineering Debug 面板额外显示
+availability 和 risk/hard/route legend；Research Validation 在合法 4×3 sidecar 上增加
+实验 identity、layer/objective compare 与 candidate geometry；Engineering Debug 面板额外显示
 `simulation_time`、vessel lon/lat、speed knots、edge progress、active/pending
 plan revision、decision/effective adoption time、selection method、risk frame
 id、last event、L1/L2 status。切换 horizon 不改变 Simulation Time。
@@ -109,6 +128,7 @@ id、last event、L1/L2 status。切换 horizon 不改变 Simulation Time。
 
 ```text
 viewer/index.html         页面结构
+viewer/research_candidates.js  route candidate strict validation（browser + Node）
 viewer/app.js             渲染 + timeline（只读 bundle）
 viewer/style.css          样式
 viewer/embed.py           单文件内嵌（bundle + basemap）
@@ -125,7 +145,8 @@ scripts/replay_viewer_serve.py  D 静态 server + /api/state
 - D 拥有：HTML/JS/CSS、Simulation Clock UI、ship/route/track/pending 渲染、
   GEBCO basemap 展示、静态 server、proof 渲染。
 - 已完成：Current/+6h/+12h/+24h horizon selection、fail-closed unavailable
-  semantics、Hard Reason overlay、superseded route 绘制、两种展示模式和专业
-  navigation aids。
-- NEXT：只在真实 presentation contract 发布后接入 route candidate compare、
-  provenance/uncertainty 研究视图和正式环境 contributor 图层。
+  semantics、Hard Reason overlay、superseded route 绘制、三种展示模式、专业
+  navigation aids，以及真实 Winter 12-route sidecar 的 Phase 1 candidate compare。
+- NEXT：由 Orchestrator 发布同一 Winter experiment identity 下的 combined
+  risk/replay/candidate bundle，再执行 Winter Research Browser E2E；环境 contributor
+  图层仍需正式 presentation contract，D 不读取 A/B/C 私有数据补齐。
