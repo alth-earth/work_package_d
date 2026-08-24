@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections import Counter
 from pathlib import Path
 
@@ -10,18 +11,21 @@ import pytest
 from arctic_route_display.demo.errors import DemoValidationError
 from arctic_route_display.demo.spatial import build_spatial, load_risk_frame
 
-MUR_OUT = Path(
-    "/root/my_project/work_package_a/data/output/rc2-smoke/output-mur-opt"
-)
-MUR_STORE = Path(
-    "/root/my_project/work_package_a/data/output/rc2-smoke/risk-store-mur-opt"
-)
-TROMSO_OUT = Path(
-    "/root/my_project/work_package_a/data/output/rc2-smoke/output-tromso-144h-r2"
-)
-TROMSO_STORE = Path(
-    "/root/my_project/work_package_a/data/output/rc2-smoke/risk-store-tromso-144h-r2"
-)
+
+def _workspace_root() -> Path:
+    env = os.environ.get("ARCTIC_ROUTE_ROOT")
+    if env and Path(env).is_dir():
+        return Path(env)
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "arctic_route_contracts").is_dir():
+            return parent
+    return Path.home()
+
+
+MUR_OUT = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "output-mur-opt"
+MUR_STORE = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "risk-store-mur-opt"
+TROMSO_OUT = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "output-tromso-144h-r2"
+TROMSO_STORE = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "risk-store-tromso-144h-r2"
 
 
 @pytest.mark.skipif(

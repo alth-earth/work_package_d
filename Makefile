@@ -1,5 +1,6 @@
-UV ?= $(shell command -v uv 2>/dev/null || echo /root/my_project/arctic_route_orchestrator/.mamba-env/bin/uv)
-PYTHON ?= /root/my_project/arctic_route_orchestrator/.mamba-env/bin/python
+ARCTIC_ROUTE_ROOT ?= $(CURDIR)/..
+UV ?= $(shell command -v uv 2>/dev/null || echo $(ARCTIC_ROUTE_ROOT)/arctic_route_orchestrator/.mamba-env/bin/uv)
+PYTHON ?= $(ARCTIC_ROUTE_ROOT)/arctic_route_orchestrator/.mamba-env/bin/python
 export UV_CACHE_DIR ?= $(CURDIR)/.uv-cache
 export UV_PYTHON_INSTALL_DIR ?= $(CURDIR)/.uv-python
 

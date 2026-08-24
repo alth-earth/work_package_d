@@ -72,7 +72,7 @@ route geometry、ship physics；未生成候选路线，未运行 replay/B/C/hea
 
 ## 5. Filesystem & Resource Safety（2026-08-23 18:11 +08:00）
 
-- 主动写入：仅 `/root/my_project/**`。
+- 主动写入：仅 `${ARCTIC_ROUTE_ROOT}/**`。
 - 初始/最低/最终 `MemAvailable`：约 6.0 / 3.4 / 5.9 GiB；最低值期间存在用户的
   VS Code extension host（约 1.4 GiB RSS），本轮未干预该进程。
 - Swap used：初始与最终均约 3.7 MiB；pytest swaps=0。

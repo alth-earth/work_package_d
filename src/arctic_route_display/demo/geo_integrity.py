@@ -30,6 +30,7 @@ from arctic_route_display.demo.frozen_loader import (
     FrozenScenarioSource,
     load_frozen_scenario,
 )
+from arctic_route_display.paths import expand_config_path
 
 EARTH_RADIUS_KM = 6_371.0088
 WAYPOINT_ON_LAND = "WAYPOINT_ON_LAND"
@@ -1091,10 +1092,14 @@ def run_geo_integrity_audit(
         source = FrozenScenarioSource(
             scenario_id=item["scenario_id"],
             display_name=item["display_name"],
-            output_dir=item["output_dir"],
+            output_dir=str(expand_config_path(item["output_dir"])),
             expected=dict(item["expected"]),
-            rc1_golden_run_report=item.get("rc1_golden_run_report"),
-            risk_store_root=item.get("risk_store_root"),
+            rc1_golden_run_report=(
+                str(expand_config_path(item["rc1_golden_run_report"]))
+                if item.get("rc1_golden_run_report")
+                else None
+            ),
+            risk_store_root=str(expand_config_path(item["risk_store_root"])),
             notes=tuple(item.get("notes", ())),
         )
         if not source.risk_store_root:

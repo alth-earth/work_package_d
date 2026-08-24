@@ -19,6 +19,7 @@ from arctic_route_display.demo.models import (
     compute_phase_deltas,
 )
 from arctic_route_display.demo.spatial import build_spatial
+from arctic_route_display.paths import expand_config_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,7 +172,7 @@ def _business_payload(report: Mapping[str, Any]) -> list[tuple[Any, ...]]:
 def load_frozen_scenario(source: FrozenScenarioSource) -> DemoScenario:
     """Load one frozen v3 scenario and verify identity/checksums/digests."""
 
-    output_dir = Path(source.output_dir)
+    output_dir = expand_config_path(source.output_dir)
     if not output_dir.is_dir():
         raise DemoValidationError(f"frozen output dir missing: {output_dir}")
     report = json.loads((output_dir / "run-report.json").read_text(encoding="utf-8"))
@@ -216,9 +217,9 @@ def load_frozen_scenario(source: FrozenScenarioSource) -> DemoScenario:
         _phase(output_dir, "replanned", expected["replanned_layer_set"]),
     )
     if source.rc1_golden_run_report is not None:
-        _verify_against_rc1_golden(report, Path(source.rc1_golden_run_report))
+        _verify_against_rc1_golden(report, expand_config_path(source.rc1_golden_run_report))
     spatial = (
-        build_spatial(output_dir, source.risk_store_root)
+        build_spatial(output_dir, expand_config_path(source.risk_store_root))
         if source.risk_store_root
         else None
     )

@@ -10,7 +10,7 @@ or edit historical governance reports.
 
 | Repository | Branch | HEAD | Working tree |
 |---|---|---|---|
-| root `/root/my_project` | `demo-engineering` | `3812b5d16776718b590af468594c7fdbb1f36041` | clean except expected nested `work_package_d/` entry |
+| root `${ARCTIC_ROUTE_ROOT}` | `demo-engineering` | `3812b5d16776718b590af468594c7fdbb1f36041` | clean except expected nested `work_package_d/` entry |
 | governance | `demo-engineering` | `234573d8caeadf4be2199d93f575f0594601298b` | clean |
 | contracts | `demo-engineering` | `7e831822781c56f4537785ca59b306f78a54a568` | clean |
 | orchestrator | `demo-engineering` | `b83320621318bc4eb57ae6a49d5a3cd400684acf` | clean |

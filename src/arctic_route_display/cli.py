@@ -5,12 +5,23 @@ from __future__ import annotations
 import argparse
 import http.server
 import json
+import os
 import subprocess
 import sys
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
+
+
+def _workspace_root() -> Path:
+    env = os.environ.get("ARCTIC_ROUTE_ROOT")
+    if env and Path(env).is_dir():
+        return Path(env)
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "arctic_route_contracts").is_dir():
+            return parent
+    return Path.home()
 
 from arctic_route_display.demo.frozen_loader import (
     DemoValidationError,
@@ -20,6 +31,7 @@ from arctic_route_display.demo.frozen_loader import (
 from arctic_route_display.demo.geo_integrity import run_geo_integrity_audit
 from arctic_route_display.demo.live_loader import load_live_result
 from arctic_route_display.demo.preflight import run_preflight
+from arctic_route_display.paths import expand_config_path
 from arctic_route_display.loader import (
     DisplayValidationError,
     load_coverage_preflight,
@@ -41,15 +53,15 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot.add_argument(
         "--v3-schema",
         type=Path,
-        default=Path(
-            "/root/my_project/work_package_c/schemas/four-layer-route-plan-set-v3.schema.json"
+        default=(
+            _workspace_root() / "work_package_c" / "schemas" / "four-layer-route-plan-set-v3.schema.json"
         ),
         help="v3 JSON Schema（默认指向工作包 C 的共享 Schema）",
     )
     snapshot.add_argument(
         "--v2-schema",
         type=Path,
-        default=Path("/root/my_project/work_package_c/schemas/route-plan-v2.schema.json"),
+        default=_workspace_root() / "work_package_c" / "schemas" / "route-plan-v2.schema.json",
     )
     snapshot.add_argument("--output", type=Path, required=True)
     snapshot.add_argument("--layer", default=None, help="默认选中层")
@@ -61,9 +73,9 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot.add_argument(
         "--coverage-schema",
         type=Path,
-        default=Path(
-            "/root/my_project/arctic_route_orchestrator/schemas/"
-            "planning-coverage-preflight-v1.schema.json"
+        default=(
+            _workspace_root() / "arctic_route_orchestrator" / "schemas"
+            / "planning-coverage-preflight-v1.schema.json"
         ),
     )
     coverage = sub.add_parser(
@@ -74,9 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
     coverage.add_argument(
         "--schema",
         type=Path,
-        default=Path(
-            "/root/my_project/arctic_route_orchestrator/schemas/"
-            "planning-coverage-preflight-v1.schema.json"
+        default=(
+            _workspace_root() / "arctic_route_orchestrator" / "schemas"
+            / "planning-coverage-preflight-v1.schema.json"
         ),
     )
     demo = sub.add_parser(
@@ -88,20 +100,20 @@ def build_parser() -> argparse.ArgumentParser:
     preflight.add_argument(
         "--config",
         type=Path,
-        default=Path("/root/my_project/work_package_d/configs/demo_frozen_sources.json"),
+        default=_workspace_root() / "work_package_d" / "configs" / "demo_frozen_sources.json",
     )
     preflight.add_argument("--port", type=int, default=8123)
     build = demo_sub.add_parser("build", help="构建统一 demo-state.json（冻结 A/B）")
     build.add_argument(
         "--config",
         type=Path,
-        default=Path("/root/my_project/work_package_d/configs/demo_frozen_sources.json"),
+        default=_workspace_root() / "work_package_d" / "configs" / "demo_frozen_sources.json",
     )
     build.add_argument(
         "--output",
         type=Path,
-        default=Path(
-            "/root/my_project/work_package_a/data/output/rc2-smoke/demo-state.json"
+        default=(
+            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "demo-state.json"
         ),
     )
     build.add_argument("--live-result", type=Path, default=None)
@@ -109,19 +121,21 @@ def build_parser() -> argparse.ArgumentParser:
     run_live.add_argument(
         "--config",
         type=Path,
-        default=Path("/root/my_project/work_package_d/configs/demo_frozen_sources.json"),
+        default=_workspace_root() / "work_package_d" / "configs" / "demo_frozen_sources.json",
     )
     run_live.add_argument(
         "--output",
         type=Path,
-        default=Path(
-            "/root/my_project/work_package_a/data/output/rc2-smoke/live-result.json"
+        default=(
+            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "live-result.json"
         ),
     )
     run_live.add_argument(
         "--orchestrator-python",
         type=Path,
-        default=Path("/root/my_project/arctic_route_orchestrator/.venv/bin/python"),
+        default=(
+            _workspace_root() / "arctic_route_orchestrator" / ".venv" / "bin" / "python"
+        ),
     )
     geo = demo_sub.add_parser(
         "geo-integrity",
@@ -130,40 +144,42 @@ def build_parser() -> argparse.ArgumentParser:
     geo.add_argument(
         "--config",
         type=Path,
-        default=Path("/root/my_project/work_package_d/configs/demo_frozen_sources.json"),
+        default=_workspace_root() / "work_package_d" / "configs" / "demo_frozen_sources.json",
     )
     geo.add_argument(
         "--output",
         type=Path,
-        default=Path(
-            "/root/my_project/work_package_a/data/output/rc2-smoke/"
-            "route-geospatial-integrity.json"
+        default=(
+            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke"
+            / "route-geospatial-integrity.json"
         ),
     )
     serve = demo_sub.add_parser("serve", help="本地只读 Demo Viewer（localhost）")
     serve.add_argument(
         "--state",
         type=Path,
-        default=Path(
-            "/root/my_project/work_package_a/data/output/rc2-smoke/demo-state.json"
+        default=(
+            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "demo-state.json"
         ),
     )
     serve.add_argument("--port", type=int, default=8123)
     serve.add_argument(
         "--config",
         type=Path,
-        default=Path("/root/my_project/work_package_d/configs/demo_frozen_sources.json"),
+        default=_workspace_root() / "work_package_d" / "configs" / "demo_frozen_sources.json",
     )
     serve.add_argument(
         "--orchestrator-python",
         type=Path,
-        default=Path("/root/my_project/arctic_route_orchestrator/.venv/bin/python"),
+        default=(
+            _workspace_root() / "arctic_route_orchestrator" / ".venv" / "bin" / "python"
+        ),
     )
     serve.add_argument(
         "--live-output",
         type=Path,
-        default=Path(
-            "/root/my_project/work_package_a/data/output/rc2-smoke/live-result.json"
+        default=(
+            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "live-result.json"
         ),
     )
     return parser
@@ -273,7 +289,10 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.demo_command == "run-live":
                 config = json.loads(args.config.read_text(encoding="utf-8"))
-                paths = dict(config["live"])
+                paths = {
+                    k: str(expand_config_path(v)) if isinstance(v, str) else v
+                    for k, v in dict(config["live"]).items()
+                }
                 paths["output_path"] = str(args.output)
                 args.output.parent.mkdir(parents=True, exist_ok=True)
                 paths_file = args.output.parent / ".demo-live-paths.json"
@@ -281,8 +300,8 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(paths, sort_keys=True),
                     encoding="utf-8",
                 )
-                runner = Path(
-                    "/root/my_project/arctic_route_orchestrator/scripts/demo_live_runner.py"
+                runner = (
+                    _workspace_root() / "arctic_route_orchestrator" / "scripts" / "demo_live_runner.py"
                 )
                 proc = subprocess.run(
                     [str(args.orchestrator_python), str(runner), str(paths_file)],
@@ -516,7 +535,10 @@ class _DemoHandler(http.server.BaseHTTPRequestHandler):
     def _run_live(self) -> None:
         try:
             config = json.loads(Path(self.config_path).read_text(encoding="utf-8"))
-            paths = dict(config["live"])
+            paths = {
+                k: str(expand_config_path(v)) if isinstance(v, str) else v
+                for k, v in dict(config["live"]).items()
+            }
             paths["output_path"] = str(self.live_output)
             self.live_output.parent.mkdir(parents=True, exist_ok=True)
             paths_file = self.live_output.parent / ".demo-live-paths.json"

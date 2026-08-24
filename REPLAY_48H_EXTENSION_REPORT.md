@@ -44,7 +44,7 @@ Orchestrator 仍只负责 export；D 仍是唯一 Viewer runtime owner。浏览�
 生成命令使用了已有数据和现有 causal replay runner：
 
 ```bash
-cd /root/my_project/arctic_route_orchestrator
+cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
 .venv/bin/python scripts/causal_replay_mvp.py \
   --replay-id sb-viewer-baseline-48h \
   --replay-start 2026-08-15T10:00:00Z \
@@ -60,7 +60,7 @@ cd /root/my_project/arctic_route_orchestrator
 路径：
 
 ```text
-/root/my_project/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-48h/
+${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-48h/
 ```
 
 | 项目 | 结果 |
@@ -84,7 +84,7 @@ cd /root/my_project/arctic_route_orchestrator
 导出路径：
 
 ```text
-/root/my_project/work_package_d/viewer/bundle.json
+${ARCTIC_ROUTE_ROOT}/work_package_d/viewer/bundle.json
 ```
 
 | 项目 | 12h baseline | 48h result |
@@ -174,7 +174,7 @@ Viewer bundle 中保持单 authoritative route 和真实 route revisions；没�
 启动方式：
 
 ```bash
-cd /root/my_project/work_package_d
+cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 .venv/bin/python scripts/replay_viewer_serve.py \
   --host 127.0.0.1 --port 8134
 ```
@@ -205,7 +205,7 @@ cd /root/my_project/work_package_d
 Browser proof 已保存到：
 
 ```text
-/root/my_project/.runtime/viewer-proof/replay-48h-20260821/
+${ARCTIC_ROUTE_ROOT}/.runtime/viewer-proof/replay-48h-20260821/
 ```
 
 关键截图：

@@ -11,6 +11,11 @@ Last Verified: 2026-08-23
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
+> **路径约定（2026-08-24）**：本文件中 `${ARCTIC_ROUTE_ROOT}` 为工作区根占位符，
+> 指向包含各工作包目录（`arctic_route_contracts/`、`work_package_a/` 等）的公共根。
+> 解析优先级：环境变量 > 当前所在目录 > `$HOME`。完整定义见
+> `arctic_route_governance/README.md` 的"路径约定"章节。
+
 # Work Package D: Display / Visualization / Presentation
 
 ## Risk Explanation optional consumer（2026-08-23 21:51 +08:00）
@@ -136,7 +141,7 @@ The current D mainline is browser-verified on the real
   hidden; Debug Mode exposes the full timing and adoption diagnostics.
 
 Browser evidence is kept outside Git under
-`/root/my_project/.runtime/viewer-proof/`. Verified environment: Firefox on
+`${ARCTIC_ROUTE_ROOT}/.runtime/viewer-proof/`. Verified environment: Firefox on
 `127.0.0.1:8131`, final required resources all HTTP 200, zero console errors or
 warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
 +12h/+24h = unavailable. D full tests: 57 passed; ruff and JS syntax are clean.
@@ -198,14 +203,14 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
 ### How to build artifacts (orchestrator side)
 
 ```bash
-cd /root/my_project/arctic_route_orchestrator
-./.venv/bin/python scripts/replay_viewer_export.py   /path/to/causal-replay-manifest.json   --data-root /root/my_project/work_package_a/data   --route-id tromso_to_isfjorden_outer   --output-dir /root/my_project/work_package_d/viewer
+cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
+./.venv/bin/python scripts/replay_viewer_export.py   /path/to/causal-replay-manifest.json   --data-root ${ARCTIC_ROUTE_ROOT}/work_package_a/data   --route-id tromso_to_isfjorden_outer   --output-dir ${ARCTIC_ROUTE_ROOT}/work_package_d/viewer
 ```
 
 ### How to run the viewer
 
 ```bash
-cd /root/my_project/work_package_d
+cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 ./.venv/bin/python scripts/replay_viewer_serve.py --root viewer --port 8123
 ```
 
@@ -269,7 +274,7 @@ D 只消费 C 已发布的原子制品，不调用 A/B/C 内部函数、不持�
 ## 快速使用
 
 ```bash
-cd /root/my_project/work_package_d
+cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 make sync
 make check
 arctic-route-display snapshot --v3 /path/to/routes/v3/initial.json --output out/snapshot.json

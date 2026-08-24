@@ -3,8 +3,8 @@
   "scenario_a": {
     "scenario_id": "murmansk_dikson_august_2026_demo_v1",
     "display_name": "Murmansk → Dikson (RC1 Scenario A)",
-    "output_dir": "/root/my_project/work_package_a/data/output/rc2-smoke/output-mur-opt",
-    "risk_store_root": "/root/my_project/work_package_a/data/output/rc2-smoke/risk-store-mur-opt",
+    "output_dir": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/output-mur-opt",
+    "risk_store_root": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/risk-store-mur-opt",
     "expected": {
       "scenario_id": "murmansk_dikson_august_2026_demo_v1",
       "corridor_id": "offshore_murmansk_to_offshore_dikson",
@@ -14,7 +14,7 @@
       "initial_layer_set": "layer-set-sha256-3f9a8f7b18fed12b8ce0bcb6af9f239dd867fea87004f06d8543b687463bb0bc",
       "replanned_layer_set": "layer-set-sha256-29eba0ac00a4f4e2ee4f6b9c33cfc4829c94ffa73b6805929359cc9e40e68a8f"
     },
-    "rc1_golden_run_report": "/root/my_project/work_package_a/data/output/golden/mur-v3-smoke-20260816-r6/output/run-report.json",
+    "rc1_golden_run_report": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/golden/mur-v3-smoke-20260816-r6/output/run-report.json",
     "notes": [
       "RC2-frozen worker rerun of RC1 scenario; business-identical to RC1 golden r6/r7.",
       "Used for demo because it carries coverage preflight + hard_reason provenance."
@@ -23,8 +23,8 @@
   "scenario_b": {
     "scenario_id": "tromso_isfjorden_august_2026_demo_v1",
     "display_name": "Tromsø → Isfjorden (RC2 Scenario B)",
-    "output_dir": "/root/my_project/work_package_a/data/output/rc2-smoke/output-tromso-144h-r2",
-    "risk_store_root": "/root/my_project/work_package_a/data/output/rc2-smoke/risk-store-tromso-144h-r2",
+    "output_dir": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/output-tromso-144h-r2",
+    "risk_store_root": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/risk-store-tromso-144h-r2",
     "expected": {
       "scenario_id": "tromso_isfjorden_august_2026_demo_v1",
       "corridor_id": "tromso_to_isfjorden_outer",
@@ -41,11 +41,11 @@
   "live": {
     "scenario_id": "tromso_isfjorden_rc2_smoke_v1",
     "display_name": "Tromsø → Isfjorden Live Demo Smoke",
-    "risk_store_root": "/root/my_project/work_package_a/data/output/rc2-smoke/bench-par-a-risk",
-    "commit_dir": "/root/my_project/work_package_a/data/output/rc2-smoke/bench-par-a-out",
-    "c_config_root": "/root/my_project/work_package_c/configs",
-    "contracts_config_root": "/root/my_project/arctic_route_contracts/configs",
-    "run_context_path": "/root/my_project/work_package_a/data/output/rc2-smoke/tromso-isfjorden-rc2-smoke.r0007.run-context.json",
+    "risk_store_root": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/bench-par-a-risk",
+    "commit_dir": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/bench-par-a-out",
+    "c_config_root": "${ARCTIC_ROUTE_ROOT}/work_package_c/configs",
+    "contracts_config_root": "${ARCTIC_ROUTE_ROOT}/arctic_route_contracts/configs",
+    "run_context_path": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/tromso-isfjorden-rc2-smoke.r0007.run-context.json",
     "timeout_seconds": 110
   }
 }

@@ -149,7 +149,7 @@ temporal provenance。
 ## 常用命令
 
 ```bash
-cd /root/my_project/work_package_d
+cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 ./.venv/bin/python -m pytest -q
 ./.venv/bin/arctic-route-display snapshot --v3 <initial.json> --output out.json
 ./.venv/bin/arctic-route-display demo preflight

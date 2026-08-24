@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import errno
 import json
+import os
 import socket
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+
+
+def _workspace_root() -> Path:
+    env = os.environ.get("ARCTIC_ROUTE_ROOT")
+    if env and Path(env).is_dir():
+        return Path(env)
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "arctic_route_contracts").is_dir():
+            return parent
+    return Path.home()
 
 from arctic_route_display.demo.errors import DemoValidationError
 from arctic_route_display.demo.frozen_loader import (
@@ -15,6 +26,7 @@ from arctic_route_display.demo.frozen_loader import (
     load_frozen_scenario,
 )
 from arctic_route_display.demo.geo_integrity import run_geo_integrity_audit
+from arctic_route_display.paths import expand_config_path
 
 
 def _mem_available_gib() -> float:
@@ -43,10 +55,14 @@ def _source(config: Mapping[str, Any], key: str) -> FrozenScenarioSource:
     return FrozenScenarioSource(
         scenario_id=item["scenario_id"],
         display_name=item["display_name"],
-        output_dir=item["output_dir"],
+        output_dir=str(expand_config_path(item["output_dir"])),
         expected=dict(item["expected"]),
-        rc1_golden_run_report=item.get("rc1_golden_run_report"),
-        risk_store_root=item.get("risk_store_root"),
+        rc1_golden_run_report=(
+            str(expand_config_path(item["rc1_golden_run_report"]))
+            if item.get("rc1_golden_run_report")
+            else None
+        ),
+        risk_store_root=str(expand_config_path(item["risk_store_root"])),
         notes=tuple(item.get("notes", ())),
     )
 
@@ -55,7 +71,7 @@ def run_preflight(
     config_path: str | Path,
     *,
     port: int = 8123,
-    project_root: str | Path = Path("/root/my_project"),
+    project_root: str | Path = _workspace_root(),
 ) -> list[dict[str, str]]:
     """Return check rows; raise DemoValidationError on hard failure."""
 

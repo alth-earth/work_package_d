@@ -25,6 +25,8 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
+from arctic_route_display.paths import expand_config_path
+
 
 def _parse_utc(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
@@ -192,8 +194,8 @@ def audit_frozen_config(config_path: str | Path) -> dict[str, Any]:
     overall_violations: list[str] = []
     for key in ("scenario_a", "scenario_b"):
         item = config[key]
-        output = Path(item["output_dir"])
-        store = Path(item["risk_store_root"])
+        output = expand_config_path(item["output_dir"])
+        store = expand_config_path(item["risk_store_root"])
         result = audit_frozen_output(output)
         violations = list(result.violations)
 

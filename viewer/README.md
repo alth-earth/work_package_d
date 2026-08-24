@@ -9,6 +9,11 @@ Branch: research-validation-system
 Last Verified: 2026-08-23
 ---
 
+> **路径约定（2026-08-24）**：本文件中 `${ARCTIC_ROUTE_ROOT}` 为工作区根占位符，
+> 指向包含各工作包目录（`arctic_route_contracts/`、`work_package_a/` 等）的公共根。
+> 解析优先级：环境变量 > 当前所在目录 > `$HOME`。完整定义见
+> `arctic_route_governance/README.md` 的"路径约定"章节。
+
 # Navigation Decision Simulation Viewer（work_package_d 所有）
 
 > Scope: work_package_d `viewer/` 实现与运行
@@ -67,12 +72,12 @@ replay-viewer-preflight.json
 导出命令（orchestrator 负责）：
 
 ```bash
-cd /root/my_project/arctic_route_orchestrator
+cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
 ./.venv/bin/python scripts/replay_viewer_export.py \
-  /root/my_project/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-12h-det/causal-replay-manifest.json \
-  --data-root /root/my_project/work_package_a/data \
+  ${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-12h-det/causal-replay-manifest.json \
+  --data-root ${ARCTIC_ROUTE_ROOT}/work_package_a/data \
   --route-id tromso_to_isfjorden_outer \
-  --output-dir /root/my_project/work_package_d/viewer
+  --output-dir ${ARCTIC_ROUTE_ROOT}/work_package_d/viewer
 ```
 
 生成的 `bundle.json` / `gebco_basemap.png` / `basemap_metadata.json` /
@@ -83,7 +88,7 @@ cd /root/my_project/arctic_route_orchestrator
 标准离线静态服务（127.0.0.1，无 CDN / remote JS/CSS/fonts/tiles）：
 
 ```bash
-cd /root/my_project/work_package_d
+cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 ./.venv/bin/python scripts/replay_viewer_serve.py --root viewer --port 8131
 ```
 

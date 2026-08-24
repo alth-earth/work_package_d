@@ -83,10 +83,10 @@ Verified in a clean final Firefox session:
 
 Runtime-only proof files (not Git-tracked):
 
-- [Current risk at 10:30](/root/my_project/.runtime/viewer-proof/demo-current-10-30.png)
-- [Pending route at 13:30](/root/my_project/.runtime/viewer-proof/demo-pending-13-30.png)
-- [Adopted route at 15:00](/root/my_project/.runtime/viewer-proof/demo-adopted-15-00.png)
-- [Fail-closed +24h at 10:30](/root/my_project/.runtime/viewer-proof/demo-unavailable-plus24-10-30.png)
+- [Current risk at 10:30](../.runtime/viewer-proof/demo-current-10-30.png)
+- [Pending route at 13:30](../.runtime/viewer-proof/demo-pending-13-30.png)
+- [Adopted route at 15:00](../.runtime/viewer-proof/demo-adopted-15-00.png)
+- [Fail-closed +24h at 10:30](../.runtime/viewer-proof/demo-unavailable-plus24-10-30.png)
 
 The screenshots show the same GEBCO projection and route/risk layers; the
 pending and adopted route visuals are presentation-only overlays.

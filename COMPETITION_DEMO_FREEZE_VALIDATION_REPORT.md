@@ -22,8 +22,8 @@ DEMO_FREEZE = YES
 ## 2. 冻结边界与制品
 
 - 正式制品：
-  `/root/my_project/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-12h-det/`
-- 查看器包：`/root/my_project/work_package_d/viewer/`
+  `${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-12h-det/`
+- 查看器包：`${ARCTIC_ROUTE_ROOT}/work_package_d/viewer/`
 - 包模式：`replay.viewer-bundle.v1`
 - 时间线：721 个一分钟条目，2026-08-15 10:00Z–22:00Z
 - 风险：13 个逐时 `presentation.risk-overlay.v1` 帧，31×11=341 单元
@@ -50,13 +50,13 @@ ETA 与船舶运动语义
 源包通过以下命令提供：
 
 ```bash
-cd /root/my_project/work_package_d
+cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 .venv/bin/python scripts/replay_viewer_serve.py \
   --root viewer --host 127.0.0.1 --port 8131
 ```
 
 为验证副本独立性，完整的 `viewer/` 目录被复制到
-`/root/my_project/.runtime/freeze-copy-final-20260821/` 并在端口 8133 提供。
+`${ARCTIC_ROUTE_ROOT}/.runtime/freeze-copy-final-20260821/` 并在端口 8133 提供。
 该副本在加载时无需源仓库导入，也无需额外部署服务。
 
 对最终副本包执行的全新 Firefox 校验确认：
@@ -173,7 +173,7 @@ map and clock
   未执行任何回放。
 
 运行时截图保存在
-`/root/my_project/.runtime/viewer-proof/` 下，不打算作为 Git 输入。
+`${ARCTIC_ROUTE_ROOT}/.runtime/viewer-proof/` 下，不打算作为 Git 输入。
 
 ## 9. 测试与校验层级
 
@@ -253,7 +253,7 @@ pixel speed = NO
 | C | `demo-engineering` | `42e951c` | clean |
 | D | `demo-engineering` | `9ccabba` | dirty，仅 Viewer/文档/测试/报告 |
 
-实际文件系统当前没有 `/root/my_project/.git` 目录；
+实际文件系统当前没有 `${ARCTIC_ROUTE_ROOT}/.git` 目录；
 上述嵌套的子仓库是本轮使用的 Git 仓库。未写入任何 Git 状态。
 
 ```text

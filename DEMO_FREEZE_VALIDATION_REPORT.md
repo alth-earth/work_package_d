@@ -15,19 +15,19 @@ This validation uses the existing formal artifact
 ## Artifact and launch
 
 - Source artifact:
-  `/root/my_project/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-12h-det/`
+  `${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/causal-replay-mvp/sb-viewer-baseline-12h-det/`
 - Viewer package: `work_package_d/viewer/`
 - Schema: `replay.viewer-bundle.v1`
 - Launch command:
 
   ```bash
-  cd /root/my_project/work_package_d
+  cd ${ARCTIC_ROUTE_ROOT}/work_package_d
   .venv/bin/python scripts/replay_viewer_serve.py \
     --root viewer --host 127.0.0.1 --port 8131
   ```
 
 - Independent-copy check: the complete `viewer/` directory was copied to
-  `/root/my_project/.runtime/freeze-copy-20260821/` and served on port 8132.
+  `${ARCTIC_ROUTE_ROOT}/.runtime/freeze-copy-20260821/` and served on port 8132.
   The copied package loaded without source-repository imports or additional
   runtime services.
 

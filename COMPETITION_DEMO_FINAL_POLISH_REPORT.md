@@ -20,7 +20,7 @@
 本轮继续复用既有正式 artifact：
 
 ```text
-/root/my_project/work_package_a/data/output/rc2-smoke/causal-replay-mvp/
+${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/rc2-smoke/causal-replay-mvp/
 sb-viewer-baseline-12h-det/
 ```
 
@@ -283,7 +283,7 @@ multi-second render freeze。
 
 | 仓库 | branch | HEAD | ahead/behind upstream | dirty / 本轮状态 |
 |---|---|---|---|---|
-| root `/root/my_project` | `demo-engineering` | `3812b5d` | `0/0` | 仅预期 nested D entry；root `.git` untouched |
+| root `${ARCTIC_ROUTE_ROOT}` | `demo-engineering` | `3812b5d` | `0/0` | 仅预期 nested D entry；root `.git` untouched |
 | governance | `demo-engineering` | `234573d` | `0/0` | clean；未修改 |
 | contracts | `demo-engineering` | `7e83182` | `0/0` | clean；未修改 |
 | orchestrator | `demo-engineering` | `b833206` | `0/0` | dirty：export、focused test、README/CHANGELOG |
