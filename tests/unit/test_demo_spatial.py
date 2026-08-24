@@ -22,10 +22,11 @@ def _workspace_root() -> Path:
     return Path.home()
 
 
-MUR_OUT = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "output-mur-opt"
-MUR_STORE = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "risk-store-mur-opt"
-TROMSO_OUT = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "output-tromso-144h-r2"
-TROMSO_STORE = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "risk-store-tromso-144h-r2"
+_SMOKE = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke"
+MUR_OUT = _SMOKE / "output-mur-opt"
+MUR_STORE = _SMOKE / "risk-store-mur-opt"
+TROMSO_OUT = _SMOKE / "output-tromso-144h-r2"
+TROMSO_STORE = _SMOKE / "risk-store-tromso-144h-r2"
 
 
 @pytest.mark.skipif(

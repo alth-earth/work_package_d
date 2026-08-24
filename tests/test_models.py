@@ -1,4 +1,10 @@
-from arctic_route_display.models import DisplayState, LayerView, RouteSetView
+from arctic_route_display.models import (
+    DisplayState,
+    LayerView,
+    RouteSetView,
+    SelectionRationaleView,
+    TradeoffsView,
+)
 
 
 def _layer(layer_id: str) -> LayerView:
@@ -58,3 +64,73 @@ def test_display_state_rejects_incomplete_group() -> None:
     state.publish_v3(incomplete)
     assert state.status == "empty"
     assert "rejected_incomplete_v3_group" in state.warnings
+
+
+def _rationale(run_id: str = "run-1") -> SelectionRationaleView:
+    return SelectionRationaleView(
+        schema_version="selection-rationale.v1",
+        run_id=run_id,
+        scenario_id="scenario-1",
+        corridor_id="corridor-1",
+        vessel_profile_id="vessel-1",
+        generation_id=0,
+        input_revision=0,
+        selected_plan_id="recommended-1",
+        baseline_plan_id="fastest-1",
+        selected_objective="recommended",
+        baseline_objective="fastest",
+        tradeoffs=TradeoffsView(
+            delta_distance_km=0.4,
+            delta_eta_hours=0.24,
+            delta_avg_risk=-0.01,
+            delta_max_risk=-0.001,
+            delta_integrated_risk_hours=-0.64,
+            avg_risk_reduction_pct=2.96,
+            max_risk_reduction_pct=0.14,
+        ),
+        summary_text="推荐路线平均风险减少 3.0%",
+    )
+
+
+def test_display_state_attaches_selection_rationale() -> None:
+    state = DisplayState()
+    state.set_selection_rationale(_rationale())
+    assert state.selection_rationale is not None
+    assert state.selection_rationale.selected_objective == "recommended"
+    assert state.status == "empty"
+
+
+def test_display_state_warns_on_rationale_run_id_mismatch() -> None:
+    state = DisplayState()
+    state.publish_v3(_group("g1"))
+    state.set_selection_rationale(_rationale(run_id="other-run"))
+    assert "rationale_run_id_mismatch" in state.warnings
+    assert state.selection_rationale is not None
+
+
+def test_display_state_rejects_invalid_rationale_schema() -> None:
+    rationale = _rationale()
+    rationale = SelectionRationaleView(
+        schema_version=rationale.schema_version,
+        run_id=rationale.run_id,
+        scenario_id=rationale.scenario_id,
+        corridor_id=rationale.corridor_id,
+        vessel_profile_id=rationale.vessel_profile_id,
+        generation_id=rationale.generation_id,
+        input_revision=rationale.input_revision,
+        selected_plan_id=rationale.selected_plan_id,
+        baseline_plan_id=rationale.baseline_plan_id,
+        selected_objective=rationale.selected_objective,
+        baseline_objective=rationale.baseline_objective,
+        tradeoffs=rationale.tradeoffs,
+        summary_text=rationale.summary_text,
+    )
+    # schema_version lives on the view; simulate a stale version by rebuilding
+    # through the loader path instead of mutating a frozen dataclass.
+    import dataclasses
+
+    stale = dataclasses.replace(rationale, schema_version="selection-rationale.v0")
+    state = DisplayState()
+    state.set_selection_rationale(stale)
+    assert "rejected_invalid_rationale_schema" in state.warnings
+    assert state.selection_rationale is None

@@ -13,6 +13,24 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
+from arctic_route_display.demo.frozen_loader import (
+    DemoValidationError,
+    FrozenScenarioSource,
+    load_frozen_scenario,
+)
+from arctic_route_display.demo.geo_integrity import run_geo_integrity_audit
+from arctic_route_display.demo.live_loader import load_live_result
+from arctic_route_display.demo.preflight import run_preflight
+from arctic_route_display.loader import (
+    DisplayValidationError,
+    load_coverage_preflight,
+    load_selection_rationale,
+    load_v2_batch,
+    load_v3_group,
+)
+from arctic_route_display.models import DisplayState
+from arctic_route_display.paths import expand_config_path
+
 
 def _workspace_root() -> Path:
     env = os.environ.get("ARCTIC_ROUTE_ROOT")
@@ -22,23 +40,6 @@ def _workspace_root() -> Path:
         if (parent / "arctic_route_contracts").is_dir():
             return parent
     return Path.home()
-
-from arctic_route_display.demo.frozen_loader import (
-    DemoValidationError,
-    FrozenScenarioSource,
-    load_frozen_scenario,
-)
-from arctic_route_display.demo.geo_integrity import run_geo_integrity_audit
-from arctic_route_display.demo.live_loader import load_live_result
-from arctic_route_display.demo.preflight import run_preflight
-from arctic_route_display.paths import expand_config_path
-from arctic_route_display.loader import (
-    DisplayValidationError,
-    load_coverage_preflight,
-    load_v2_batch,
-    load_v3_group,
-)
-from arctic_route_display.models import DisplayState
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,7 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--v3-schema",
         type=Path,
         default=(
-            _workspace_root() / "work_package_c" / "schemas" / "four-layer-route-plan-set-v3.schema.json"
+            _workspace_root()
+            / "work_package_c"
+            / "schemas"
+            / "four-layer-route-plan-set-v3.schema.json"
         ),
         help="v3 JSON Schema（默认指向工作包 C 的共享 Schema）",
     )
@@ -62,6 +66,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--v2-schema",
         type=Path,
         default=_workspace_root() / "work_package_c" / "schemas" / "route-plan-v2.schema.json",
+    )
+    snapshot.add_argument(
+        "--rationale",
+        type=Path,
+        help="可选：C 的 selection-rationale.json（解释推荐路线为何优先于最快基线）",
+    )
+    snapshot.add_argument(
+        "--rationale-schema",
+        type=Path,
+        default=(
+            _workspace_root() / "work_package_c" / "schemas"
+            / "selection-rationale-v1.schema.json"
+        ),
     )
     snapshot.add_argument("--output", type=Path, required=True)
     snapshot.add_argument("--layer", default=None, help="默认选中层")
@@ -113,7 +130,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=(
-            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "demo-state.json"
+            _workspace_root()
+            / "work_package_a"
+            / "data"
+            / "output"
+            / "rc2-smoke"
+            / "demo-state.json"
         ),
     )
     build.add_argument("--live-result", type=Path, default=None)
@@ -127,7 +149,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=(
-            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "live-result.json"
+            _workspace_root()
+            / "work_package_a"
+            / "data"
+            / "output"
+            / "rc2-smoke"
+            / "live-result.json"
         ),
     )
     run_live.add_argument(
@@ -159,7 +186,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--state",
         type=Path,
         default=(
-            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "demo-state.json"
+            _workspace_root()
+            / "work_package_a"
+            / "data"
+            / "output"
+            / "rc2-smoke"
+            / "demo-state.json"
         ),
     )
     serve.add_argument("--port", type=int, default=8123)
@@ -179,7 +211,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--live-output",
         type=Path,
         default=(
-            _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "live-result.json"
+            _workspace_root()
+            / "work_package_a"
+            / "data"
+            / "output"
+            / "rc2-smoke"
+            / "live-result.json"
         ),
     )
     return parser
@@ -301,7 +338,10 @@ def main(argv: list[str] | None = None) -> int:
                     encoding="utf-8",
                 )
                 runner = (
-                    _workspace_root() / "arctic_route_orchestrator" / "scripts" / "demo_live_runner.py"
+                    _workspace_root()
+                    / "arctic_route_orchestrator"
+                    / "scripts"
+                    / "demo_live_runner.py"
                 )
                 proc = subprocess.run(
                     [str(args.orchestrator_python), str(runner), str(paths_file)],
@@ -341,6 +381,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
             if args.v2 is not None:
                 state.set_v2_fallback(load_v2_batch(args.v2, schema_path=args.v2_schema))
+            if args.rationale is not None:
+                state.set_selection_rationale(
+                    load_selection_rationale(args.rationale, schema_path=args.rationale_schema)
+                )
             if args.coverage is not None:
                 coverage_view = load_coverage_preflight(
                     args.coverage,
@@ -404,6 +448,11 @@ def main(argv: list[str] | None = None) -> int:
             None if state.previous_complete is None else state.previous_complete.group_id
         ),
         "v2_fallback": None if state.v2_fallback is None else _v2_summary(state.v2_fallback),
+        "selection_rationale": (
+            None
+            if state.selection_rationale is None
+            else _rationale_summary(state.selection_rationale)
+        ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
@@ -440,6 +489,28 @@ def _v2_summary(view) -> dict[str, object]:
         "generation_id": view.generation_id,
         "objectives": view.objectives,
         "plan_count": len(view.plans),
+    }
+
+
+def _rationale_summary(view) -> dict[str, object]:
+    return {
+        "run_id": view.run_id,
+        "scenario_id": view.scenario_id,
+        "generation_id": view.generation_id,
+        "selected_objective": view.selected_objective,
+        "baseline_objective": view.baseline_objective,
+        "selected_plan_id": view.selected_plan_id,
+        "baseline_plan_id": view.baseline_plan_id,
+        "tradeoffs": {
+            "delta_distance_km": view.tradeoffs.delta_distance_km,
+            "delta_eta_hours": view.tradeoffs.delta_eta_hours,
+            "delta_avg_risk": view.tradeoffs.delta_avg_risk,
+            "delta_max_risk": view.tradeoffs.delta_max_risk,
+            "delta_integrated_risk_hours": view.tradeoffs.delta_integrated_risk_hours,
+            "avg_risk_reduction_pct": view.tradeoffs.avg_risk_reduction_pct,
+            "max_risk_reduction_pct": view.tradeoffs.max_risk_reduction_pct,
+        },
+        "summary_text": view.summary_text,
     }
 
 

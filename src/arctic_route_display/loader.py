@@ -15,6 +15,8 @@ from arctic_route_display.models import (
     CoveragePreflightView,
     LayerView,
     RouteSetView,
+    SelectionRationaleView,
+    TradeoffsView,
     V2BatchView,
 )
 
@@ -144,6 +146,51 @@ def load_v2_batch(
         generation_id=int(document.get("generation_id", -1)),
         objectives=objectives,
         plans=tuple(plans[name] for name in objectives),
+        source_path=str(path),
+    )
+
+
+def load_selection_rationale(
+    path: str | Path,
+    *,
+    schema_path: str | Path | None = None,
+) -> SelectionRationaleView:
+    """Load a CD selection-rationale sidecar document.
+
+    The rationale explains why C selected the recommended route over the
+    fastest baseline. It is optional for display: an absent rationale must
+    never block route consumption.
+    """
+
+    document = _load_json(path)
+    _validate(document, schema_path)
+    if document.get("schema_version") != "selection-rationale.v1":
+        raise DisplayValidationError("selection rationale schema_version mismatch")
+    tradeoffs = document.get("tradeoffs")
+    if not isinstance(tradeoffs, dict):
+        raise DisplayValidationError("selection rationale must contain a tradeoffs object")
+    return SelectionRationaleView(
+        schema_version=str(document["schema_version"]),
+        run_id=str(document.get("run_id", "")),
+        scenario_id=str(document.get("scenario_id", "")),
+        corridor_id=str(document.get("corridor_id", "")),
+        vessel_profile_id=str(document.get("vessel_profile_id", "")),
+        generation_id=int(document.get("generation_id", -1)),
+        input_revision=int(document.get("input_revision", -1)),
+        selected_plan_id=str(document["selected_plan_id"]),
+        baseline_plan_id=str(document["baseline_plan_id"]),
+        selected_objective=str(document["selected_objective"]),
+        baseline_objective=str(document["baseline_objective"]),
+        tradeoffs=TradeoffsView(
+            delta_distance_km=float(tradeoffs["delta_distance_km"]),
+            delta_eta_hours=float(tradeoffs["delta_eta_hours"]),
+            delta_avg_risk=float(tradeoffs["delta_avg_risk"]),
+            delta_max_risk=float(tradeoffs["delta_max_risk"]),
+            delta_integrated_risk_hours=float(tradeoffs["delta_integrated_risk_hours"]),
+            avg_risk_reduction_pct=float(tradeoffs["avg_risk_reduction_pct"]),
+            max_risk_reduction_pct=float(tradeoffs["max_risk_reduction_pct"]),
+        ),
+        summary_text=str(document["summary_text"]),
         source_path=str(path),
     )
 

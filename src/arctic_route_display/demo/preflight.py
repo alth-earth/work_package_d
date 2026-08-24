@@ -10,6 +10,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from arctic_route_display.demo.errors import DemoValidationError
+from arctic_route_display.demo.frozen_loader import (
+    FrozenScenarioSource,
+    load_frozen_scenario,
+)
+from arctic_route_display.demo.geo_integrity import run_geo_integrity_audit
+from arctic_route_display.paths import expand_config_path
+
 
 def _workspace_root() -> Path:
     env = os.environ.get("ARCTIC_ROUTE_ROOT")
@@ -19,14 +27,6 @@ def _workspace_root() -> Path:
         if (parent / "arctic_route_contracts").is_dir():
             return parent
     return Path.home()
-
-from arctic_route_display.demo.errors import DemoValidationError
-from arctic_route_display.demo.frozen_loader import (
-    FrozenScenarioSource,
-    load_frozen_scenario,
-)
-from arctic_route_display.demo.geo_integrity import run_geo_integrity_audit
-from arctic_route_display.paths import expand_config_path
 
 
 def _mem_available_gib() -> float:
@@ -71,11 +71,11 @@ def run_preflight(
     config_path: str | Path,
     *,
     port: int = 8123,
-    project_root: str | Path = _workspace_root(),
+    project_root: str | Path | None = None,
 ) -> list[dict[str, str]]:
     """Return check rows; raise DemoValidationError on hard failure."""
 
-    root = Path(project_root)
+    root = Path(project_root or _workspace_root())
     rows: list[dict[str, str]] = []
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
 

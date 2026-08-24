@@ -29,8 +29,9 @@ def _workspace_root() -> Path:
 
 
 CONFIG = _workspace_root() / "work_package_d" / "configs" / "demo_frozen_sources.json"
-TROMSO_OUT = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "output-tromso-144h-r2"
-TROMSO_STORE = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "risk-store-tromso-144h-r2"
+_SMOKE = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke"
+TROMSO_OUT = _SMOKE / "output-tromso-144h-r2"
+TROMSO_STORE = _SMOKE / "risk-store-tromso-144h-r2"
 REQUIRED = {
     "scenario_id": "tromso_isfjorden_august_2026_demo_v1",
     "corridor_id": "tromso_to_isfjorden_outer",

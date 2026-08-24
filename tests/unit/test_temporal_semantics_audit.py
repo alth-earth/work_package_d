@@ -21,8 +21,9 @@ def _workspace_root() -> Path:
 
 
 CONFIG = _workspace_root() / "work_package_d" / "configs" / "demo_frozen_sources.json"
-MUR_OUT = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "output-mur-opt"
-TROMSO_OUT = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke" / "output-tromso-144h-r2"
+_SMOKE = _workspace_root() / "work_package_a" / "data" / "output" / "rc2-smoke"
+MUR_OUT = _SMOKE / "output-mur-opt"
+TROMSO_OUT = _SMOKE / "output-tromso-144h-r2"
 
 
 @pytest.mark.skipif(

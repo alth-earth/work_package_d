@@ -11,6 +11,16 @@ Last Verified: 2026-08-23
 
 # 工作包 D 变更记录
 
+## Unreleased - Selection Rationale Consumer（2026-08-24）
+
+- feat: 增加可选 `selection-rationale.v1` 只读 consumer（`load_selection_rationale` +
+  `SelectionRationaleView`/`TradeoffsView`），解释 C 为何选择推荐路线而非最快基线；
+- compatibility: sidecar 缺失时快照正常降级（`selection_rationale: null`），不阻塞路线消费；
+- boundary: D 只读 rationale 字段；不重算 delta、不生成业务结论、不将其纳入路线身份；
+- validation: 真实 C synthetic-demo 产物 fixture + C schema 离线校验 PASS；run_id 不一致
+  以 `rationale_run_id_mismatch` 警告；D 全量 `100 passed / 3 skipped`，Ruff 全绿；
+- 跨包合约提案：`CD_CONTRACT_SELECTION_RATIONALE_PROPOSAL`（C 侧，状态 APPROVED）。
+
 ## Unreleased - Risk Explanation Consumer（2026-08-23 21:51 +08:00）
 
 - feat: 增加可选 `risk-explanation.v1` strict consumer 与点击 risk cell explanation panel；

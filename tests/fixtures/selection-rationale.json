@@ -1,0 +1,28 @@
+{
+  "baseline_objective": "fastest",
+  "baseline_plan_id": "fastest-10ae1550f8a34aaa91da412675fedfa7",
+  "config_digest": "6ff1325ac6e98fe37dc4e1cad0f2e3581b094ba5b6f3bd35cb10e1a863f382c3",
+  "corridor_id": "tromso_to_isfjorden_outer",
+  "generation_id": 0,
+  "input_revision": 0,
+  "model_config_digest": "4312eebc5edeb53031230bd7880a0fc2816f0279f2bd36159ff89ae43405b436",
+  "planner_config_digest": "f0e1eed85204edca0f829262a0e86221b9af5a455e5c65f965123b0279cd90a2",
+  "planning_request_id": "358e59601fea41a5b6c3b3aa988bc1b5",
+  "provenance": "synthetic",
+  "run_id": "run-d3586b13-0eb4-580c-a867-546f2c30930d",
+  "scenario_id": "tromso_isfjorden_july_2026_retrospective_v1",
+  "schema_version": "selection-rationale.v1",
+  "selected_objective": "recommended",
+  "selected_plan_id": "recommended-e5780ae1f3b84cd29b864b25bf519b62",
+  "summary_text": "相比最快路线，推荐路线平均风险减少 3.0%，时间增加 0.24 小时，距离增加 0.4 km",
+  "tradeoffs": {
+    "avg_risk_reduction_pct": 2.967377959062288,
+    "delta_avg_risk": -0.013204545542138069,
+    "delta_distance_km": 0.4292670201866713,
+    "delta_eta_hours": 0.24438503767824926,
+    "delta_integrated_risk_hours": -0.6424269429515483,
+    "delta_max_risk": -0.0008194565456667302,
+    "max_risk_reduction_pct": 0.14107590977266796
+  },
+  "vessel_profile_id": "nordic_odyssey_reference_v1"
+}
