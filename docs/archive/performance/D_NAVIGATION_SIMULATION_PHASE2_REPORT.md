@@ -5,11 +5,11 @@ Content Status:
   - PLANNED
 Document Role: SUPPORTING
 Scope: D Navigation Decision Simulation Viewer Phase 2 engineering evidence
-Canonical For: NO; supporting evidence for viewer/README.md
+Canonical For: NO; supporting evidence for docs/viewer/README.md
 Branch: research-validation-system
 Last Verified: 2026-08-23
 Related Canonical Docs:
-  - README.md
+  - ../README.md
 ---
 
 # D Navigation Decision Simulation Phase 2 Report
@@ -159,7 +159,7 @@ Browser RAF wall time 只推进 simulation clock，不写入 artifact。
 | frozen Viewer bundle | `viewer/bundle.json` | Orchestrator export；gitignored；未修改 |
 | Phase 2 screenshot | `.runtime/viewer-proof/d-phase2/.playwright-cli/page-2026-08-23T10-12-21-870Z.png` | Firefox CLI；untracked |
 | self-contained Viewer | `.runtime/viewer-proof/d-phase2/index_self_contained.html` | D embed；6,280,722 B；untracked |
-| Phase 2 report | `viewer/D_NAVIGATION_SIMULATION_PHASE2_REPORT.md` | tracked Supporting doc |
+| Phase 2 report | `D_NAVIGATION_SIMULATION_PHASE2_REPORT.md` | tracked Supporting doc |
 
 ## 14. Known Limitations / Technical Debt（2026-08-23 18:11 +08:00）
 
