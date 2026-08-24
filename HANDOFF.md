@@ -68,7 +68,7 @@ D 当前验证为 58 passed + ruff clean + JS syntax clean。
 ## 重要路径
 
 - `src/arctic_route_display/loader.py`（离线 schema registry + layers 数组解析）
-- `tests/fixtures/v3_initial_rc1.json` / `v3_replanned_rc1.json`
+- `tests/fixtures/v3_initial.json` / `v3_replanned.json`
 - 真实输出：`../work_package_a/data/output/golden/mur-v3-smoke-20260816-r6/r7/output/routes/v3/`
 
 ## 输入 / 输出

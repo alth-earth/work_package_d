@@ -224,7 +224,7 @@ cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 - Viewer does not invent speed or bend route geometry; display densification is
   collinear and presentation-only.
 
-## Legacy Display Layer (pre-Viewer)
+## Display Layer（snapshot / coverage / demo）
 
 The following describes the older D display layer that consumed C published
 route plan artifacts directly. It is still functional but the Replay-driven
@@ -236,30 +236,9 @@ Orchestrator 发布的 `replay.viewer-bundle.v1`。frozen 48h bundle 的 candida
 `NOT_PUBLISHED`；Winter Research sidecar 已 `PUBLISHED` 12 条真实路线。D 在两种状态下都不从
 route revisions 推断候选路线。
 
-> 状态：**RC1 真实制品消费 PASS（2026-08-16）**。v3 整组/ v2 后备的读取、分组、
-> 状态机与渲染摘要已实现并消费真实 r6/r7 输出（initial + replanned）；离线本地
-> schema registry 与 `layers` 数组解析已修复；具体地图/交互页面待后续实现。
-> RC2：新增 `planning-coverage-preflight.json` 消费（`coverage` 子命令 / `snapshot --coverage`）；
-> Demo Candidate 1：`demo preflight/build/run-live/serve` + 本地只读 viewer。
-> Demo Candidate 2：viewer 增加离线经纬度地图（真实风险帧坐标）、
-> Availability/Risk 图层、Scenario A/B 交互、Compare initial→replanned 真实 delta、
-> Live 按钮 + 进度反馈（`/api/live/start` / `/api/live/status`），仍无任何外部依赖。
-> Route Geospatial Integrity（2026-08-17）：机器审计 48/48 冻结路线 PASS，
-> 修复 Viewer 双投影导致的视觉穿 LAND，gate 并入 `demo preflight`；
-> 见 [ROUTE_GEOSPATIAL_INTEGRITY_AUDIT_20260817.md](../arctic_route_governance/reports/audits/ROUTE_GEOSPATIAL_INTEGRITY_AUDIT_20260817.md)。
-> Temporal Semantics Audit（2026-08-17）：`scripts/temporal_semantics_audit.py`
-> 机器审计冻结制品时间语义（145 帧 = 单一 knowledge 快照 × valid_time、
-> +6h replan = 同窗后缀重规划），产物
-> `temporal-semantics-audit.json`；见根目录
-> [TEMPORAL_SEMANTICS_AUDIT_20260817.md](../arctic_route_governance/reports/audits/TEMPORAL_SEMANTICS_AUDIT_20260817.md)。
-> Causal Replay Feasibility（2026-08-17）：A 侧
-> `scripts/causal_replay_feasibility_audit.py` 输出
-> `causal-replay-feasibility.json`（A 19h / B 44h 末期因果窗口）；
-> demo-state 与 Viewer 增加 `scenario_mode`/simulation/knowledge_as_of
-> 诚实展示。见 `CAUSAL_REPLAY_FEASIBILITY_AUDIT_20260817.md`。
-> Causal Replay Engine MVP（2026-08-18）：orchestrator replay 引擎真实
-> 12h/24h/44h PASS；C 四层 PLANNING-HORIZON BLOCKER。见
-> [CAUSAL_REPLAY_MVP_20260818.md](../arctic_route_governance/reports/strategy-b/CAUSAL_REPLAY_MVP_20260818.md)。
+> 历史阶段进展（RC1 真实制品消费 / RC2 coverage preflight / Demo Candidate 1-2 /
+> Geospatial Integrity / Temporal Semantics Audit / Causal Replay Feasibility &
+> MVP）见 `reports/archive/` 下的对应报告。
 > 主线口径：v3 四层 × 三目标（12 路线整组）+ 重规划为演示主线，v2 三目标为强制后备
 > （2026-08-15 确认）。
 
@@ -321,11 +300,11 @@ Frozen loader 同时从发布制品读取 `scenario_mode`（RunContext）与
 `RETROSPECTIVE BEST ESTIMATE` 与 simulation 窗口，避免把事后数据当作当时
 预测。
 
-## RC1 事实
+## 真实制品事实
 
 - 离线 schema：`work_package_c/schemas/four-layer-route-plan-set-v3.schema.json`
   （`arctic-route.local` 引用本地解析，不需要网络）；
-- 真实制品 fixtures：`tests/fixtures/v3_initial_rc1.json` / `v3_replanned_rc1.json`；
+- 真实制品 fixtures：`tests/fixtures/v3_initial.json` / `v3_replanned.json`；
 - 测试：12 tests（含断网回归、initial/replanned 可区分、coverage preflight）。
 
 ## 结构

@@ -1,4 +1,4 @@
-"""Regression: D must consume the real RC1 v3 artifacts offline."""
+"""Regression: D must consume the real v3 artifacts offline."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _block_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket.socket, "connect_ex", deny)
 
 
-@pytest.mark.parametrize("name", ["v3_initial_rc1.json", "v3_replanned_rc1.json"])
+@pytest.mark.parametrize("name", ["v3_initial.json", "v3_replanned.json"])
 def test_real_v3_artifact_loads_offline(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
     _block_network(monkeypatch)
     view = load_v3_group(FIXTURES / name, schema_path=SCHEMA)
@@ -49,8 +49,8 @@ def test_real_v3_artifact_loads_offline(monkeypatch: pytest.MonkeyPatch, name: s
 
 
 def test_initial_and_replanned_are_distinguishable() -> None:
-    initial = load_v3_group(FIXTURES / "v3_initial_rc1.json", schema_path=SCHEMA)
-    replanned = load_v3_group(FIXTURES / "v3_replanned_rc1.json", schema_path=SCHEMA)
+    initial = load_v3_group(FIXTURES / "v3_initial.json", schema_path=SCHEMA)
+    replanned = load_v3_group(FIXTURES / "v3_replanned.json", schema_path=SCHEMA)
     assert initial.group_id != replanned.group_id
     assert initial.input_revision == 0
     assert replanned.input_revision == 1

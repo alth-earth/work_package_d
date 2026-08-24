@@ -11,6 +11,15 @@ Last Verified: 2026-08-23
 
 # 工作包 D 变更记录
 
+## Unreleased - Version clutter cleanup（2026-08-24）
+
+依据 `arctic_route_governance/reports/audits/C_D_VERSION_CLUTTER_AUDIT_AND_CLEANUP_PLAN_20260824.md` 执行版本/旧文件清理，**不触及代码逻辑**：
+
+- **历史报告归档**：8 份历史 demo/viewer/competition 报告（COMPETITION_DEMO_FINAL_POLISH_REPORT / COMPETITION_DEMO_FREEZE_VALIDATION_REPORT / DEMO_FREEZE_VALIDATION_REPORT / DEMO_REHEARSAL / ENVIRONMENT_LAYER_READINESS / REPLAY_48H_EXTENSION_REPORT / RISK_DISTRIBUTION_AUDIT / VIEWER_DEMO_REHEARSAL_REPORT）从根目录移入 `reports/archive/`；保留 README/HANDOFF/CURRENT_BASELINE/CHANGELOG。
+- **README 历史段折叠**：将 RC1/RC2/Demo Candidate 1-2 / Geospatial Integrity / Temporal Semantics Audit / Causal Replay 等历史阶段进度行折叠为"见 `reports/archive/`"链接；保留当前 snapshot/coverage/demo 用法与边界描述；`## RC1 事实` 标题改为 `## 真实制品事实`。
+- **RC1 fixture 重命名**：`tests/fixtures/v3_initial_rc1.json` → `v3_initial.json`；`v3_replanned_rc1.json` → `v3_replanned.json`；同步更新 `test_real_artifact_regression.py`（parametrize + 2 处 load）、`README.md`、`HANDOFF.md`。
+- **保留项**：demo 子包（仍被 CLI 与测试引用）、CURRENT_BASELINE.md、HANDOFF.md。
+
 ## Unreleased - Selection Rationale Consumer（2026-08-24）
 
 - feat: 增加可选 `selection-rationale.v1` 只读 consumer（`load_selection_rationale` +
