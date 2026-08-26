@@ -1,51 +1,86 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Arctic Navigation Decision Simulation</title>
+    <title>北极航线决策仿真平台</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="title">
-        <strong>Arctic Navigation Decision Simulation</strong>
-        <span class="subtitle">Environment → risk assessment → route decision → voyage execution</span>
-        <span id="mode-badge" class="badge">navigation_simulation</span>
+        <strong>北极航线决策仿真平台</strong>
+        <span class="subtitle">环境数据 → 风险评估 → 路线决策 → 航行执行</span>
+          <span id="mode-badge" class="badge">航行仿真</span>
       </div>
       <div class="badges">
         <span id="gate-l1" class="badge gate">L1 -</span>
         <span id="gate-l2" class="badge gate">L2 -</span>
-        <span id="gate-loop" class="badge">preflight -</span>
+        <span id="gate-loop" class="badge">预检 -</span>
       </div>
     </header>
 
+    <section class="pipeline" aria-label="工作包整合流水线">
+      <div class="pipeline-intro">
+        <span class="eyebrow">任务整合视图</span>
+        <strong id="pipeline-scenario">正在加载场景</strong>
+        <span id="pipeline-identity">正在加载已发布制品身份</span>
+      </div>
+      <div class="pipeline-stages">
+        <div class="pipeline-stage stage-a">
+          <span class="stage-code">A</span>
+          <div><strong>数据</strong><span>数据集包</span></div>
+          <b id="pipeline-a">--</b>
+        </div>
+        <span class="pipeline-arrow" aria-hidden="true">→</span>
+        <div class="pipeline-stage stage-b">
+          <span class="stage-code">B</span>
+          <div><strong>风险</strong><span>风险帧窗口</span></div>
+          <b id="pipeline-b">--</b>
+        </div>
+        <span class="pipeline-arrow" aria-hidden="true">→</span>
+        <div class="pipeline-stage stage-c">
+          <span class="stage-code">C</span>
+          <div><strong>规划</strong><span>候选路线</span></div>
+          <b id="pipeline-c">--</b>
+        </div>
+        <span class="pipeline-arrow" aria-hidden="true">→</span>
+        <div class="pipeline-stage stage-d">
+          <span class="stage-code">D</span>
+          <div><strong>展示</strong><span>仿真运行时</span></div>
+          <b id="pipeline-d">运行中</b>
+        </div>
+      </div>
+    </section>
+
     <main class="layout">
       <div class="mapwrap">
-        <canvas id="map"></canvas>
+        <canvas id="map" aria-label="北极航线地图，可拖拽平移"></canvas>
         <div id="hover-info" class="hover-info"></div>
+        <button id="sidebar-toggle" class="sidebar-toggle" type="button"
+          aria-expanded="true" aria-controls="viewer-sidebar">收起侧栏</button>
       </div>
 
-      <aside class="panel">
+      <aside id="viewer-sidebar" class="panel">
         <section class="block">
-          <h2>Navigation simulation</h2>
+          <h2>航行仿真</h2>
           <div class="sim">
-            <button id="play" type="button" class="btn">Run</button>
+            <button id="play" type="button" class="btn">运行</button>
             <div class="simulation-time">
-              <span>Simulation Time</span>
+              <span>仿真时间</span>
               <time id="clock" class="clock">--</time>
             </div>
           </div>
           <div class="voyage-progress-heading">
-            <label id="progress-axis-label" for="scrub">Voyage Progress</label>
+            <label id="progress-axis-label" for="scrub">航程进度</label>
             <strong id="voyage-progress-value">-- km / -- km</strong>
           </div>
-          <input id="scrub" type="range" min="0" step="1" value="0" aria-label="Voyage progress" />
+          <input id="scrub" type="range" min="0" step="1" value="0" aria-label="航程进度" />
           <div class="row">
             <span id="range-label"></span>
             <label>
-              Simulation Speed
+              仿真速度
               <select id="speed">
                 <option value="30">1x</option>
                 <option value="60" selected>2x</option>
@@ -55,45 +90,45 @@
             </label>
           </div>
           <div class="row mode-row">
-            <span id="risk-status" class="status">risk overlay loading</span>
+            <span id="risk-status" class="status">正在加载风险图层</span>
             <label class="view-mode-control" for="view-mode">
-              view
+              视图
               <select id="view-mode">
-                <option value="research">Research Validation</option>
-                <option value="presentation">Navigation Simulation</option>
-                <option value="engineering">Engineering Debug</option>
+                <option value="research">研究验证</option>
+                <option value="presentation">航行仿真</option>
+                <option value="engineering">工程调试</option>
               </select>
             </label>
-            <button id="toggle-debug" type="button" class="btn small">Engineering Debug</button>
+            <button id="toggle-debug" type="button" class="btn small">工程调试</button>
           </div>
-          <div id="route-status" class="status route-status">active route loading</div>
+          <div id="route-status" class="status route-status">正在加载当前路线</div>
           <div class="horizon-row">
-            <label for="risk-horizon">Risk Forecast Horizon</label>
+            <label for="risk-horizon">风险预测时域</label>
             <select id="risk-horizon">
-              <option value="current">Now</option>
+              <option value="current">当前</option>
               <option value="+6h">+6h</option>
               <option value="+12h">+12h</option>
               <option value="+24h">+24h</option>
             </select>
           </div>
-          <div id="risk-horizon-status" class="status horizon-status">risk horizon loading</div>
+          <div id="risk-horizon-status" class="status horizon-status">正在加载风险时域</div>
         </section>
 
         <section id="research-panel" class="block research-panel" hidden>
-          <h2>Navigation decision</h2>
-          <div id="research-status" class="status">research artifact loading</div>
-          <div id="current-strategy" class="current-strategy">Current Strategy · loading</div>
-          <p class="evidence-chain" aria-label="scientific evidence chain">
-            Environment change <span>→</span> Risk field change <span>→</span> Route decision change
+          <h2>航行决策</h2>
+          <div id="research-status" class="status">正在加载研究制品</div>
+          <div id="current-strategy" class="current-strategy">当前策略 · 正在加载</div>
+          <p class="evidence-chain" aria-label="科学证据链">
+            环境变化 <span>→</span> 风险场变化 <span>→</span> 路线决策变化
           </p>
           <dl id="experiment-metadata" class="summary-grid research-metadata"></dl>
           <div class="route-layer-control">
-            <label for="route-layer">route layer</label>
+            <label for="route-layer">路线层</label>
             <select id="route-layer">
-              <option value="full_voyage">Full voyage</option>
-              <option value="main_corridor_24_72h">Main corridor · 24–72h</option>
-              <option value="rolling_0_24h">Rolling · 0–24h</option>
-              <option value="executable_0_6h">Executable · 0–6h</option>
+              <option value="full_voyage">全航程</option>
+              <option value="main_corridor_24_72h">主走廊 · 24–72 小时</option>
+              <option value="rolling_0_24h">滚动窗口 · 0–24 小时</option>
+              <option value="executable_0_6h">可执行窗口 · 0–6 小时</option>
             </select>
           </div>
           <div id="route-candidate-note" class="status summary-note"></div>
@@ -102,91 +137,90 @@
         </section>
 
         <section class="block risk-profile">
-          <h2>Risk Forecast Horizon</h2>
-          <div id="risk-profile-status" class="status">risk profile loading</div>
+          <h2>风险预测时域</h2>
+          <div id="risk-profile-status" class="status">正在加载风险概况</div>
           <div id="risk-timeline" class="risk-timeline" aria-label="risk score timeline"></div>
           <div class="risk-timeline-key">
-            <span><i class="risk-key mean"></i>mean score</span>
-            <span><i class="risk-key max"></i>maximum score</span>
+            <span><i class="risk-key mean"></i>平均分数</span>
+            <span><i class="risk-key max"></i>最大分数</span>
           </div>
           <div id="risk-profile-window" class="status"></div>
         </section>
 
         <section class="block risk-summary">
-          <h2>Risk forecast summary</h2>
-          <div id="risk-summary-status" class="status">risk summary loading</div>
+          <h2>风险预测摘要</h2>
+          <div id="risk-summary-status" class="status">正在加载风险摘要</div>
           <dl id="risk-summary-metrics" class="summary-grid"></dl>
           <ul id="risk-summary-hazards" class="summary-list"></ul>
           <div id="risk-summary-note" class="status summary-note">
-            Level 1 on published NONE water cells is a low-risk assessment;
-            hard reasons remain separate and fail closed.
+            已发布 NONE 水域中的等级 1 表示低风险评估；硬约束原因独立展示并采用安全失败。
           </div>
         </section>
 
         <section class="block risk-explanation" aria-live="polite">
-          <h2>Risk explanation</h2>
+          <h2>风险解释</h2>
           <div id="risk-explanation-status" class="status unavailable">
-            Explanation Status: UNAVAILABLE · Explanation unavailable
+            解释状态：不可用 · 暂无风险解释
           </div>
           <div id="risk-explanation-cell" class="status summary-note">
-            Click a risk cell to inspect its published RiskFrame values.
+            点击风险网格查看已发布风险帧数值。
           </div>
           <dl id="risk-explanation-metrics" class="summary-grid"></dl>
           <div id="risk-explanation-contributors" hidden>
-            <h3>Main Contributors</h3>
+            <h3>主要贡献因素</h3>
             <ul id="risk-explanation-contributor-list" class="summary-list"></ul>
           </div>
           <dl id="risk-explanation-details" class="summary-grid"></dl>
         </section>
 
         <section class="block route-decision">
-          <h2>Execution decision state</h2>
-          <div id="route-decision-status" class="status">route decision loading</div>
+          <h2>执行决策状态</h2>
+          <div id="route-decision-status" class="status">正在加载路线决策</div>
           <dl id="route-decision-metrics" class="summary-grid"></dl>
           <div id="route-decision-trace" class="status summary-note"></div>
           <div id="route-fallback-note" class="status summary-note"></div>
         </section>
 
         <section class="block legend">
-          <h2>Layers</h2>
+          <h2>图层说明</h2>
           <ul>
-            <li><i class="sw sw-risk-1"></i>risk level 1 · low</li>
-            <li><i class="sw sw-risk-2"></i>risk level 2</li>
-            <li><i class="sw sw-risk-3"></i>risk level 3 · medium</li>
-            <li><i class="sw sw-risk-4"></i>risk level 4</li>
-            <li><i class="sw sw-risk-5"></i>risk level 5 · high</li>
-            <li><i class="sw sw-hard-land"></i>LAND · hard unavailable</li>
-            <li><i class="sw sw-hard-unknown"></i>DATA_UNAVAILABLE · unknown</li>
-            <li><i class="sw sw-hard-other"></i>OTHER · hard unavailable</li>
-            <li><i class="sw sw-trail"></i>recent vessel trail · presentation</li>
-            <li><i class="sw sw-track"></i>completed track</li>
-            <li><i class="sw sw-active"></i>authoritative future route</li>
-            <li class="research-only"><i class="sw sw-candidate-fastest"></i>candidate · fastest</li>
-            <li class="research-only"><i class="sw sw-candidate-low-risk"></i>candidate · low risk</li>
-            <li class="research-only"><i class="sw sw-candidate-recommended"></i>candidate · recommended</li>
-            <li><i class="sw sw-pending"></i>pending route</li>
-            <li><i class="sw sw-superseded"></i>superseded route</li>
-            <li><i class="sw sw-segment"></i>current segment</li>
-            <li><i class="sw sw-vessel"></i>vessel</li>
+            <li><i class="sw sw-risk-1"></i>风险等级 1 · 低</li>
+            <li><i class="sw sw-risk-2"></i>风险等级 2</li>
+            <li><i class="sw sw-risk-3"></i>风险等级 3 · 中</li>
+            <li><i class="sw sw-risk-4"></i>风险等级 4</li>
+            <li><i class="sw sw-risk-5"></i>风险等级 5 · 高</li>
+            <li><i class="sw sw-hard-land"></i>LAND · 硬约束不可用</li>
+            <li><i class="sw sw-hard-unknown"></i>DATA_UNAVAILABLE · 数据不可用</li>
+            <li><i class="sw sw-hard-other"></i>OTHER · 硬约束不可用</li>
+            <li><i class="sw sw-trail"></i>近期船舶轨迹 · 展示</li>
+            <li><i class="sw sw-track"></i>已完成航迹</li>
+            <li><i class="sw sw-active"></i>权威未来路线</li>
+            <li class="research-only"><i class="sw sw-candidate-fastest"></i>候选路线 · 最快</li>
+            <li class="research-only"><i class="sw sw-candidate-low-risk"></i>候选路线 · 低风险</li>
+            <li class="research-only"><i class="sw sw-candidate-recommended"></i>候选路线 · 推荐</li>
+            <li><i class="sw sw-pending"></i>待采用路线</li>
+            <li><i class="sw sw-superseded"></i>已替代路线</li>
+            <li><i class="sw sw-segment"></i>当前路段</li>
+            <li><i class="sw sw-vessel"></i>船舶</li>
           </ul>
         </section>
 
         <section class="block layer-controls">
-          <h2>Presentation layers</h2>
-          <label><input id="layer-risk" type="checkbox" checked /> Risk</label>
-          <label><input id="layer-hard" type="checkbox" checked /> Hard / availability</label>
-          <label><input id="layer-routes" type="checkbox" checked /> Routes</label>
-          <label><input id="layer-track" type="checkbox" checked /> Track + recent trail</label>
-          <label><input id="layer-navigation" type="checkbox" checked /> Navigation aids</label>
+          <h2>展示图层</h2>
+          <label><input id="layer-risk" type="checkbox" checked /> 风险</label>
+          <label><input id="layer-hard" type="checkbox" checked /> 硬约束 / 可用性</label>
+          <label><input id="layer-routes" type="checkbox" checked /> 路线</label>
+          <label><input id="layer-track" type="checkbox" checked /> 航迹与近期轨迹</label>
+          <label><input id="layer-navigation" type="checkbox" checked /> 导航辅助</label>
         </section>
 
         <section class="block event-timeline">
-          <h2>Navigation decision timeline</h2>
-          <ol id="event-timeline" aria-label="replay milestones"></ol>
+          <h2>航行决策时间线</h2>
+          <ol id="event-timeline" aria-label="回放里程碑"></ol>
         </section>
 
         <section id="debug-panel" class="block debug" hidden>
-          <h2>Debug</h2>
+          <h2>调试信息</h2>
           <dl id="debug"></dl>
         </section>
       </aside>

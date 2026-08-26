@@ -54,6 +54,14 @@
   const layerNavigation = document.getElementById("layer-navigation");
   const gateBadges = document.querySelector(".badges");
   const modeBadge = document.getElementById("mode-badge");
+  const pipelineScenarioEl = document.getElementById("pipeline-scenario");
+  const pipelineIdentityEl = document.getElementById("pipeline-identity");
+  const pipelineAEl = document.getElementById("pipeline-a");
+  const pipelineBEl = document.getElementById("pipeline-b");
+  const pipelineCEl = document.getElementById("pipeline-c");
+  const layoutEl = document.querySelector(".layout");
+  const sidebarEl = document.getElementById("viewer-sidebar");
+  const sidebarToggleEl = document.getElementById("sidebar-toggle");
 
   let bundle = null;
   let basemap = null;
@@ -75,6 +83,10 @@
   let riskExplanationInspection = null;
   let riskExplanationRevision = 0;
   let selectedRiskCell = null;
+  let mapPanX = 0;
+  let mapPanY = 0;
+  let mapDrag = null;
+  let mapWasDragged = false;
   let voyageProgress = null;
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
@@ -114,6 +126,28 @@
     low_risk: { color: "#62d6a7", dash: [3, 5], width: 2.6 },
     recommended: { color: "#f5f8fb", dash: [], width: 3.1 },
   };
+
+  function renderPipelineOverview(value) {
+    const combined = value?.combined_presentation || {};
+    const research = value?.research_validation || {};
+    const riskSource = value?.risk?.source || {};
+    const candidates = value?.route_candidates?.candidates || [];
+    const scenario = combined.scenario_label || research.scenario_label || value?.replay?.scenario_id;
+    const identity = combined.assembly_id || value?.replay?.manifest_semantic_digest;
+    pipelineScenarioEl.textContent = scenario || "场景未发布";
+    pipelineIdentityEl.textContent = identity
+      ? `${combined.status === "PUBLISHED" ? "已发布" : combined.status || "已发布"} · ${identity.slice(0, 18)}…`
+      : "已发布制品身份不可用";
+    pipelineAEl.textContent = combined.dataset_bundle_id || research.dataset_bundle_id
+      ? "就绪"
+      : "--";
+    pipelineBEl.textContent = research.risk_frame_count || riskSource.risk_window_id
+      ? `${research.risk_frame_count || "?"} 帧`
+      : "--";
+    pipelineCEl.textContent = candidates.length
+      ? `${candidates.length} 条路线`
+      : "后备路线";
+  }
 
   function inspectCombinedIdentity(value, routeInspection) {
     const combined = value?.combined_presentation;
@@ -171,7 +205,7 @@
   }
 
   function formatHorizonSeconds(seconds) {
-    if (!Number.isFinite(seconds)) return "unavailable";
+    if (!Number.isFinite(seconds)) return "不可用";
     const sign = seconds >= 0 ? "+" : "-";
     const absolute = Math.abs(Math.round(seconds));
     const hours = Math.floor(absolute / 3600);
@@ -180,15 +214,51 @@
   }
 
   function horizonLabel(key) {
-    return key === "current" ? "Now" : key;
+    return key === "current" ? "当前" : key;
+  }
+
+  function selectionMethodLabel(value) {
+    return {
+      latest_valid_time_at_or_before_simulation_time: "不晚于仿真时间的最新有效时次",
+      floor: "向下取整到最近有效时次",
+      unavailable: "不可用",
+    }[value] || value;
   }
 
   function setDefinitionRows(element, rows) {
     if (!element) return;
+    const labels = {
+      "Risk Level": "风险等级",
+      "Risk Score": "风险分数",
+      Confidence: "置信度",
+      Reason: "原因",
+      Uncertainty: "不确定性",
+      "Missing data": "缺失数据",
+      "Explanation gaps": "解释缺口",
+      "active revision": "当前版本",
+      "route role": "路线角色",
+      distance: "距离",
+      "arrival ETA": "预计抵达",
+      "average risk": "平均风险",
+      "maximum risk": "最大风险",
+      "grid": "网格",
+      experiment: "实验",
+      scenario: "场景",
+      "scenario id": "场景 ID",
+      run: "运行实例",
+      RunContext: "运行上下文",
+      DatasetBundle: "数据集包",
+      RiskWindow: "风险窗口",
+      RiskFrame: "风险帧",
+      frames: "帧数",
+      routes: "路线数",
+      "candidate set": "候选集",
+      assembly: "组装制品",
+    };
     element.replaceChildren();
     for (const [label, value] of rows) {
       const term = document.createElement("dt");
-      term.textContent = label;
+      term.textContent = labels[label] || label;
       const detail = document.createElement("dd");
       detail.textContent = value;
       element.append(term, detail);
@@ -205,25 +275,64 @@
     }
   }
 
+  function initializePanelControls() {
+    if (!sidebarEl) return;
+    const sections = sidebarEl.querySelectorAll(":scope > .block");
+    for (const section of sections) {
+      const heading = section.querySelector(":scope > h2");
+      if (!heading || heading.querySelector(".section-toggle")) continue;
+      const headingLabel = heading.textContent.trim();
+      const body = document.createElement("div");
+      body.className = "section-body";
+      while (heading.nextSibling) body.append(heading.nextSibling);
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "section-toggle";
+      toggle.textContent = "隐藏";
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.setAttribute("aria-label", `隐藏${headingLabel}内容`);
+      toggle.addEventListener("click", () => {
+        const collapsed = body.hidden;
+        body.hidden = !collapsed;
+        toggle.textContent = collapsed ? "隐藏" : "展开";
+        toggle.setAttribute("aria-expanded", String(collapsed));
+        toggle.setAttribute("aria-label", `${collapsed ? "隐藏" : "展开"}${headingLabel}内容`);
+        section.classList.toggle("is-collapsed", !collapsed);
+      });
+      heading.append(toggle);
+      section.append(body);
+    }
+  }
+
+  function initializeSidebarToggle() {
+    if (!layoutEl || !sidebarEl || !sidebarToggleEl) return;
+    sidebarToggleEl.addEventListener("click", () => {
+      const collapsed = layoutEl.classList.toggle("sidebar-collapsed");
+      sidebarToggleEl.textContent = collapsed ? "展开侧栏" : "收起侧栏";
+      sidebarToggleEl.setAttribute("aria-expanded", String(!collapsed));
+      sidebarToggleEl.setAttribute("aria-label", collapsed ? "展开侧栏" : "收起侧栏");
+    });
+  }
+
   function formatScore(value) {
     const number = Number(value);
-    return Number.isFinite(number) ? number.toFixed(3) : "not published";
+    return Number.isFinite(number) ? number.toFixed(3) : "未发布";
   }
 
   function formatDistance(value) {
     const number = Number(value);
-    return Number.isFinite(number) ? `${number.toFixed(1)} km` : "not published";
+    return Number.isFinite(number) ? `${number.toFixed(1)} km` : "未发布";
   }
 
   function formatMetric(value) {
-    if (value === null || value === undefined || value === "") return "not published";
+    if (value === null || value === undefined || value === "") return "未发布";
     const number = Number(value);
     return Number.isFinite(number) ? number.toFixed(3) : String(value);
   }
 
   function formatResearchMetric(value, digits = 6, suffix = "") {
     const number = Number(value);
-    return Number.isFinite(number) ? `${number.toFixed(digits)}${suffix}` : "not published";
+    return Number.isFinite(number) ? `${number.toFixed(digits)}${suffix}` : "未发布";
   }
 
   function riskCellSnapshot(frame, row, column) {
@@ -244,7 +353,7 @@
   }
 
   function setExplanationUnavailable(note = "Explanation unavailable") {
-    riskExplanationStatusEl.textContent = `Explanation Status: UNAVAILABLE · ${note}`;
+    riskExplanationStatusEl.textContent = `解释状态：不可用 · ${note}`;
     riskExplanationStatusEl.classList.add("unavailable");
     riskExplanationContributorsEl.hidden = true;
     setSummaryItems(riskExplanationContributorListEl, []);
@@ -263,7 +372,7 @@
     lastRiskExplanationKey = renderKey;
     if (!selectedRiskCell || !state.risk) {
       riskExplanationCellEl.textContent =
-        "Click a risk cell to inspect its published RiskFrame values.";
+        "点击风险网格查看已发布风险帧数值。";
       setDefinitionRows(riskExplanationMetricsEl, []);
       setExplanationUnavailable();
       return;
@@ -275,13 +384,13 @@
       selectedRiskCell.column
     );
     if (!snapshot) {
-      riskExplanationCellEl.textContent = "Selected cell is outside the displayed RiskFrame grid.";
+      riskExplanationCellEl.textContent = "所选网格不在当前显示的风险帧范围内。";
       setDefinitionRows(riskExplanationMetricsEl, []);
       setExplanationUnavailable();
       return;
     }
     riskExplanationCellEl.textContent =
-      `Cell ${snapshot.row},${snapshot.column} · ` +
+      `网格 ${snapshot.row},${snapshot.column} · ` +
       `${formatCoordinate(snapshot.latitude, "latitude", 4)}, ` +
       `${formatCoordinate(snapshot.longitude, "longitude", 4)}`;
     setDefinitionRows(riskExplanationMetricsEl, [
@@ -348,9 +457,9 @@
 
   function objectiveLabel(objective) {
     return {
-      fastest: "Fastest",
-      low_risk: "Low risk",
-      recommended: "Recommended",
+      fastest: "最快路线",
+      low_risk: "低风险路线",
+      recommended: "推荐路线",
     }[objective] || objective;
   }
 
@@ -406,7 +515,8 @@
   }
 
   function riskHourLabel(value) {
-    return new Date(value).toISOString().slice(11, 16);
+    const iso = new Date(value).toISOString();
+    return `${iso.slice(5, 10)} ${iso.slice(11, 13)}时`;
   }
 
   function buildRiskTimeline() {
@@ -438,7 +548,7 @@
       maximum.style.height = `${Math.max(3, Math.min(100, maxHeight))}%`;
       const label = document.createElement("span");
       label.className = "risk-tick-label";
-      label.textContent = index % 2 === 0 || index === frames.length - 1
+      label.textContent = index % 24 === 0 || index === frames.length - 1
         ? riskHourLabel(frame.valid_time)
         : "";
       tick.append(mean, maximum, label);
@@ -448,7 +558,7 @@
       const grid = bundle.risk?.grid;
       const gridText = grid ? ` · grid ${grid.rows}×${grid.cols}` : "";
       riskProfileWindowEl.textContent =
-        `Formal forecast window: ${forecastWindowText()} · ${frames.length} hourly frames${gridText}`;
+        `正式预测窗口：${forecastWindowText()} · ${frames.length} 个小时帧${gridText}`;
     }
   }
 
@@ -461,14 +571,14 @@
     milestones.push({
       event: initial,
       time: initial?.t || bundle.replay.start,
-      label: "Departure · initial route",
+      label: "出发 · 初始路线",
     });
     const riskUpdate = events.find((event) => event.type === "RISK_CONTENT_UPDATED");
     if (riskUpdate) {
       milestones.push({
         event: riskUpdate,
         time: riskUpdate.t,
-        label: "Risk assessment updated",
+        label: "风险评估已更新",
       });
     }
     // Keep every real route revision visible in a long replay. ROUTE_CHANGED
@@ -478,13 +588,13 @@
         milestones.push({
           event,
           time: event.t,
-          label: `R${event.rev} pending · active route remains authoritative`,
+          label: `R${event.rev} 待采用 · 当前路线仍为权威路线`,
         });
       } else if (event.type === "REPLAN_ADOPTED") {
         milestones.push({
           event,
           time: event.t,
-          label: `R${event.rev} adopted · authoritative route updated`,
+          label: `R${event.rev} 已采用 · 权威路线已更新`,
         });
       }
     }
@@ -525,7 +635,7 @@
     if (!riskProfileStatusEl) return;
     if (!summary || !s.riskSelection || s.riskSelection.availability !== "AVAILABLE") {
       riskProfileStatusEl.textContent =
-        `${horizonLabel(selectedHorizon)} · Risk Forecast unavailable for this simulation time`;
+        `${horizonLabel(selectedHorizon)} · 当前仿真时间暂无风险预测`;
       riskProfileStatusEl.classList.add("unavailable");
       return;
     }
@@ -534,8 +644,8 @@
     const navigable = hardCounts.NONE || 0;
     const levelOne = summary.risk_level_counts?.["1"] || 0;
     riskProfileStatusEl.textContent =
-      `${horizonLabel(selectedHorizon)} · mean ${Number(summary.risk_score_mean).toFixed(3)} ` +
-      `· max ${Number(summary.risk_score_max).toFixed(3)} · water ${levelOne}/${navigable} at L1`;
+      `${horizonLabel(selectedHorizon)} · 平均 ${Number(summary.risk_score_mean).toFixed(3)} ` +
+      `· 最大 ${Number(summary.risk_score_max).toFixed(3)} · L1 水域 ${levelOne}/${navigable}`;
   }
 
   function updateRiskSummary(s) {
@@ -554,26 +664,26 @@
     if (!summary || !selection || selection.availability !== "AVAILABLE") {
       riskSummaryStatusEl.classList.add("unavailable");
       riskSummaryStatusEl.textContent =
-        `${horizonLabel(selectedHorizon)} · Risk Summary unavailable for this frame`;
+        `${horizonLabel(selectedHorizon)} · 当前风险帧暂无摘要`;
       setDefinitionRows(riskSummaryMetricsEl, []);
       setSummaryItems(riskSummaryHazardsEl, []);
       if (riskSummaryNoteEl) {
         riskSummaryNoteEl.textContent =
-          "No stale frame is used; choose an available forecast horizon to inspect its published summary.";
+          "不会使用过期风险帧；请选择可用的预测时域查看已发布摘要。";
       }
       return;
     }
 
     riskSummaryStatusEl.classList.remove("unavailable");
     riskSummaryStatusEl.textContent =
-      `${horizonLabel(selectedHorizon)} · formal frame ${selection.actual_valid_time}`;
+      `${horizonLabel(selectedHorizon)} · 正式风险帧 ${selection.actual_valid_time}`;
     const forecast = bundle.risk?.forecast_summary || {};
-    const trend = forecast.trend || "not published";
+    const trend = forecast.trend || "未发布";
     setDefinitionRows(riskSummaryMetricsEl, [
-      ["mean score", formatScore(summary.risk_score_mean)],
-      ["maximum score", formatScore(summary.risk_score_max)],
-      ["forecast trend", trend],
-      ["published cells", String(summary.total_cells ?? "not published")],
+      ["平均分数", formatScore(summary.risk_score_mean)],
+      ["最大分数", formatScore(summary.risk_score_max)],
+      ["预测趋势", trend],
+      ["已发布网格", String(summary.total_cells ?? "未发布")],
     ]);
 
     const hardCounts = summary.hard_reason_counts || {};
@@ -589,13 +699,13 @@
         .filter(([reason]) => reason !== "NONE")
         .reduce((total, [, count]) => total + Number(count || 0), 0);
     setSummaryItems(riskSummaryHazardsEl, [
-      `LAND cells · ${landCount}`,
-      `DATA_UNAVAILABLE cells · ${unavailableCount}`,
-      `Hard cells total · ${hardCellCount}`,
+      `LAND 网格 · ${landCount}`,
+      `数据不可用网格 · ${unavailableCount}`,
+      `硬约束网格总数 · ${hardCellCount}`,
     ]);
     if (riskSummaryNoteEl) {
       riskSummaryNoteEl.textContent =
-        "Level 1 on published NONE water cells is a low-risk assessment; hard reasons remain separate and fail closed.";
+        "已发布 NONE 水域中的等级 1 表示低风险评估；硬约束原因独立展示并采用安全失败。";
     }
   }
 
@@ -726,29 +836,29 @@
   }
 
   function setRunButtonState() {
-    playBtn.textContent = playing ? "Pause" : "Run";
+    playBtn.textContent = playing ? "暂停" : "运行";
   }
 
   function updateSimulationReadout(s) {
     clockEl.textContent = formatAbsolute(s.time);
     if (!voyageProgress) {
-      progressAxisLabelEl.textContent = "Simulation Progress";
-      scrub.setAttribute("aria-label", "Simulation progress");
-      voyageProgressValueEl.textContent = `${formatClock(simMs)} elapsed`;
+      progressAxisLabelEl.textContent = "仿真进度";
+      scrub.setAttribute("aria-label", "仿真进度");
+      voyageProgressValueEl.textContent = `${formatClock(simMs)} 已运行`;
       rangeLabel.textContent = `${bundle.replay.start} → ${bundle.replay.end}`;
       return;
     }
     const distanceKm = voyageDistanceAt(simMs);
-    progressAxisLabelEl.textContent = "Voyage Progress";
-    scrub.setAttribute("aria-label", "Voyage progress");
+    progressAxisLabelEl.textContent = "航程进度";
+    scrub.setAttribute("aria-label", "航程进度");
     const initialDistance = Number(bundle?.routes?.[0]?.distance_km);
     const plannedText = Number.isFinite(initialDistance)
-      ? ` · ${initialDistance.toFixed(1)} km initial plan`
+      ? ` · ${initialDistance.toFixed(1)} km 初始规划`
       : "";
     voyageProgressValueEl.textContent =
-      `${distanceKm.toFixed(1)} km / ${voyageProgress.totalKm.toFixed(1)} km simulated`;
+      `${distanceKm.toFixed(1)} km / ${voyageProgress.totalKm.toFixed(1)} km 已仿真`;
     rangeLabel.textContent =
-      `Current position ${formatCoordinate(s.lat, "latitude", 4)}, ` +
+      `当前位置 ${formatCoordinate(s.lat, "latitude", 4)}，` +
       `${formatCoordinate(s.lon, "longitude", 4)}${plannedText}`;
   }
 
@@ -1122,11 +1232,11 @@
     const hasPending = s.pendingRoute && s.pendingRoute.revision !== s.active;
     if (!presentationMode) {
       const pending = hasPending ? ` · pending R${s.pendingRoute.revision}` : "";
-      return `Active route R${s.active}${pending}`;
+      return `当前路线 R${s.active}${pending}`;
     }
-    if (adoptionPulse(s) > 0.01) return "New route adopted · authoritative route updated";
-    if (hasPending) return "New route pending · current route remains authoritative";
-    return "Authoritative route active";
+    if (adoptionPulse(s) > 0.01) return "新路线已采用 · 当前权威路线已更新";
+    if (hasPending) return "新路线待采用 · 当前路线仍为权威路线";
+    return "权威路线运行中";
   }
 
   function updateRouteDecision(s) {
@@ -1149,7 +1259,7 @@
 
     if (!active) {
       routeDecisionStatusEl.classList.add("unavailable");
-      routeDecisionStatusEl.textContent = "Route decision metadata unavailable";
+      routeDecisionStatusEl.textContent = "路线决策元数据不可用";
       setDefinitionRows(routeDecisionMetricsEl, []);
       if (routeDecisionTraceEl) routeDecisionTraceEl.textContent = "";
       if (routeFallbackNoteEl) routeFallbackNoteEl.textContent = "NO_ROUTE_PUBLISHED";
@@ -1160,35 +1270,35 @@
     if (adopted && Number(adopted.rev) === Number(active.revision) && adoptionPulse(s) > 0.01) {
       const next = pending ? `; R${pending.revision} is now pending` : "";
       routeDecisionStatusEl.textContent =
-        `REPLAN_ADOPTED · R${active.revision} is now authoritative${next}`;
+        `已采用重规划 · R${active.revision} 现为权威路线${next}`;
     } else if (pending) {
       routeDecisionStatusEl.textContent =
-        `REPLAN_DECIDED · R${pending.revision} pending; R${active.revision} remains authoritative`;
+        `已决定重规划 · R${pending.revision} 待采用；R${active.revision} 仍为权威路线`;
     } else if (adopted && Number(adopted.rev) === Number(active.revision)) {
       routeDecisionStatusEl.textContent =
-        `REPLAN_ADOPTED · R${active.revision} is now authoritative`;
+        `已采用重规划 · R${active.revision} 现为权威路线`;
     } else if (Number(active.revision) === 1) {
       routeDecisionStatusEl.textContent =
-        `Initial route generated · R${active.revision} is authoritative`;
+        `初始路线已生成 · R${active.revision} 为权威路线`;
     } else {
       routeDecisionStatusEl.textContent =
-        `Authoritative route R${active.revision} is active`;
+        `权威路线 R${active.revision} 运行中`;
     }
 
     const activeMetrics = active.metrics || {};
     const rows = [
-      ["active revision", `R${active.revision} · authoritative`],
-      ["route role", "authoritative"],
-      ["distance", formatDistance(active.distance_km)],
-      ["arrival ETA", routeArrivalEta(active)],
-      ["average risk", formatMetric(activeMetrics.average_risk ?? active.average_risk)],
-      ["maximum risk", formatMetric(activeMetrics.maximum_risk ?? active.maximum_risk)],
+      ["当前版本", `R${active.revision} · 权威路线`],
+      ["路线角色", "权威路线"],
+      ["距离", formatDistance(active.distance_km)],
+      ["预计抵达", routeArrivalEta(active)],
+      ["平均风险", formatMetric(activeMetrics.average_risk ?? active.average_risk)],
+      ["最大风险", formatMetric(activeMetrics.maximum_risk ?? active.maximum_risk)],
     ];
     if (pending) {
       rows.push(
-        ["pending revision", `R${pending.revision}`],
-        ["pending distance", formatDistance(pending.distance_km)],
-        ["pending adoption", pending.effective_adoption_time || "not published"],
+        ["待采用版本", `R${pending.revision}`],
+        ["待采用距离", formatDistance(pending.distance_km)],
+        ["预计采用时间", pending.effective_adoption_time || "未发布"],
       );
     }
     setDefinitionRows(routeDecisionMetricsEl, rows);
@@ -1199,14 +1309,14 @@
     const trace = traceEvents.map((event) => `${event.type} R${event.rev} @ ${event.t}`);
     if (routeDecisionTraceEl) {
       routeDecisionTraceEl.textContent = trace.length
-        ? `Event trace: ${trace.join(" → ")}`
-        : "Event trace: departure → initial route generated";
+        ? `事件轨迹：${trace.join(" → ")}`
+        : "事件轨迹：出发 → 初始路线生成";
     }
 
     if (routeFallbackNoteEl) {
       routeFallbackNoteEl.textContent = candidateInspection?.valid
-        ? "Research candidates are published; use Research Validation view for the 4×3 comparison."
-        : `SINGLE_ROUTE_FALLBACK · ${candidateInspection?.reason || "candidate comparison not published"}`;
+        ? "研究候选路线已发布；请使用研究验证视图比较 4×3 路线。"
+        : `单路线后备 · ${candidateInspection?.reason || "候选路线比较未发布"}`;
     }
   }
 
@@ -1250,11 +1360,11 @@
     if (!candidateInspection?.valid) {
       researchStatusEl.classList.add("unavailable");
       researchStatusEl.textContent =
-        `Research candidate comparison unavailable · ${candidateInspection?.reason || "not published"}`;
+        `研究候选路线比较不可用 · ${candidateInspection?.reason || "未发布"}`;
       setDefinitionRows(experimentMetadataEl, experimentMetadataRows());
       if (routeCandidateNoteEl) {
         routeCandidateNoteEl.textContent =
-          "No candidate route is inferred. Existing authoritative replay remains active.";
+          "不会推断候选路线；现有权威回放仍在运行。";
       }
       if (routeCandidatesEl) {
         routeCandidatesEl.replaceChildren();
@@ -1264,26 +1374,26 @@
       if (currentStrategyEl) {
         currentStrategyEl.classList.add("fallback");
         currentStrategyEl.textContent =
-          "Current Strategy · authoritative single-route execution (candidate comparison not published)";
+          "当前策略 · 权威单路线执行（候选路线比较未发布）";
       }
       return;
     }
 
     researchStatusEl.classList.remove("unavailable");
     researchStatusEl.textContent =
-      `PUBLISHED · 4 layers × 3 objectives · ${candidates.length} artifact routes`;
+      `已发布 · 4 个路线层 × 3 个目标 · ${candidates.length} 条制品路线`;
     const canonicalCandidate = canonicalSelectedCandidate();
     if (currentStrategyEl) {
       currentStrategyEl.classList.remove("fallback");
       currentStrategyEl.textContent = canonicalCandidate
-        ? `Current Strategy · ${objectiveLabel(canonicalCandidate.objective)} Route · C selected_candidate_id`
-        : "Current Strategy · not published";
+        ? `当前策略 · ${objectiveLabel(canonicalCandidate.objective)} · C 已选路线`
+        : "当前策略 · 未发布";
     }
     setDefinitionRows(experimentMetadataEl, experimentMetadataRows());
     const layerCandidates = candidatesForLayer();
     if (routeCandidateNoteEl) {
       routeCandidateNoteEl.textContent =
-        `${selectedRouteLayer} · ${layerCandidates.length} routes in source publication order`;
+        `${selectedRouteLayer} · ${layerCandidates.length} 条路线，按源发布顺序排列`;
     }
     if (!routeCandidatesEl) return;
     routeCandidatesEl.replaceChildren();
@@ -1307,12 +1417,12 @@
       const list = document.createElement("dl");
       list.className = "route-card-metrics";
       const rows = [
-        ["Distance", formatResearchMetric(candidate.distance_km, 3, " km")],
-        ["Travel time", formatResearchMetric(candidate.travel_hours, 3, " h")],
-        ["Arrival ETA", candidate.arrival_eta || "not published"],
-        ["Avg risk", formatResearchMetric(metrics.average_risk)],
-        ["Max risk", formatResearchMetric(metrics.maximum_risk)],
-        ["Integrated", formatResearchMetric(metrics.integrated_risk_hours, 6, " risk·h")],
+        ["距离", formatResearchMetric(candidate.distance_km, 3, " km")],
+        ["航行时间", formatResearchMetric(candidate.travel_hours, 3, " 小时")],
+        ["预计抵达", candidate.arrival_eta || "未发布"],
+        ["平均风险", formatResearchMetric(metrics.average_risk)],
+        ["最大风险", formatResearchMetric(metrics.maximum_risk)],
+        ["综合风险", formatResearchMetric(metrics.integrated_risk_hours, 6, " 风险·小时")],
       ];
       for (const [label, value] of rows) {
         const term = document.createElement("dt");
@@ -1328,9 +1438,9 @@
     if (routeHighlightNoteEl) {
       const canonical = highlight?.candidate_id === canonicalId;
       routeHighlightNoteEl.textContent = highlight
-        ? `Map highlight: ${objectiveLabel(highlight.objective)} · ${highlight.candidate_id}` +
-          `${canonical ? " · C selected_candidate_id" : " · display-only comparison selection"}`
-        : "No route highlighted";
+        ? `地图高亮：${objectiveLabel(highlight.objective)} · ${highlight.candidate_id}` +
+          `${canonical ? " · C 已选路线" : " · 仅用于展示比较"}`
+        : "未高亮路线";
     }
   }
 
@@ -1440,6 +1550,8 @@
 
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(mapPanX, mapPanY);
     if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const s = stateAt(simMs);
     updateSimulationReadout(s);
@@ -1502,6 +1614,7 @@
     const motionPhase = Math.sin((simMs / 1000) * Math.PI * 2 / 180);
     drawShipIcon(pos, heading, motionPhase);
     updateDebug(s, heading);
+    ctx.restore();
   }
 
   function drawShipIcon(pos, heading, motionPhase) {
@@ -1598,18 +1711,18 @@
     }
     if (!selection || selection.availability !== "AVAILABLE") {
       riskStatusEl.classList.add("unavailable");
-      riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} · Risk Forecast unavailable`;
+      riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} · 风险预测不可用`;
       riskHorizonStatusEl.textContent = selection
-        ? `${horizonLabel(selectedHorizon)} → Risk Forecast unavailable. ` +
-          `Available forecast window: ${forecastWindowText()}. (${selection.reason})`
-        : `Risk Forecast unavailable. Available forecast window: ${forecastWindowText()}.`;
+        ? `${horizonLabel(selectedHorizon)} → 风险预测不可用。` +
+          `可用预测窗口：${forecastWindowText()}。（${selection.reason}）`
+        : `风险预测不可用。可用预测窗口：${forecastWindowText()}。`;
     } else {
       riskStatusEl.classList.remove("unavailable");
       const actual = formatHorizonSeconds(selection.actual_horizon_seconds);
       riskStatusEl.textContent = `${horizonLabel(selectedHorizon)} · ${selection.actual_valid_time} · ${actual}`;
       riskHorizonStatusEl.textContent =
-        `${horizonLabel(selectedHorizon)} → requested ${selection.requested_valid_time}; ` +
-        `actual ${selection.actual_valid_time} (${actual}), ${selection.selection_method}`;
+        `${horizonLabel(selectedHorizon)} → 请求 ${selection.requested_valid_time}；` +
+        `实际 ${selection.actual_valid_time}（${actual}），${selectionMethodLabel(selection.selection_method)}`;
     }
     updateRiskTimeline(s);
     updateRiskSummary(s);
@@ -1699,13 +1812,57 @@
     draw();
   });
 
+  canvas.addEventListener("pointerdown", (event) => {
+    mapDrag = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      moved: false,
+    };
+    mapWasDragged = false;
+    canvas.setPointerCapture(event.pointerId);
+    canvas.classList.add("is-dragging");
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (!mapDrag || event.pointerId !== mapDrag.id) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const deltaX = (event.clientX - mapDrag.x) * scaleX;
+    const deltaY = (event.clientY - mapDrag.y) * scaleY;
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 2) {
+      mapDrag.moved = true;
+      mapWasDragged = true;
+    }
+    mapPanX += deltaX;
+    mapPanY += deltaY;
+    mapDrag.x = event.clientX;
+    mapDrag.y = event.clientY;
+    if (mapDrag.moved) draw();
+  });
+
+  function finishMapDrag(event) {
+    if (!mapDrag || event.pointerId !== mapDrag.id) return;
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    mapDrag = null;
+    canvas.classList.remove("is-dragging");
+  }
+
+  canvas.addEventListener("pointerup", finishMapDrag);
+  canvas.addEventListener("pointercancel", finishMapDrag);
+
   canvas.addEventListener("click", (event) => {
+    if (mapWasDragged) {
+      mapWasDragged = false;
+      return;
+    }
     const frame = riskAt(simMs);
     if (!frame || !basemap?.bbox) return;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
-    const x = (event.clientX - rect.left) / rect.width * canvas.width;
-    const y = (event.clientY - rect.top) / rect.height * canvas.height;
+    const x = (event.clientX - rect.left) / rect.width * canvas.width - mapPanX;
+    const y = (event.clientY - rect.top) / rect.height * canvas.height - mapPanY;
     const lon = basemap.bbox.min_lon + x / canvas.width *
       (basemap.bbox.max_lon - basemap.bbox.min_lon);
     const lat = basemap.bbox.max_lat - y / canvas.height *
@@ -1745,12 +1902,12 @@
     debugPanel.hidden = viewMode !== "engineering";
     if (gateBadges) gateBadges.hidden = viewMode !== "engineering";
     toggleDebugBtn.textContent = viewMode === "engineering"
-      ? (previousNonEngineeringMode === "research" ? "Research Validation" : "Navigation Simulation")
-      : "Engineering Debug";
+      ? (previousNonEngineeringMode === "research" ? "研究验证" : "航行仿真")
+      : "工程调试";
     if (modeBadge) {
       modeBadge.textContent = viewMode === "engineering"
-        ? bundle?.replay?.scenario_mode || "unknown_mode"
-        : "navigation_simulation";
+        ? "工程调试"
+        : viewMode === "research" ? "研究验证" : "航行仿真";
     }
     document.body.dataset.mode = viewMode;
   }
@@ -1765,7 +1922,10 @@
     });
 
   async function start() {
+    initializePanelControls();
+    initializeSidebarToggle();
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
+    renderPipelineOverview(bundle);
     const sidecar = window.RISK_EXPLANATION_SIDECAR ?? bundle.risk_explanation ?? null;
     riskExplanationInspection = riskExplanationTools.inspect(sidecar, bundle);
     riskExplanationRevision += 1;
@@ -1804,7 +1964,7 @@
     document.getElementById("gate-l1").textContent = `L1 ${bundle.gates.status}`;
     document.getElementById("gate-l2").textContent = `L2 ${bundle.gates.l2_status}`;
     document.getElementById("gate-loop").textContent =
-      `preflight ${bundle.gates.status} / ${bundle.gates.l2_status || "not-run"}`;
+          `预检 ${bundle.gates.status} / ${bundle.gates.l2_status || "未运行"}`;
     if (basemap) {
       canvas.width = basemap.width;
       canvas.height = basemap.height;

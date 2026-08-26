@@ -18,6 +18,8 @@ Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_R
 
 # Work Package D: Display / Visualization / Presentation
 
+面向演示人员的使用说明：[USER_GUIDE.zh-CN.md](USER_GUIDE.zh-CN.md)
+
 ## Risk Explanation optional consumer（2026-08-23 21:51 +08:00）
 
 D 已实现可选 `risk-explanation.v1` consumer。Winter Viewer 点击 risk cell 后，Risk Level、
