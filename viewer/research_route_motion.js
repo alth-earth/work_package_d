@@ -2,8 +2,11 @@
  *
  * The normal Viewer path remains route_smoothing.js + the published timeline.
  * This helper is used only after the operator explicitly enables the bundled
- * C research sidecar. Invalid identity, status, coordinates, or ETA ordering
- * returns null so app.js can fall back to the existing timeline motion.
+ * C research sidecar. Invalid qualification evidence, identity, status,
+ * coordinates, or ETA ordering returns null so app.js can fall back to the
+ * existing timeline motion. The exporter is authoritative for canonical
+ * digest verification; this browser consumer checks that the verified digest
+ * is present rather than reimplementing cryptography in the Viewer.
  */
 (() => {
   "use strict";
@@ -56,6 +59,43 @@
     if (sidecar.research_only !== true || sidecar.status !== "ACCEPTED" ||
         sidecar.applied !== true) {
       return { valid: false, reason: sidecar.fallback_reason || "sidecar_not_accepted" };
+    }
+    if (sidecar.research_eligible !== true) {
+      return { valid: false, reason: "research_gate_not_passed" };
+    }
+    const validation = sidecar.validation;
+    if (!validation || typeof validation !== "object" ||
+        validation.research_gate_passed !== true) {
+      return { valid: false, reason: "research_gate_not_passed" };
+    }
+    const requiredEvidence = [
+      "risk_rechecked",
+      "hard_mask_rechecked",
+      "coverage_complete",
+      "eta_recomputed",
+      "speed_checked",
+    ];
+    if (requiredEvidence.some((name) => validation[name] !== true)) {
+      return { valid: false, reason: "research_gate_incomplete" };
+    }
+    if (typeof sidecar.sidecar_digest !== "string" ||
+        !/^[0-9a-f]{64}$/i.test(sidecar.sidecar_digest)) {
+      return { valid: false, reason: "missing_sidecar_digest" };
+    }
+    const routeRevision = route?.revision;
+    if (sidecar.plan_revision !== null && sidecar.plan_revision !== undefined &&
+        routeRevision !== null && routeRevision !== undefined &&
+        sidecar.plan_revision !== routeRevision) {
+      return { valid: false, reason: "plan_revision_mismatch" };
+    }
+    const routeAdoption = route?.effective_adoption_time;
+    if (sidecar.adoption_time && routeAdoption) {
+      const sidecarAdoptionMs = etaMs(sidecar.adoption_time);
+      const routeAdoptionMs = etaMs(routeAdoption);
+      if (sidecarAdoptionMs === null || routeAdoptionMs === null ||
+          sidecarAdoptionMs !== routeAdoptionMs) {
+        return { valid: false, reason: "adoption_time_mismatch" };
+      }
     }
     if (!sameRoute(route, sidecar)) {
       return { valid: false, reason: "authoritative_route_mismatch" };

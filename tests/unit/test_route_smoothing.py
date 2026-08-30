@@ -115,8 +115,20 @@ const sidecar = {{
   route_id: "route-1",
   raw_route_digest: "a".repeat(64),
   research_only: true,
+  research_eligible: true,
   status: "ACCEPTED",
   applied: true,
+  plan_revision: null,
+  adoption_time: null,
+  validation: {{
+    research_gate_passed: true,
+    risk_rechecked: true,
+    hard_mask_rechecked: true,
+    coverage_complete: true,
+    eta_recomputed: true,
+    speed_checked: true,
+  }},
+  sidecar_digest: "b".repeat(64),
   authoritative_route: {{
     route_digest: "a".repeat(64),
     waypoints: route.waypoints,
@@ -138,6 +150,13 @@ if (reader.inspect(sidecar, {{...route, route_id: "other"}}).valid) process.exit
 const fallback = {{...sidecar, status: "FALLBACK", applied: false, fallback_reason: "rejected"}};
 if (reader.inspect(fallback, route).valid ||
     reader.buildPath(fallback, route, 0) !== null) process.exit(6);
+const unqualified = {{...sidecar, research_eligible: false}};
+if (reader.inspect(unqualified, route).reason !== "research_gate_not_passed") process.exit(7);
+const revisionRoute = {{...route, revision: 1, effective_adoption_time: "2026-01-01T00:00:00Z"}};
+const revisionDrift = {{...sidecar, plan_revision: 2}};
+if (reader.inspect(revisionDrift, revisionRoute).reason !== "plan_revision_mismatch") process.exit(8);
+const adoptionDrift = {{...sidecar, adoption_time: "2026-01-01T00:01:00Z"}};
+if (reader.inspect(adoptionDrift, revisionRoute).reason !== "adoption_time_mismatch") process.exit(9);
 """.replace("__SCRIPT_PATH__", script_path).replace("{{", "{").replace("}}", "}")
     result = subprocess.run([node, "-e", source], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr or result.stdout
