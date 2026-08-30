@@ -122,7 +122,7 @@ def test_curve_is_primary_route_layer_and_raw_polyline_is_optional() -> None:
     app = (VIEWER / "app.js").read_text(encoding="utf-8")
 
     assert 'id="layer-route-polyline" type="checkbox" />' in html
-    assert "原始折线路径（默认隐藏）" in html
+    assert "原始权威路径（默认隐藏）" in html
     assert "routePolyline: false" in app
     assert "ROUTE_CURVE_COLOR = \"#49a9ed\"" in app
     assert "ROUTE_POLYLINE_COLOR" in app
