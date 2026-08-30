@@ -12,10 +12,15 @@
   const POLICY = "authoritative_waypoints_constrained_local_cubic_bspline_display_only";
   const SCHEMA_VERSION = "presentation.route-smoothing.v1";
   const DEFAULT_CONFIG = Object.freeze({
-    nominalRadiusM: 2000,
-    maxDeviationM: 5000,
+    // These are display-scale parameters, not a vessel manoeuvring model.
+    // The previous 2 km value was visually sub-pixel on the 40 km grid legs
+    // in the frozen viewer bundle, so a presentation-scale radius is used
+    // while keeping the same fail-closed geometry checks. This is deliberately
+    // not a vessel manoeuvring radius or a production safety limit.
+    nominalRadiusM: 40000,
+    maxDeviationM: 20000,
     cornerAngleThresholdDeg: 8,
-    maxTrimFraction: 0.32,
+    maxTrimFraction: 0.48,
     minimumTrimM: 250,
     maximumOverlapFraction: 0.8,
     curvatureTolerance: 0.75,

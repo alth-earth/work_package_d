@@ -6,7 +6,7 @@ Content Status:
 Document Role: CANONICAL
 Scope: work_package_d viewer implementation and runtime
 Branch: research-validation-system
-Last Verified: 2026-08-23
+Last Verified: 2026-08-31 00:19 +08:00
 ---
 
 > **路径约定（2026-08-24）**：本文件中 `${ARCTIC_ROUTE_ROOT}` 为工作区根占位符，
@@ -140,9 +140,15 @@ Viewer 明确回退为既有 authoritative 单路线。`DATA_UNAVAILABLE` 仍由
 
 Presentation Mode 仍逐 cell 消费 formal presentation bundle，但使用像素对齐
 和较柔和 alpha，避免相邻透明 cell 的抗锯齿接缝；没有空间插值。Engineering
-Debug 显示原始 cell 边界。路线绘制使用同一 authoritative waypoint 折线的线性
-densification 和 round join，不产生新的弯曲几何。船图标中心仍由后端 ETA 与
+Debug 显示原始 cell 边界。路线绘制使用同一 authoritative waypoint 折线的展示-only
+局部受约束 cubic B-spline；当前展示尺度专门放大到可见范围，但不产生新的权威路线
+几何。若几何检查失败则回退 linear densification。船图标中心仍由后端 ETA 与
 Simulation Clock 决定，朝向来自 active route segment bearing。
+
+Replay Viewer 和旧版 `web/demo_viewer.html` 都只改变路线线条的 paint geometry。原始
+waypoints、route metrics、ETA、active/pending/adopted 语义、船位和船头方向不读取平滑
+后的点；该效果不构成船舶操纵性、安全走廊或生产资格证明。旧版 viewer 因为必须单文件
+离线运行，在内联脚本中保留了同一局部 cubic path 的紧凑实现。
 
 无 server 单文件方式：
 

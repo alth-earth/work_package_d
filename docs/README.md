@@ -7,7 +7,7 @@ Document Role: CANONICAL
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: research-validation-system
-Last Verified: 2026-08-30 23:38 +08:00
+Last Verified: 2026-08-31 00:19 +08:00
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -213,6 +213,16 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
   route segment/原始 track；因此该功能不是船舶操纵性、安全走廊或生产资格证明；
 - Orchestrator 的 `presentation.viewer-presentation.v1` 明确声明该展示策略及原始折线回退。
 
+### 可见曲线修正（2026-08-31 00:19 +08:00）
+
+- 旧的 `2,000 m` 展示尺度在当前约 `40 km` 网格边上只有近似亚像素的拐角偏离，
+  因此 Replay Viewer 的 display-only 参数调整为 `40,000 m` nominal display scale、
+  `20,000 m` 最大显示偏离和 `0.48` 最大切角比例；这些数值只控制画面，不是船舶操纵
+  半径、航行安全限值或生产资格参数。
+- `web/demo_viewer.html` 旧版独立入口也改为局部 cubic `path` 绘制，并保留无效/短边/
+  相邻转角回退思路；其真实 waypoints、ETA、指标和路线 authority 不变。
+- 本次只验证静态/Node/聚焦单元行为，未进行浏览器截图、真实 replay 或船舶可执行性验证。
+
 ### How to build artifacts (orchestrator side)
 
 ```bash
@@ -333,7 +343,8 @@ Frozen loader 同时从发布制品读取 `scenario_mode`（RunContext）与
   `scripts/temporal_semantics_audit.py`：Temporal Semantics 机器审计；
 - `web/demo_viewer.html`：本地只读 viewer（localhost，无 CDN，离线；真实经纬度
   地图、风险/数据质量图层、Compare 模式、Live 按钮与进度反馈、Route Geospatial
-  Integrity 独立 badge）；
+  Integrity 独立 badge）；路线使用 display-only 局部 cubic path，原始 waypoints 仍是
+  authority；
 - `src/arctic_route_display/demo/spatial.py`：冻结风险帧 → 紧凑空间展示模型；
 - `src/arctic_route_display/demo/errors.py`：demo 层共享验证异常；
 - `configs/demo_frozen_sources.json`：frozen A/B 与 live smoke 来源配置；

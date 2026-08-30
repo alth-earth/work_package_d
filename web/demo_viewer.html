@@ -559,15 +559,17 @@
         if (r) routes.push({ route: r, color, dash: "", label: current.phase });
       }
       routes.forEach(item => {
-        const pts = item.route.waypoints.map(w => project(w.longitude, w.latitude));
-        const poly = document.createElementNS(NS, "polyline");
-        poly.setAttribute("points", pts.map(p => p[0].toFixed(2) + "," + p[1].toFixed(2)).join(" "));
-        poly.setAttribute("fill", "none");
-        poly.setAttribute("stroke", item.color);
-        poly.setAttribute("stroke-width", item.label === "initial" ? "2" : "2.6");
-        poly.setAttribute("stroke-dasharray", item.dash);
-        poly.setAttribute("stroke-linejoin", "round");
-        svg.appendChild(poly);
+        const path = document.createElementNS(NS, "path");
+        path.setAttribute("d", smoothDisplayRoutePath(item.route.waypoints, project));
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", item.color);
+        path.setAttribute("stroke-width", item.label === "initial" ? "2" : "2.6");
+        path.setAttribute("stroke-dasharray", item.dash);
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        path.setAttribute("data-geometry", "display-only-local-cubic-bspline");
+        path.setAttribute("data-authority", "authoritative-waypoints-unchanged");
+        svg.appendChild(path);
       });
 
       const anyRoute = routes[0] && routes[0].route;
@@ -592,9 +594,89 @@
       renderLegend(s, frame);
       document.getElementById("map-note").textContent =
         "坐标来源：冻结风险帧真实经纬度（frame " + (frame ? frame.valid_time : "—") +
-        "）；路线来自冻结/live 制品的真实 waypoints，未做任何位置修饰；" +
+        "）；路线来自冻结/live 制品的真实 waypoints；线条使用展示-only 局部三次曲线，" +
+        "仅改变 paint geometry，不修改航点、ETA、指标或路线 authority；" +
         "格子与路线共用同一等比地理投影（非独立拉伸），经 Route Geospatial Integrity 审计。" +
         (s.spatial ? "" : " 当前场景没有 spatial 帧，仅绘制路线。");
+    }
+
+    // The legacy standalone viewer has no external script dependency, so it
+    // keeps a compact equivalent of the D Viewer display-only renderer here.
+    // Each accepted corner is one clamped cubic B-spline segment (represented
+    // by its four-control-point cubic Bezier basis). Raw waypoints remain the
+    // only source for route metrics and all other route semantics.
+    function smoothDisplayRoutePath(waypoints, project) {
+      const raw = Array.isArray(waypoints)
+        ? waypoints.map(w => project(w.longitude, w.latitude))
+        : [];
+      const pointText = p => p[0].toFixed(2) + " " + p[1].toFixed(2);
+      if (raw.length < 2 || raw.some(p => !Number.isFinite(p[0]) || !Number.isFinite(p[1]))) {
+        return raw.length ? "M " + pointText(raw[0]) : "";
+      }
+      const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+      const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+      const scalePoint = (a, k) => [a[0] * k, a[1] * k];
+      const norm = a => Math.hypot(a[0], a[1]);
+      const unit = a => {
+        const length = norm(a);
+        return length > 1e-6 ? scalePoint(a, 1 / length) : null;
+      };
+      const angle = (a, b) => Math.acos(Math.max(-1, Math.min(1,
+        (a[0] * b[0] + a[1] * b[1]) / (norm(a) * norm(b)))));
+      const candidates = [];
+      for (let i = 1; i < raw.length - 1; i += 1) {
+        const incomingVector = sub(raw[i], raw[i - 1]);
+        const outgoingVector = sub(raw[i + 1], raw[i]);
+        const incoming = unit(incomingVector);
+        const outgoing = unit(outgoingVector);
+        if (!incoming || !outgoing) continue;
+        const turn = angle(incoming, outgoing);
+        const trim = Math.min(
+          Math.min(norm(incomingVector), norm(outgoingVector)) * 0.42,
+          28,
+        );
+        if (turn < 8 * Math.PI / 180 || turn >= 179 * Math.PI / 180 || trim < 2) continue;
+        candidates.push({ i, turn, trim, incoming, outgoing });
+      }
+      const rejected = new Set();
+      for (let i = 0; i < candidates.length - 1; i += 1) {
+        const left = candidates[i], right = candidates[i + 1];
+        if (right.i === left.i + 1 &&
+            left.trim + right.trim > norm(sub(raw[right.i], raw[left.i])) * 0.8) {
+          rejected.add(left.i);
+          rejected.add(right.i);
+        }
+      }
+      const curves = new Map();
+      for (const candidate of candidates) {
+        if (rejected.has(candidate.i)) continue;
+        const vertex = raw[candidate.i];
+        const entry = sub(vertex, scalePoint(candidate.incoming, candidate.trim));
+        const exit = add(vertex, scalePoint(candidate.outgoing, candidate.trim));
+        const tangentRadius = candidate.trim / Math.tan(candidate.turn / 2);
+        const handle = (4 / 3) * tangentRadius * Math.tan(candidate.turn / 4);
+        if (!Number.isFinite(handle) || handle <= 0) continue;
+        curves.set(candidate.i, {
+          entry,
+          exit,
+          c1: add(entry, scalePoint(candidate.incoming, handle)),
+          c2: sub(exit, scalePoint(candidate.outgoing, handle)),
+        });
+      }
+      const commands = ["M " + pointText(raw[0])];
+      for (let i = 1; i < raw.length - 1; i += 1) {
+        const curve = curves.get(i);
+        if (!curve) {
+          commands.push("L " + pointText(raw[i]));
+          continue;
+        }
+        commands.push(
+          "L " + pointText(curve.entry),
+          "C " + pointText(curve.c1) + " " + pointText(curve.c2) + " " + pointText(curve.exit),
+        );
+      }
+      commands.push("L " + pointText(raw[raw.length - 1]));
+      return commands.join(" ");
     }
 
     function routeByCurrent(s, phase) {
