@@ -7,7 +7,7 @@ Document Role: CANONICAL
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: research-validation-system
-Last Verified: 2026-08-23
+Last Verified: 2026-08-30 23:38 +08:00
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -152,15 +152,16 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
 
 - Presentation Mode uses softer exact-cell risk rendering and pixel-aligned
   fills; Engineering Debug retains the raw cell grid and diagnostics.
-- Route drawing applies only display-side linear densification and round joins;
-  authoritative waypoints, ETA, adoption, and completed-track semantics do not
-  change.
+- Route drawing applies display-side constrained local cubic B-spline geometry
+  with linear densification as its fail-closed fallback; authoritative
+  waypoints, ETA, adoption, and completed-track semantics do not change.
 - The white vessel dot is now a small top-down ship icon. Its position remains
   backend ETA + Simulation Clock; its rotation is derived from the active
   authoritative route segment bearing. Pixel speed remains absent.
 - The Orchestrator bundle declares `presentation.viewer-presentation.v1`:
   exact risk cells/no interpolation, separate fail-closed hard reasons,
-  display-only route densification, and ETA-based vessel rendering.
+  display-only route smoothing with authoritative-polyline fallback, and
+  ETA-based vessel rendering.
 - A real Firefox smoke after the polish rechecked horizon availability,
   continuous movement, pending/adopted routes, layer toggles, and both modes;
   console errors/warnings were zero.
@@ -202,6 +203,16 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
   no synthetic environmental layer is shown;
 - D tests: 58 passed; Ruff and JS syntax are clean.
 
+## Route display smoothing（2026-08-30 23:38 +08:00）
+
+- Replay Viewer 对计划路线启用展示-only 的局部受约束三次 B 样条绘制：使用局部米制坐标、
+  入射/出射方向、有限显示偏离和 fail-closed 回退，降低航点处的锐角折线观感；
+- 原始 `routes.waypoints`、候选 geometry、ETA、route metrics、active/pending/adopted
+  语义和 C→D 合同均不改；曲线只存在于 Canvas paint coordinates；
+- 船位、船头方向和 completed track 不使用平滑后的点，仍分别来自 timeline/原始 active
+  route segment/原始 track；因此该功能不是船舶操纵性、安全走廊或生产资格证明；
+- Orchestrator 的 `presentation.viewer-presentation.v1` 明确声明该展示策略及原始折线回退。
+
 ### How to build artifacts (orchestrator side)
 
 ```bash
@@ -223,8 +234,9 @@ cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 - REPLAN_DECIDED != REPLAN_ADOPTED (pending route shown separately)
 - Completed track is append-only
 - Replan only changes future route
-- Viewer does not invent speed or bend route geometry; display densification is
-  collinear and presentation-only.
+- Viewer does not invent speed, ETA, risk or route authority. Planned route
+  lines may use constrained local cubic B-spline paint geometry; this is
+  display-only and falls back to collinear authoritative-polyline densification.
 
 ## Display Layer（snapshot / coverage / demo）
 

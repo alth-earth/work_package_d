@@ -6,7 +6,7 @@ Content Status:
 Document Role: SUPPORTING
 Scope: work package D handoff
 Branch: research-validation-system
-Last Verified: 2026-08-23
+Last Verified: 2026-08-30 23:38 +08:00
 ---
 
 # 工作包 D 交接说明
@@ -48,13 +48,13 @@ D 0.1.0 的 Legacy Display 只读消费 C 顶层
   Completed Track 可分别开关。
 - 10:30 +6h 的实际 frame 是 16:00（+5h30m，floor）；10:30 +12h/+24h
   因 requested valid time 超出 22:00 frame 范围而 UNAVAILABLE，不复用旧 frame。
-- Presentation polish（2026-08-21）：风险填充使用 presentation-only 的
-  pixel-aligned exact cells，Debug 保留 cell grid；路线只做 collinear display
-  densification/round join；船改为按 active segment bearing 旋转的俯视图标，
-  位置和物理速度合同不变。
+- Presentation polish（2026-08-21，路线平滑补充 2026-08-30 23:38）：风险填充使用
+  presentation-only 的 pixel-aligned exact cells，Debug 保留 cell grid；计划路线使用
+  display-only 局部受约束 cubic B-spline，失败回退到 collinear densification；船改为按
+  active segment bearing 旋转的俯视图标，位置和物理速度合同不变。
 - Bundle 的 `presentation.viewer-presentation.v1` 由 Orchestrator 声明绘制
-  边界：risk/hard 不插值，route densification 不改变 authoritative semantics，
-  ship position 来自 timeline ETA。
+  边界：risk/hard 不插值，route display smoothing 不改变 authoritative semantics，
+  ship position 来自 timeline ETA；曲线不提供安全或操纵性资格。
 
 真实 Firefox E2E：页面/GEBCO/路线/船/risk overlay 均可见；Play/Pause、scrub、
 1x/2x/4x/8x 已操作；10:00/10:30/11:00 船位为

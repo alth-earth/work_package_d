@@ -147,6 +147,8 @@
   if (!candidateTools) throw new Error("research candidate validator is not loaded");
   const riskExplanationTools = window.ArcticRiskExplanation;
   if (!riskExplanationTools) throw new Error("risk explanation validator is not loaded");
+  const routeSmoothingTools = window.ArcticRouteSmoothing;
+  if (!routeSmoothingTools) throw new Error("route smoothing renderer is not loaded");
   const { ROUTE_LAYERS } = candidateTools;
   const CANDIDATE_STYLES = {
     fastest: { color: "#f0b35b", dash: [9, 5], width: 2.4 },
@@ -1209,8 +1211,8 @@
   }
 
   // Display-only densification keeps every point on the authoritative straight
-  // segment. It improves anti-aliasing/line joins without bending the route or
-  // changing ETA, ship physics, or hard-cell semantics.
+  // segment. It remains the fail-closed fallback for route smoothing and is
+  // used for physical history/trails, whose geometry must not be rounded.
   function densifyPoints(points, subdivisions = 4) {
     if (points.length < 2 || subdivisions < 2) return points;
     const result = [];
@@ -1231,6 +1233,13 @@
     }
     result.push(points[points.length - 1]);
     return result;
+  }
+
+  // The smoother returns paint coordinates only. Raw waypoints remain the
+  // source for ETA, active revision, vessel position, and vessel heading.
+  function routeDisplayPoints(points) {
+    const result = routeSmoothingTools.smoothDisplayPoints(points);
+    return result.applied ? result.points : densifyPoints(points);
   }
 
   function bearingDegrees(start, end) {
@@ -1762,12 +1771,20 @@
     ctx.restore();
   }
 
-  function drawPath(points, color, width, dash, filterFutureMs = null, alpha = 1) {
+  function drawPath(
+    points,
+    color,
+    width,
+    dash,
+    filterFutureMs = null,
+    alpha = 1,
+    smoothRoute = false,
+  ) {
     const visible = filterFutureMs === null ? points : points.filter(
       (point) => !point.eta || isoToMs(point.eta) - startMs >= filterFutureMs
     );
     if (visible.length < 2) return;
-    const rendered = densifyPoints(visible);
+    const rendered = smoothRoute ? routeDisplayPoints(visible) : densifyPoints(visible);
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = color;
@@ -1797,7 +1814,8 @@
         style.width + (isHighlighted ? 1.8 : 0),
         style.dash,
         null,
-        isHighlighted ? 0.96 : 0.48
+        isHighlighted ? 0.96 : 0.48,
+        true,
       );
     }
   }
@@ -1810,8 +1828,9 @@
     };
   }
 
-  function drawMiniPath(points, color, width, dash = [], alpha = 1) {
+  function drawMiniPath(points, color, width, dash = [], alpha = 1, smoothRoute = false) {
     if (!miniCtx || !points || points.length < 2) return;
+    const rendered = smoothRoute ? routeDisplayPoints(points) : points;
     miniCtx.save();
     miniCtx.globalAlpha = alpha;
     miniCtx.strokeStyle = color;
@@ -1820,7 +1839,7 @@
     miniCtx.lineCap = "round";
     miniCtx.setLineDash(dash);
     miniCtx.beginPath();
-    points.forEach((point, index) => {
+    rendered.forEach((point, index) => {
       const geo = miniProject(point.lon ?? point.longitude, point.lat ?? point.latitude);
       if (index === 0) miniCtx.moveTo(geo.x, geo.y);
       else miniCtx.lineTo(geo.x, geo.y);
@@ -1845,13 +1864,13 @@
 
     const active = routeFor(state.active);
     if (active?.waypoints?.length > 1) {
-      drawMiniPath(active.waypoints, "#74d7ff", 2.3, [], 0.9);
+      drawMiniPath(active.waypoints, "#74d7ff", 2.3, [], 0.9, true);
     }
     if (state.supersededRoute?.length > 1) {
-      drawMiniPath(state.supersededRoute, "#778795", 1.4, [3, 4], 0.8);
+      drawMiniPath(state.supersededRoute, "#778795", 1.4, [3, 4], 0.8, true);
     }
     if (state.pendingRoute?.route?.length > 1) {
-      drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88);
+      drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88, true);
     }
     if (state.track?.length > 1) {
       drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94);
@@ -1900,13 +1919,14 @@
       drawPath(s.trail, "#d7e6ed", 2.2, [], null, presentationMode ? 0.72 : 0.45);
     }
 
-    // Candidate geometry is rendered exactly as published by the presentation
-    // sidecar. The local highlight changes paint only: C's selected_candidate_id,
-    // ranking, geometry, risk metrics and ETA remain untouched.
+    // Candidate geometry is consumed exactly as published, then optionally
+    // converted to display-only paint coordinates. The local highlight and
+    // smoothing change paint only: C's selected_candidate_id, ranking,
+    // geometry, risk metrics and ETA remain untouched.
     drawResearchCandidateRoutes();
 
     if (layers.routes && s.supersededRoute && s.supersededRoute.length > 1) {
-      drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs);
+      drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs, 1, true);
     }
 
     if (layers.routes && active) {
@@ -1921,7 +1941,8 @@
           3.5 + pulse * 0.9,
           [],
           null,
-          0.88 + pulse * 0.12
+          0.88 + pulse * 0.12,
+          true,
         );
       }
     }
@@ -1931,7 +1952,15 @@
     }
 
     if (layers.routes && s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {
-      drawPath(s.pendingRoute.route, "#f2b134", 2.5, [8, 6], null, pendingRouteAlpha(s));
+      drawPath(
+        s.pendingRoute.route,
+        "#f2b134",
+        2.5,
+        [8, 6],
+        null,
+        pendingRouteAlpha(s),
+        true,
+      );
     }
 
     if (layers.routes && s.segment && s.segment.start_eta && s.segment.end_eta && active) {
