@@ -142,13 +142,17 @@ Presentation Mode 仍逐 cell 消费 formal presentation bundle，但使用像�
 和较柔和 alpha，避免相邻透明 cell 的抗锯齿接缝；没有空间插值。Engineering
 Debug 显示原始 cell 边界。路线绘制使用同一 authoritative waypoint 折线的展示-only
 局部受约束 cubic B-spline；当前展示尺度专门放大到可见范围，但不产生新的权威路线
-几何。若几何检查失败则回退 linear densification。船图标中心仍由后端 ETA 与
-Simulation Clock 决定，朝向来自 active route segment bearing。
+几何。若几何检查失败则回退 linear densification。Viewer 仿真船位、航向、近期轨迹和
+completed-track 的绘制使用同一条平滑曲线，原始 waypoint ETA 作为时间锚点；曲线路径
+无效或与 timeline 偏差超过保护阈值时回退原始 timeline。路线 authority、route metrics、
+ETA、active/pending/adopted 事件和 C→D 合同不变。图层控件默认显示蓝色曲线路径，并默认
+隐藏白色原始折线路径；后者可按需打开作对照。
 
-Replay Viewer 和旧版 `web/demo_viewer.html` 都只改变路线线条的 paint geometry。原始
-waypoints、route metrics、ETA、active/pending/adopted 语义、船位和船头方向不读取平滑
-后的点；该效果不构成船舶操纵性、安全走廊或生产资格证明。旧版 viewer 因为必须单文件
-离线运行，在内联脚本中保留了同一局部 cubic path 的紧凑实现。
+Replay Viewer 和旧版 `web/demo_viewer.html` 都只改变路线线条的 paint geometry；Replay
+Viewer 额外让仿真船沿该展示曲线移动，但不把曲线写回 route artifact，也不改变原始
+waypoints、route metrics、ETA 或 active/pending/adopted 语义。该效果不构成船舶操纵性、
+安全走廊或生产资格证明。旧版 viewer 因为必须单文件离线运行，在内联脚本中保留了同一
+局部 cubic path 的紧凑实现。
 
 无 server 单文件方式：
 
@@ -168,7 +172,7 @@ waypoints、route metrics、ETA、active/pending/adopted 语义、船位和船�
 ```text
 船必须动
 Simulation Clock -> vessel motion
-ship position = route waypoint ETA + simulation_time
+ship position = route waypoint ETA + simulation_time -> accepted display curve
 snapshot cadence != render cadence
 REPLAN_DECIDED != REPLAN_ADOPTED
 pending route != authoritative route

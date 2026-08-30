@@ -106,10 +106,30 @@ def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
     app = (VIEWER / "app.js").read_text(encoding="utf-8")
     assert "routeDisplayPoints" in app
     assert "smoothRoute = false" in app
+    assert "routeMotionPointAt" in app
+    assert "routeMotionPaintPointsAt(active, simMs)" in app
+    assert "linearVesselPointAt" in app
+    assert "activeRevisionAt" in app
     assert "drawPath(s.trail" in app
-    assert "drawPath(s.track" in app
+    assert 'drawPath(s.track, "#5cc47a", 3, [], null, 1, true)' in app
     assert "shipHeading(s, active)" in app
     assert "vesselPointAt(ms)" in app
+
+
+def test_curve_is_primary_route_layer_and_raw_polyline_is_optional() -> None:
+    html = (VIEWER / "index.html").read_text(encoding="utf-8")
+    stylesheet = (VIEWER / "style.css").read_text(encoding="utf-8")
+    app = (VIEWER / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="layer-route-polyline" type="checkbox" />' in html
+    assert "原始折线路径（默认隐藏）" in html
+    assert "routePolyline: false" in app
+    assert "ROUTE_CURVE_COLOR = \"#49a9ed\"" in app
+    assert "ROUTE_POLYLINE_COLOR" in app
+    assert ".sw-active" in stylesheet
+    assert "background: #49a9ed" in stylesheet
+    assert ".sw-route-polyline" in stylesheet
+    assert "drawRoutePolyline" in app
 
 
 def test_display_smoother_passes_synthetic_geometry_and_fail_closed_cases() -> None:

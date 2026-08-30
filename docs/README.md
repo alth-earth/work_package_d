@@ -139,8 +139,10 @@ The current D mainline is browser-verified on the real
   `REPLAN_DECIDED` leaves the active route unchanged until `REPLAN_ADOPTED`;
 - Presentation Mode and Engineering Debug Mode are separated by the toggle.
 - Presentation layers can be toggled independently: Risk, Hard/Availability,
-  Routes, and Completed Track. Presentation Mode starts with engineering text
-  hidden; Debug Mode exposes the full timing and adoption diagnostics.
+  Routes, original route polyline, and Completed Track. The original route
+  polyline is off by default; the blue smoothed route is the primary route
+  layer. Presentation Mode starts with engineering text hidden; Debug Mode
+  exposes the full timing and adoption diagnostics.
 
 Browser evidence is kept outside Git under
 `${ARCTIC_ROUTE_ROOT}/.runtime/viewer-proof/`. Verified environment: Firefox on
@@ -203,14 +205,18 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
   no synthetic environmental layer is shown;
 - D tests: 58 passed; Ruff and JS syntax are clean.
 
-## Route display smoothing（2026-08-30 23:38 +08:00）
+## Route display smoothing（2026-08-31 00:56 +08:00）
 
 - Replay Viewer 对计划路线启用展示-only 的局部受约束三次 B 样条绘制：使用局部米制坐标、
   入射/出射方向、有限显示偏离和 fail-closed 回退，降低航点处的锐角折线观感；
 - 原始 `routes.waypoints`、候选 geometry、ETA、route metrics、active/pending/adopted
-  语义和 C→D 合同均不改；曲线只存在于 Canvas paint coordinates；
-- 船位、船头方向和 completed track 不使用平滑后的点，仍分别来自 timeline/原始 active
-  route segment/原始 track；因此该功能不是船舶操纵性、安全走廊或生产资格证明；
+  语义和 C→D 合同均不改；曲线只存在于 Canvas paint coordinates 和 Viewer 本地仿真呈现状态；
+- Viewer 仿真中的船位、船头方向、近期轨迹和 completed-track 的绘制跟随同一条平滑曲线；
+  原始 waypoint ETA 作为时间锚点，曲线无法安全构建或与 timeline 偏差超过保护阈值时回退
+  timeline。原始 route waypoint、active revision、route metrics、ETA、adoption 事件和
+  C→D 合同仍保持权威，不被回写；因此该功能不是船舶操纵性、安全走廊或生产资格证明；
+- 图例和图层控件明确区分蓝色平滑曲线与白色原始折线；原始折线默认隐藏，可按需打开做
+  几何对照；
 - Orchestrator 的 `presentation.viewer-presentation.v1` 明确声明该展示策略及原始折线回退。
 
 ### 可见曲线修正（2026-08-31 00:19 +08:00）
@@ -221,7 +227,8 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
   半径、航行安全限值或生产资格参数。
 - `web/demo_viewer.html` 旧版独立入口也改为局部 cubic `path` 绘制，并保留无效/短边/
   相邻转角回退思路；其真实 waypoints、ETA、指标和路线 authority 不变。
-- 本次只验证静态/Node/聚焦单元行为，未进行浏览器截图、真实 replay 或船舶可执行性验证。
+- 本次验证包含静态/Node/聚焦单元行为和离线 VM 运动检查；未进行浏览器截图、真实 replay
+  或船舶可执行性验证。
 
 ### How to build artifacts (orchestrator side)
 

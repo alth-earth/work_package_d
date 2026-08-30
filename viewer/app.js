@@ -52,6 +52,7 @@
   const layerRisk = document.getElementById("layer-risk");
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
+  const layerRoutePolyline = document.getElementById("layer-route-polyline");
   const layerTrack = document.getElementById("layer-track");
   const layerNavigation = document.getElementById("layer-navigation");
   const gateBadges = document.querySelector(".badges");
@@ -109,6 +110,7 @@
   let mapDrag = null;
   let mapWasDragged = false;
   let voyageProgress = null;
+  let routeMotionCache = new WeakMap();
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
@@ -116,13 +118,24 @@
   const SINGLE_ROUTE_FALLBACK = "SINGLE_ROUTE_FALLBACK";
   const EXISTING_AUTHORITATIVE_REPLAY_ACTIVE = "Existing authoritative replay remains active";
   const DISPLAY_ONLY_COMPARISON_SELECTION = "display-only comparison selection";
-  const layers = { risk: true, hard: true, routes: true, track: true, navigation: true };
+  const layers = {
+    risk: true,
+    hard: true,
+    routes: true,
+    routePolyline: false,
+    track: true,
+    navigation: true,
+  };
   const TRAIL_WINDOW_MS = 2 * 60 * 60 * 1000;
   const PENDING_FADE_MS = 30 * 60 * 1000;
   const ADOPTION_PULSE_MS = 60 * 60 * 1000;
   const MIN_MAP_ZOOM = 0.75;
   const MAX_MAP_ZOOM = 4.5;
   const FOLLOW_MAP_ZOOM = 2.15;
+  const ROUTE_CURVE_COLOR = "#49a9ed";
+  const ROUTE_POLYLINE_COLOR = "rgba(245, 248, 251, 0.78)";
+  const CURVE_HEADING_LOOKAHEAD_MS = 60 * 1000;
+  const MAX_CURVE_MOTION_GAP_KM = 25;
 
   const RISK_COLORS = {
     1: "#55c878",
@@ -153,7 +166,7 @@
   const CANDIDATE_STYLES = {
     fastest: { color: "#f0b35b", dash: [9, 5], width: 2.4 },
     low_risk: { color: "#62d6a7", dash: [3, 5], width: 2.6 },
-    recommended: { color: "#f5f8fb", dash: [], width: 3.1 },
+    recommended: { color: ROUTE_CURVE_COLOR, dash: [], width: 3.1 },
   };
 
   function renderPipelineOverview(value) {
@@ -1211,8 +1224,9 @@
   }
 
   // Display-only densification keeps every point on the authoritative straight
-  // segment. It remains the fail-closed fallback for route smoothing and is
-  // used for physical history/trails, whose geometry must not be rounded.
+  // segment. It remains the fail-closed fallback for route smoothing; the
+  // Viewer motion layer uses the accepted display curve and falls back here
+  // only when the curve cannot be built safely.
   function densifyPoints(points, subdivisions = 4) {
     if (points.length < 2 || subdivisions < 2) return points;
     const result = [];
@@ -1235,11 +1249,180 @@
     return result;
   }
 
-  // The smoother returns paint coordinates only. Raw waypoints remain the
-  // source for ETA, active revision, vessel position, and vessel heading.
+  // The smoother returns display coordinates only. Raw waypoints remain the
+  // source for ETA, active revision, route identity, and route metrics; the
+  // Viewer motion layer derives position/heading from the same curve and ETA
+  // anchors without writing those coordinates back to the artifact.
   function routeDisplayPoints(points) {
     const result = routeSmoothingTools.smoothDisplayPoints(points);
     return result.applied ? result.points : densifyPoints(points);
+  }
+
+  function finiteRoutePoint(point) {
+    if (!point || typeof point !== "object") return null;
+    const coordinate = coordinateOf(point);
+    const lon = Number(coordinate.lon);
+    const lat = Number(coordinate.lat);
+    return Number.isFinite(lon) && Number.isFinite(lat) &&
+      lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90
+      ? { lon, lat }
+      : null;
+  }
+
+  // Build a cached time-parameterized paint path. The authoritative ETA of
+  // each waypoint remains an anchor: at a corner, that ETA is assigned to the
+  // nearest point on the local curve. This makes the simulated vessel follow
+  // the curve without changing route metrics or the published waypoint list.
+  function buildRouteMotionPath(route) {
+    if (!route || !Array.isArray(route.waypoints) || route.waypoints.length < 2) return null;
+    if (routeMotionCache.has(route)) return routeMotionCache.get(route);
+    const rawPoints = route.waypoints.map(finiteRoutePoint);
+    const timesMs = route.waypoints.map((point) => isoToMs(point.eta) - startMs);
+    if (rawPoints.some((point) => point === null) ||
+        timesMs.some((value) => !Number.isFinite(value))) {
+      routeMotionCache.set(route, null);
+      return null;
+    }
+    for (let index = 1; index < timesMs.length; index += 1) {
+      if (timesMs[index] <= timesMs[index - 1]) {
+        routeMotionCache.set(route, null);
+        return null;
+      }
+    }
+    const smoothing = routeSmoothingTools.smoothDisplayPoints(rawPoints);
+    const pathPoints = (smoothing.applied ? smoothing.points : rawPoints).map(finiteRoutePoint);
+    if (pathPoints.length < 2 || pathPoints.some((point) => point === null)) {
+      routeMotionCache.set(route, null);
+      return null;
+    }
+    const pathDistancesKm = [0];
+    for (let index = 1; index < pathPoints.length; index += 1) {
+      const previous = pathPoints[index - 1];
+      const current = pathPoints[index];
+      const segmentKm = haversineKm(
+        previous.lon,
+        previous.lat,
+        current.lon,
+        current.lat,
+      );
+      if (!Number.isFinite(segmentKm) || segmentKm <= 1e-9) {
+        routeMotionCache.set(route, null);
+        return null;
+      }
+      pathDistancesKm.push(pathDistancesKm[index - 1] + segmentKm);
+    }
+
+    // A smoothed corner no longer contains the raw vertex. Map each raw
+    // waypoint to its nearest monotonic paint-path point so its ETA remains a
+    // deterministic temporal anchor.
+    const anchorDistancesKm = [];
+    let searchStart = 0;
+    for (let rawIndex = 0; rawIndex < rawPoints.length; rawIndex += 1) {
+      const lastSearchIndex = pathPoints.length - (rawPoints.length - rawIndex - 1) - 1;
+      const forcedIndex = rawIndex === 0
+        ? 0
+        : rawIndex === rawPoints.length - 1 ? pathPoints.length - 1 : null;
+      let bestIndex = forcedIndex;
+      if (bestIndex === null) {
+        let bestDistanceKm = Infinity;
+        for (let pathIndex = searchStart; pathIndex <= lastSearchIndex; pathIndex += 1) {
+          const raw = rawPoints[rawIndex];
+          const display = pathPoints[pathIndex];
+          const distanceKm = haversineKm(
+            raw.lon,
+            raw.lat,
+            display.lon,
+            display.lat,
+          );
+          if (distanceKm < bestDistanceKm) {
+            bestDistanceKm = distanceKm;
+            bestIndex = pathIndex;
+          }
+        }
+      }
+      if (!Number.isInteger(bestIndex) || bestIndex < searchStart ||
+          bestIndex > lastSearchIndex) {
+        routeMotionCache.set(route, null);
+        return null;
+      }
+      anchorDistancesKm.push(pathDistancesKm[bestIndex]);
+      searchStart = bestIndex;
+    }
+    for (let index = 1; index < anchorDistancesKm.length; index += 1) {
+      if (anchorDistancesKm[index] <= anchorDistancesKm[index - 1]) {
+        routeMotionCache.set(route, null);
+        return null;
+      }
+    }
+    const result = Object.freeze({
+      points: pathPoints,
+      distancesKm: pathDistancesKm,
+      anchorDistancesKm,
+      timesMs,
+      smoothingApplied: Boolean(smoothing.applied),
+      maximumDeviationM: Number(smoothing.maximum_deviation_m) || 0,
+    });
+    routeMotionCache.set(route, result);
+    return result;
+  }
+
+  function pathLocationAtDistance(path, distanceKm) {
+    const target = clamp(distanceKm, 0, path.distancesKm[path.distancesKm.length - 1]);
+    let low = 0;
+    let high = path.distancesKm.length - 1;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (path.distancesKm[mid] < target) low = mid + 1;
+      else high = mid;
+    }
+    const next = low === 0 ? 1 : low;
+    const previous = next - 1;
+    const span = path.distancesKm[next] - path.distancesKm[previous];
+    const fraction = span > 0
+      ? (target - path.distancesKm[previous]) / span
+      : 0;
+    const start = path.points[previous];
+    const end = path.points[next];
+    return {
+      index: previous,
+      point: {
+        lon: start.lon + (end.lon - start.lon) * fraction,
+        lat: start.lat + (end.lat - start.lat) * fraction,
+      },
+    };
+  }
+
+  function routeDistanceAtTime(path, relativeMs) {
+    const target = clamp(relativeMs, path.timesMs[0], path.timesMs[path.timesMs.length - 1]);
+    let low = 0;
+    let high = path.timesMs.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (path.timesMs[mid] <= target) low = mid;
+      else high = mid - 1;
+    }
+    const next = Math.min(low + 1, path.timesMs.length - 1);
+    const span = path.timesMs[next] - path.timesMs[low];
+    const fraction = span > 0 ? (target - path.timesMs[low]) / span : 0;
+    return path.anchorDistancesKm[low] +
+      (path.anchorDistancesKm[next] - path.anchorDistancesKm[low]) * fraction;
+  }
+
+  function routeMotionPointAt(route, relativeMs) {
+    const path = buildRouteMotionPath(route);
+    if (!path) return null;
+    return pathLocationAtDistance(path, routeDistanceAtTime(path, relativeMs)).point;
+  }
+
+  function routeMotionPaintPointsAt(route, relativeMs) {
+    const path = buildRouteMotionPath(route);
+    if (!path) return null;
+    const location = pathLocationAtDistance(path, routeDistanceAtTime(path, relativeMs));
+    const points = [location.point];
+    for (let index = location.index + 1; index < path.points.length; index += 1) {
+      points.push(path.points[index]);
+    }
+    return points;
   }
 
   function bearingDegrees(start, end) {
@@ -1256,6 +1439,23 @@
 
   function shipHeading(s, active) {
     if (!active || !active.waypoints || active.waypoints.length < 2) return 0;
+    const relativeMs = s.time - startMs;
+    const motionPath = buildRouteMotionPath(active);
+    if (motionPath && relativeMs >= motionPath.timesMs[0] &&
+        relativeMs <= motionPath.timesMs[motionPath.timesMs.length - 1]) {
+      const before = routeMotionPointAt(
+        active,
+        Math.max(motionPath.timesMs[0], relativeMs - CURVE_HEADING_LOOKAHEAD_MS),
+      );
+      const after = routeMotionPointAt(
+        active,
+        Math.min(motionPath.timesMs[motionPath.timesMs.length - 1],
+          relativeMs + CURVE_HEADING_LOOKAHEAD_MS),
+      );
+      if (before && after && (before.lon !== after.lon || before.lat !== after.lat)) {
+        return bearingDegrees(before, after);
+      }
+    }
     if (s.segment && s.segment.start_eta && s.segment.end_eta) {
       const start = active.waypoints.find((point) => point.eta === s.segment.start_eta);
       const end = active.waypoints.find((point) => point.eta === s.segment.end_eta);
@@ -1279,10 +1479,10 @@
     return low;
   }
 
-  // Vessel geometry remains the existing backend/timeline linear ETA
-  // interpolation contract. Presentation-only consumers (trail and icon
-  // wake) call this helper; none of them invent a screen-space velocity.
-  function vesselPointAt(ms) {
+  // The bundle timeline remains the source for time, active revision, speed,
+  // and replay events. This is the raw fallback position used when a route
+  // cannot produce a valid display motion path.
+  function linearVesselPointAt(ms) {
     const timelineMs = Math.max(0, Math.min(totalMs, ms));
     const tl = bundle.timeline;
     const i = timelineIndex(timelineMs);
@@ -1294,6 +1494,31 @@
       lon: a.v.lon + (b.v.lon - a.v.lon) * f,
       lat: a.v.lat + (b.v.lat - a.v.lat) * f,
     };
+  }
+
+  function activeRevisionAt(ms) {
+    if (!bundle?.timeline?.length) return null;
+    const timelineMs = Math.max(0, Math.min(totalMs, ms));
+    return bundle.timeline[timelineIndex(timelineMs)]?.arv ?? null;
+  }
+
+  // Viewer simulation motion follows the local cubic display path while
+  // preserving each authoritative waypoint ETA as a time anchor. If route
+  // identity, ETA ordering, geometry, or the adoption boundary is invalid,
+  // fail closed to the bundle timeline position and avoid a visual teleport.
+  function vesselPointAt(ms) {
+    const timelineMs = Math.max(0, Math.min(totalMs, ms));
+    const linear = linearVesselPointAt(timelineMs);
+    const active = routeFor(activeRevisionAt(timelineMs));
+    const motionPath = buildRouteMotionPath(active);
+    if (!motionPath || timelineMs < motionPath.timesMs[0] ||
+        timelineMs > motionPath.timesMs[motionPath.timesMs.length - 1]) {
+      return linear;
+    }
+    const curved = routeMotionPointAt(active, timelineMs);
+    if (!curved || !Number.isFinite(curved.lon) || !Number.isFinite(curved.lat)) return linear;
+    const gapKm = haversineKm(linear.lon, linear.lat, curved.lon, curved.lat);
+    return Number.isFinite(gapKm) && gapKm <= MAX_CURVE_MOTION_GAP_KM ? curved : linear;
   }
 
   // A short presentation trail sampled from the same authoritative timeline
@@ -1308,7 +1533,7 @@
     for (let index = first + 1; index <= last; index += 1) {
       const pointMs = isoToMs(bundle.timeline[index].t) - startMs;
       if (pointMs < endMs) {
-        points.push({ lon: bundle.timeline[index].v.lon, lat: bundle.timeline[index].v.lat });
+        points.push(vesselPointAt(pointMs));
       }
     }
     const current = vesselPointAt(endMs);
@@ -1802,14 +2027,27 @@
     ctx.restore();
   }
 
+  function drawRoutePolyline(points, width, dash, filterFutureMs = null, alpha = 0.72) {
+    if (!layers.routePolyline) return;
+    drawPath(points, ROUTE_POLYLINE_COLOR, width, dash, filterFutureMs, alpha, false);
+  }
+
   function drawResearchCandidateRoutes() {
     if (viewMode !== "research" || !layers.routes || !candidateInspection?.valid) return;
     const highlight = highlightedCandidate();
     for (const candidate of candidatesForLayer()) {
       const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
       const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
+      const geometry = candidateGeometryPoints(candidate);
+      drawRoutePolyline(
+        geometry,
+        Math.max(1.1, style.width * 0.58),
+        style.dash,
+        null,
+        isHighlighted ? 0.78 : 0.32,
+      );
       drawPath(
-        candidateGeometryPoints(candidate),
+        geometry,
         style.color,
         style.width + (isHighlighted ? 1.8 : 0),
         style.dash,
@@ -1864,16 +2102,25 @@
 
     const active = routeFor(state.active);
     if (active?.waypoints?.length > 1) {
-      drawMiniPath(active.waypoints, "#74d7ff", 2.3, [], 0.9, true);
+      if (layers.routePolyline) {
+        drawMiniPath(active.waypoints, ROUTE_POLYLINE_COLOR, 1.2, [3, 4], 0.72);
+      }
+      drawMiniPath(active.waypoints, ROUTE_CURVE_COLOR, 2.3, [], 0.9, true);
     }
     if (state.supersededRoute?.length > 1) {
+      if (layers.routePolyline) {
+        drawMiniPath(state.supersededRoute, ROUTE_POLYLINE_COLOR, 1.1, [3, 4], 0.62);
+      }
       drawMiniPath(state.supersededRoute, "#778795", 1.4, [3, 4], 0.8, true);
     }
     if (state.pendingRoute?.route?.length > 1) {
+      if (layers.routePolyline) {
+        drawMiniPath(state.pendingRoute.route, ROUTE_POLYLINE_COLOR, 1.2, [4, 4], 0.68);
+      }
       drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88, true);
     }
     if (state.track?.length > 1) {
-      drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94);
+      drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94, true);
     }
 
     const position = miniProject(state.lon, state.lat);
@@ -1919,13 +2166,14 @@
       drawPath(s.trail, "#d7e6ed", 2.2, [], null, presentationMode ? 0.72 : 0.45);
     }
 
-    // Candidate geometry is consumed exactly as published, then optionally
-    // converted to display-only paint coordinates. The local highlight and
-    // smoothing change paint only: C's selected_candidate_id, ranking,
-    // geometry, risk metrics and ETA remain untouched.
+    // Candidate geometry is consumed exactly as published, then converted to
+    // display-only curve coordinates. The local highlight and smoothing do
+    // not change C's selected_candidate_id, ranking, geometry, risk metrics,
+    // ETA, or the simulation's route-adoption events.
     drawResearchCandidateRoutes();
 
     if (layers.routes && s.supersededRoute && s.supersededRoute.length > 1) {
+      drawRoutePolyline(s.supersededRoute, 1.2, [3, 8], simMs, 0.7);
       drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs, 1, true);
     }
 
@@ -1935,23 +2183,42 @@
       );
       if (future.length) {
         const pulse = adoptionPulse(s);
+        const rawVessel = linearVesselPointAt(simMs);
+        drawRoutePolyline(
+          [{ lon: rawVessel.lon, lat: rawVessel.lat, eta: formatAbsolute(s.time) }, ...future],
+          1.35,
+          [5, 5],
+          null,
+          0.76,
+        );
+        const curvedFuture = routeMotionPaintPointsAt(active, simMs);
+        const curvePoints = curvedFuture?.length > 1
+          ? curvedFuture
+          : [{ lon: s.lon, lat: s.lat, eta: formatAbsolute(s.time) }, ...future];
         drawPath(
-          [{ lon: s.lon, lat: s.lat, eta: formatAbsolute(s.time) }, ...future],
-          "#49a9ed",
+          curvePoints,
+          ROUTE_CURVE_COLOR,
           3.5 + pulse * 0.9,
           [],
           null,
           0.88 + pulse * 0.12,
-          true,
+          false,
         );
       }
     }
 
     if (layers.track && s.track.length > 1) {
-      drawPath(s.track, "#5cc47a", 3, []);
+      drawPath(s.track, "#5cc47a", 3, [], null, 1, true);
     }
 
     if (layers.routes && s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {
+      drawRoutePolyline(
+        s.pendingRoute.route,
+        1.45,
+        [6, 5],
+        null,
+        pendingRouteAlpha(s) * 0.72,
+      );
       drawPath(
         s.pendingRoute.route,
         "#f2b134",
@@ -1967,8 +2234,8 @@
       const seg = active.waypoints.filter(
         (waypoint) => isoToMs(waypoint.eta) >= isoToMs(s.segment.start_eta)
       );
-      if (seg.length >= 2) {
-        drawPath(seg.slice(0, 2), "rgba(255,255,255,0.85)", 1.5, []);
+      if (seg.length >= 2 && layers.routePolyline) {
+        drawPath(seg.slice(0, 2), ROUTE_POLYLINE_COLOR, 1.3, [3, 3], null, 0.8);
       }
     }
 
@@ -2311,7 +2578,8 @@
   }
 
   [[layerRisk, "risk"], [layerHard, "hard"], [layerRoutes, "routes"],
-    [layerTrack, "track"], [layerNavigation, "navigation"]]
+    [layerRoutePolyline, "routePolyline"], [layerTrack, "track"],
+    [layerNavigation, "navigation"]]
     .forEach(([control, key]) => {
       control.addEventListener("change", () => {
         layers[key] = control.checked;
@@ -2323,6 +2591,7 @@
     initializePanelControls();
     initializeSidebarToggle();
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
+    routeMotionCache = new WeakMap();
     renderPipelineOverview(bundle);
     const sidecar = window.RISK_EXPLANATION_SIDECAR ?? bundle.risk_explanation ?? null;
     riskExplanationInspection = riskExplanationTools.inspect(sidecar, bundle);
@@ -2389,6 +2658,28 @@
       },
       shipHeading: () => shipHeading(stateAt(simMs), routeFor(stateAt(simMs).active)),
       trailAt: () => stateAt(simMs).trail,
+      routeMotion: () => {
+        const current = stateAt(simMs);
+        const active = routeFor(current.active);
+        const path = buildRouteMotionPath(active);
+        const linear = linearVesselPointAt(simMs);
+        const curved = path ? routeMotionPointAt(active, simMs) : null;
+        const gapKm = curved
+          ? haversineKm(linear.lon, linear.lat, curved.lon, curved.lat)
+          : null;
+        return {
+          active_revision: current.active,
+          applied: Boolean(path?.smoothingApplied),
+          raw_point_count: active?.waypoints?.length || 0,
+          display_point_count: path?.points?.length || 0,
+          anchor_count: path?.anchorDistancesKm?.length || 0,
+          maximum_deviation_m: path?.maximumDeviationM || 0,
+          linear_position: linear,
+          curved_position: curved,
+          gap_km: Number.isFinite(gapKm) ? gapKm : null,
+          route_polyline_visible: layers.routePolyline,
+        };
+      },
       transitionState: () => {
         const current = stateAt(simMs);
         return {
