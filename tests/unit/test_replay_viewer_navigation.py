@@ -57,3 +57,17 @@ def test_paused_viewer_does_not_redraw_the_full_canvas_every_animation_frame() -
     assert "const shouldDraw = playing || lastTs === null" in frame
     assert "if (shouldDraw)" in frame
     assert frame.index("if (shouldDraw)") < frame.index("draw();")
+
+
+def test_rehearsal_controls_seek_milestones_and_reset_map_view() -> None:
+    html = (VIEWER / "index.html").read_text(encoding="utf-8")
+    script = (VIEWER / "app.js").read_text(encoding="utf-8")
+    stylesheet = (VIEWER / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="reset-map"' in html
+    assert 'id="event-timeline"' in html
+    assert "event-jump" in script
+    assert "seekSimulationToIso" in script
+    assert 'setAttribute("aria-current", "step")' in script
+    assert "mapPanX = 0" in script
+    assert ".event-jump:focus-visible" in stylesheet

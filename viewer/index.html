@@ -9,10 +9,15 @@
   </head>
   <body>
     <header class="topbar">
-      <div class="title">
-        <strong>北极航线决策仿真平台</strong>
-        <span class="subtitle">环境数据 → 风险评估 → 路线决策 → 航行执行</span>
-          <span id="mode-badge" class="badge">航行仿真</span>
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="title">
+          <strong>北极航线决策仿真平台</strong>
+          <span class="subtitle">环境数据 → 风险评估 → 路线决策 → 航行执行</span>
+        </div>
+        <span id="mode-badge" class="badge">航行仿真</span>
       </div>
       <div class="badges">
         <span id="gate-l1" class="badge gate">L1 -</span>
@@ -57,9 +62,61 @@
     <main class="layout">
       <div class="mapwrap">
         <canvas id="map" aria-label="北极航线地图，可拖拽平移"></canvas>
+        <div class="map-header">
+          <div class="map-context">
+            <span class="map-kicker"><i class="live-dot"></i> LIVE NAVIGATION · D VIEWER</span>
+            <strong id="map-title">北极航行态势</strong>
+            <span id="map-mode-status">主图模式 · 北向上</span>
+          </div>
+          <div class="map-actions">
+            <div class="map-mode-switch" role="group" aria-label="地图视角模式">
+              <button id="map-mode-main" class="map-mode-btn is-active" type="button"
+                aria-pressed="true">主图模式</button>
+              <button id="map-mode-follow" class="map-mode-btn" type="button"
+                aria-pressed="false">小地图跟随</button>
+            </div>
+            <button id="sidebar-toggle" class="map-action" type="button"
+              aria-expanded="true" aria-controls="viewer-sidebar">收起侧栏</button>
+          </div>
+        </div>
+        <div id="map-compass" class="map-compass" aria-label="航向指南针">
+          <div class="compass-dial">
+            <span class="compass-cardinal compass-n">N</span>
+            <span class="compass-cardinal compass-e">E</span>
+            <span class="compass-cardinal compass-s">S</span>
+            <span class="compass-cardinal compass-w">W</span>
+            <span id="compass-needle" class="compass-needle" aria-hidden="true"></span>
+            <span class="compass-center" aria-hidden="true"></span>
+          </div>
+          <div class="compass-readout">
+            <strong id="compass-heading">000°</strong>
+            <span id="compass-label">北向上</span>
+          </div>
+        </div>
+        <div class="map-tools" aria-label="地图缩放控制">
+          <div class="map-zoom-controls">
+            <button id="zoom-in" class="map-tool-btn" type="button" aria-label="放大地图">＋</button>
+            <span id="zoom-level" class="zoom-level">100%</span>
+            <button id="zoom-out" class="map-tool-btn" type="button" aria-label="缩小地图">−</button>
+          </div>
+          <button id="reset-map" class="map-reset-btn" type="button">重置视角</button>
+        </div>
+        <div class="map-footer-hud" aria-live="polite">
+          <div class="map-hud-item">
+            <span>当前船位</span>
+            <strong id="map-vessel-position">--</strong>
+          </div>
+          <div class="map-hud-divider"></div>
+          <div class="map-hud-item">
+            <span>航向</span>
+            <strong id="map-vessel-heading">---</strong>
+          </div>
+          <div class="map-hud-item">
+            <span>航速</span>
+            <strong id="map-vessel-speed">-- kn</strong>
+          </div>
+        </div>
         <div id="hover-info" class="hover-info"></div>
-        <button id="sidebar-toggle" class="sidebar-toggle" type="button"
-          aria-expanded="true" aria-controls="viewer-sidebar">收起侧栏</button>
       </div>
 
       <aside id="viewer-sidebar" class="panel">
@@ -216,6 +273,7 @@
 
         <section class="block event-timeline">
           <h2>航行决策时间线</h2>
+          <p class="timeline-hint">点击里程碑跳转到对应仿真时刻</p>
           <ol id="event-timeline" aria-label="回放里程碑"></ol>
         </section>
 

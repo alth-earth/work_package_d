@@ -4,6 +4,8 @@
 
   const canvas = document.getElementById("map");
   const ctx = canvas.getContext("2d");
+  const miniMapCanvas = document.getElementById("mini-map");
+  const miniCtx = miniMapCanvas?.getContext("2d") || null;
   const playBtn = document.getElementById("play");
   const scrub = document.getElementById("scrub");
   const speedSel = document.getElementById("speed");
@@ -62,6 +64,23 @@
   const layoutEl = document.querySelector(".layout");
   const sidebarEl = document.getElementById("viewer-sidebar");
   const sidebarToggleEl = document.getElementById("sidebar-toggle");
+  const mapwrapEl = document.querySelector(".mapwrap");
+  const mapModeMainBtn = document.getElementById("map-mode-main");
+  const mapModeFollowBtn = document.getElementById("map-mode-follow");
+  const mapModeStatusEl = document.getElementById("map-mode-status");
+  const mapCompassEl = document.getElementById("map-compass");
+  const compassNeedleEl = document.getElementById("compass-needle");
+  const compassHeadingEl = document.getElementById("compass-heading");
+  const compassLabelEl = document.getElementById("compass-label");
+  const mapVesselPositionEl = document.getElementById("map-vessel-position");
+  const mapVesselHeadingEl = document.getElementById("map-vessel-heading");
+  const mapVesselSpeedEl = document.getElementById("map-vessel-speed");
+  const zoomLevelEl = document.getElementById("zoom-level");
+  const zoomInBtn = document.getElementById("zoom-in");
+  const zoomOutBtn = document.getElementById("zoom-out");
+  const resetMapBtn = document.getElementById("reset-map");
+  const miniMapPanelEl = document.getElementById("mini-map-panel");
+  const miniMapFollowStatusEl = document.getElementById("mini-map-follow-status");
 
   let bundle = null;
   let basemap = null;
@@ -83,6 +102,8 @@
   let riskExplanationInspection = null;
   let riskExplanationRevision = 0;
   let selectedRiskCell = null;
+  let mapMode = "main";
+  let mapZoom = 1;
   let mapPanX = 0;
   let mapPanY = 0;
   let mapDrag = null;
@@ -92,10 +113,16 @@
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
   let lastRiskExplanationKey = null;
+  const SINGLE_ROUTE_FALLBACK = "SINGLE_ROUTE_FALLBACK";
+  const EXISTING_AUTHORITATIVE_REPLAY_ACTIVE = "Existing authoritative replay remains active";
+  const DISPLAY_ONLY_COMPARISON_SELECTION = "display-only comparison selection";
   const layers = { risk: true, hard: true, routes: true, track: true, navigation: true };
   const TRAIL_WINDOW_MS = 2 * 60 * 60 * 1000;
   const PENDING_FADE_MS = 30 * 60 * 1000;
   const ADOPTION_PULSE_MS = 60 * 60 * 1000;
+  const MIN_MAP_ZOOM = 0.75;
+  const MAX_MAP_ZOOM = 4.5;
+  const FOLLOW_MAP_ZOOM = 2.15;
 
   const RISK_COLORS = {
     1: "#55c878",
@@ -605,14 +632,21 @@
       item.dataset.eventTime = time;
       item.dataset.eventType = milestone.event?.type || "INITIAL";
       item.dataset.eventRevision = milestone.event?.rev || "1";
-      const content = document.createElement("div");
+      const jump = document.createElement("button");
+      jump.type = "button";
+      jump.className = "event-jump";
+      jump.dataset.eventTime = time;
+      jump.setAttribute(
+        "aria-label",
+        `跳转到${milestone.label}，仿真时间 ${formatAbsolute(isoToMs(time))}`,
+      );
       const label = document.createElement("span");
       label.textContent = milestone.label;
       const clock = document.createElement("span");
       clock.className = "event-time";
       clock.textContent = formatAbsolute(isoToMs(time));
-      content.append(label, clock);
-      item.append(content);
+      jump.append(label, clock);
+      item.append(jump);
       eventTimelineEl.append(item);
     }
   }
@@ -718,8 +752,15 @@
       const nextMs = index + 1 < items.length
         ? isoToMs(items[index + 1].dataset.eventTime)
         : Infinity;
-      item.classList.toggle("is-past", s.time >= eventMs);
-      item.classList.toggle("is-current", s.time >= eventMs && s.time < nextMs);
+      const isPast = s.time >= eventMs;
+      const isCurrent = isPast && s.time < nextMs;
+      item.classList.toggle("is-past", isPast);
+      item.classList.toggle("is-current", isCurrent);
+      const jump = item.querySelector(".event-jump");
+      if (jump) {
+        if (isCurrent) jump.setAttribute("aria-current", "step");
+        else jump.removeAttribute("aria-current");
+      }
     }
   }
 
@@ -728,6 +769,187 @@
     const x = ((lon - b.min_lon) / (b.max_lon - b.min_lon)) * canvas.width;
     const y = ((b.max_lat - lat) / (b.max_lat - b.min_lat)) * canvas.height;
     return { x, y };
+  }
+
+  function clamp(value, minimum, maximum) {
+    return Math.max(minimum, Math.min(maximum, value));
+  }
+
+  function normalizeDegrees(value) {
+    return ((Number(value) % 360) + 360) % 360;
+  }
+
+  function cardinalDirection(value) {
+    const directions = ["北", "东北", "东", "东南", "南", "西南", "西", "西北"];
+    return directions[Math.round(normalizeDegrees(value) / 45) % directions.length];
+  }
+
+  function mapWorldCenter(state) {
+    if (mapMode === "follow" && state && basemap?.bbox) {
+      return project(state.lon, state.lat);
+    }
+    return { x: canvas.width / 2, y: canvas.height / 2 };
+  }
+
+  function applyMapViewTransform(state, heading) {
+    const centre = mapWorldCenter(state);
+    ctx.translate(canvas.width / 2 + mapPanX, canvas.height / 2 + mapPanY);
+    if (mapMode === "follow") {
+      ctx.rotate(-normalizeDegrees(heading) * Math.PI / 180);
+    }
+    ctx.scale(mapZoom, mapZoom);
+    ctx.translate(-centre.x, -centre.y);
+  }
+
+  function canvasDisplayRect() {
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height || !canvas.width || !canvas.height) return null;
+    const canvasRatio = canvas.width / canvas.height;
+    const boxRatio = rect.width / rect.height;
+    const width = boxRatio > canvasRatio ? rect.height * canvasRatio : rect.width;
+    const height = boxRatio > canvasRatio ? rect.height : rect.width / canvasRatio;
+    return {
+      left: rect.left + (rect.width - width) / 2,
+      top: rect.top + (rect.height - height) / 2,
+      width,
+      height,
+    };
+  }
+
+  function screenPointToWorld(event, state, heading) {
+    const rect = canvasDisplayRect();
+    if (!rect) return null;
+    let x = (event.clientX - rect.left) / rect.width * canvas.width;
+    let y = (event.clientY - rect.top) / rect.height * canvas.height;
+    x -= canvas.width / 2 + mapPanX;
+    y -= canvas.height / 2 + mapPanY;
+    if (mapMode === "follow") {
+      const angle = normalizeDegrees(heading) * Math.PI / 180;
+      const rotatedX = x * Math.cos(angle) - y * Math.sin(angle);
+      const rotatedY = x * Math.sin(angle) + y * Math.cos(angle);
+      x = rotatedX;
+      y = rotatedY;
+    }
+    const centre = mapWorldCenter(state);
+    return {
+      x: centre.x + x / mapZoom,
+      y: centre.y + y / mapZoom,
+    };
+  }
+
+  function clampMapPan() {
+    if (mapMode === "follow" || mapZoom <= 1) {
+      mapPanX = 0;
+      mapPanY = 0;
+      return;
+    }
+    const horizontalLimit = Math.max(0, (canvas.width * mapZoom - canvas.width) / 2);
+    const verticalLimit = Math.max(0, (canvas.height * mapZoom - canvas.height) / 2);
+    mapPanX = clamp(mapPanX, -horizontalLimit, horizontalLimit);
+    mapPanY = clamp(mapPanY, -verticalLimit, verticalLimit);
+  }
+
+  function updateMapUi(heading = 0, state = null) {
+    const normalizedHeading = normalizeDegrees(heading);
+    if (mapwrapEl) mapwrapEl.dataset.mapMode = mapMode;
+    if (mapCompassEl) mapCompassEl.dataset.mapMode = mapMode;
+    if (mapModeMainBtn) {
+      mapModeMainBtn.classList.toggle("is-active", mapMode === "main");
+      mapModeMainBtn.setAttribute("aria-pressed", String(mapMode === "main"));
+    }
+    if (mapModeFollowBtn) {
+      mapModeFollowBtn.classList.toggle("is-active", mapMode === "follow");
+      mapModeFollowBtn.setAttribute("aria-pressed", String(mapMode === "follow"));
+    }
+    if (mapModeStatusEl) {
+      mapModeStatusEl.textContent = mapMode === "follow"
+        ? "小地图跟随 · 船头向上"
+        : "主图模式 · 北向上";
+    }
+    if (zoomLevelEl) zoomLevelEl.textContent = `${Math.round(mapZoom * 100)}%`;
+    if (miniMapPanelEl) miniMapPanelEl.hidden = mapMode !== "follow";
+    if (miniMapFollowStatusEl) {
+      miniMapFollowStatusEl.textContent = mapMode === "follow" ? "船位居中" : "总览";
+    }
+    if (canvas) {
+      canvas.setAttribute(
+        "aria-label",
+        mapMode === "follow"
+          ? "北极航线跟随地图，船头朝上，可缩放和拖拽"
+          : "北极航线主图，可缩放和拖拽平移"
+      );
+    }
+    if (compassNeedleEl) {
+      compassNeedleEl.style.transform = mapMode === "follow"
+        ? `rotate(${-normalizedHeading}deg)`
+        : "rotate(0deg)";
+    }
+    if (compassHeadingEl) {
+      compassHeadingEl.textContent = `${Math.round(normalizedHeading)
+        .toString().padStart(3, "0")}°`;
+    }
+    if (compassLabelEl) {
+      compassLabelEl.textContent = mapMode === "follow"
+        ? `${cardinalDirection(normalizedHeading)} · 船头向上`
+        : `${cardinalDirection(normalizedHeading)} · 北向上`;
+    }
+    if (state) {
+      if (mapVesselPositionEl) {
+        mapVesselPositionEl.textContent =
+          `${formatCoordinate(state.lat, "latitude", 2)} ${formatCoordinate(state.lon, "longitude", 2)}`;
+      }
+      if (mapVesselHeadingEl) {
+        mapVesselHeadingEl.textContent = `${Math.round(normalizedHeading)
+          .toString().padStart(3, "0")}° ${cardinalDirection(normalizedHeading)}`;
+      }
+      if (mapVesselSpeedEl) {
+        const knots = Number(state.kn);
+        mapVesselSpeedEl.textContent = Number.isFinite(knots) ? `${knots.toFixed(1)} kn` : "-- kn";
+      }
+    }
+  }
+
+  function resetMapView() {
+    mapPanX = 0;
+    mapPanY = 0;
+    mapZoom = mapMode === "follow" ? FOLLOW_MAP_ZOOM : 1;
+    const state = bundle ? stateAt(simMs) : null;
+    const active = state ? routeFor(state.active) : null;
+    updateMapUi(state ? shipHeading(state, active) : 0, state);
+    if (bundle) draw();
+  }
+
+  function adjustMapZoom(factor) {
+    mapZoom = clamp(mapZoom * factor, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
+    clampMapPan();
+    const state = bundle ? stateAt(simMs) : null;
+    const active = state ? routeFor(state.active) : null;
+    updateMapUi(state ? shipHeading(state, active) : 0, state);
+    if (bundle) draw();
+  }
+
+  function setMapMode(nextMode) {
+    if (!["main", "follow"].includes(nextMode) || nextMode === mapMode) return;
+    mapMode = nextMode;
+    mapPanX = 0;
+    mapPanY = 0;
+    mapZoom = nextMode === "follow" ? Math.max(mapZoom, FOLLOW_MAP_ZOOM) : 1;
+    const state = bundle ? stateAt(simMs) : null;
+    const active = state ? routeFor(state.active) : null;
+    updateMapUi(state ? shipHeading(state, active) : 0, state);
+    if (bundle) draw();
+  }
+
+  function preserveFollowViewForManualPan() {
+    if (mapMode !== "follow" || !bundle) return;
+    const state = stateAt(simMs);
+    const position = project(state.lon, state.lat);
+    mapMode = "main";
+    mapPanX = -mapZoom * (position.x - canvas.width / 2);
+    mapPanY = -mapZoom * (position.y - canvas.height / 2);
+    clampMapPan();
+    const active = routeFor(state.active);
+    updateMapUi(shipHeading(state, active), state);
   }
 
   function niceStep(span, targetLines = 6) {
@@ -868,6 +1090,22 @@
       : String(Math.round(simMs));
   }
 
+  function seekSimulationTo(relativeMs) {
+    if (!Number.isFinite(relativeMs)) return;
+    simMs = Math.max(0, Math.min(totalMs, relativeMs));
+    playing = false;
+    lastTs = null;
+    setRunButtonState();
+    syncScrubToSimulation();
+    draw();
+  }
+
+  function seekSimulationToIso(value) {
+    const absoluteMs = isoToMs(value);
+    if (!Number.isFinite(absoluteMs)) return;
+    seekSimulationTo(absoluteMs - startMs);
+  }
+
   function drawNavigationAids() {
     if (!layers.navigation || !basemap?.bbox) return;
     const bounds = basemap.bbox;
@@ -893,7 +1131,9 @@
       ctx.moveTo(top.x, 0);
       ctx.lineTo(top.x, canvas.height);
       ctx.stroke();
-      ctx.fillText(formatCoordinate(lon, "longitude"), top.x + 4, canvas.height - 10);
+      if (mapMode === "main") {
+        ctx.fillText(formatCoordinate(lon, "longitude"), top.x + 4, canvas.height - 10);
+      }
     }
 
     const firstLat = Math.ceil(bounds.min_lat / latStep) * latStep;
@@ -903,9 +1143,19 @@
       ctx.moveTo(0, left.y);
       ctx.lineTo(canvas.width, left.y);
       ctx.stroke();
-      ctx.fillText(formatCoordinate(lat, "latitude"), 6, left.y - 8);
+      if (mapMode === "main") {
+        ctx.fillText(formatCoordinate(lat, "latitude"), 6, left.y - 8);
+      }
     }
     ctx.setLineDash([]);
+
+    // In follow mode the DOM compass and live HUD carry the orientation
+    // readout; suppress rotated labels and the full-map scale marker so the
+    // ship-centric view stays legible.
+    if (mapMode === "follow") {
+      ctx.restore();
+      return;
+    }
 
     // Scale is valid for the displayed EPSG:4326 map at its centre latitude.
     const centreLat = (bounds.min_lat + bounds.max_lat) / 2;
@@ -1316,7 +1566,8 @@
     if (routeFallbackNoteEl) {
       routeFallbackNoteEl.textContent = candidateInspection?.valid
         ? "研究候选路线已发布；请使用研究验证视图比较 4×3 路线。"
-        : `单路线后备 · ${candidateInspection?.reason || "候选路线比较未发布"}`;
+        : `${SINGLE_ROUTE_FALLBACK} · ${candidateInspection?.reason || "候选路线比较未发布"} · ` +
+          `${EXISTING_AUTHORITATIVE_REPLAY_ACTIVE}`;
     }
   }
 
@@ -1437,6 +1688,9 @@
     routeCandidatesEl.hidden = false;
     if (routeHighlightNoteEl) {
       const canonical = highlight?.candidate_id === canonicalId;
+      routeHighlightNoteEl.dataset.selectionMode = highlight && !canonical
+        ? DISPLAY_ONLY_COMPARISON_SELECTION
+        : "canonical-route-selection";
       routeHighlightNoteEl.textContent = highlight
         ? `地图高亮：${objectiveLabel(highlight.objective)} · ${highlight.candidate_id}` +
           `${canonical ? " · C 已选路线" : " · 仅用于展示比较"}`
@@ -1548,12 +1802,94 @@
     }
   }
 
+  function miniProject(lon, lat) {
+    const b = basemap.bbox;
+    return {
+      x: ((lon - b.min_lon) / (b.max_lon - b.min_lon)) * miniMapCanvas.width,
+      y: ((b.max_lat - lat) / (b.max_lat - b.min_lat)) * miniMapCanvas.height,
+    };
+  }
+
+  function drawMiniPath(points, color, width, dash = [], alpha = 1) {
+    if (!miniCtx || !points || points.length < 2) return;
+    miniCtx.save();
+    miniCtx.globalAlpha = alpha;
+    miniCtx.strokeStyle = color;
+    miniCtx.lineWidth = width;
+    miniCtx.lineJoin = "round";
+    miniCtx.lineCap = "round";
+    miniCtx.setLineDash(dash);
+    miniCtx.beginPath();
+    points.forEach((point, index) => {
+      const geo = miniProject(point.lon ?? point.longitude, point.lat ?? point.latitude);
+      if (index === 0) miniCtx.moveTo(geo.x, geo.y);
+      else miniCtx.lineTo(geo.x, geo.y);
+    });
+    miniCtx.stroke();
+    miniCtx.restore();
+  }
+
+  function drawMiniMap(state, heading) {
+    if (!miniCtx || !miniMapCanvas || mapMode !== "follow" || !basemap?.bbox) return;
+    const width = miniMapCanvas.width;
+    const height = miniMapCanvas.height;
+    miniCtx.clearRect(0, 0, width, height);
+    miniCtx.fillStyle = "#081620";
+    miniCtx.fillRect(0, 0, width, height);
+    if (image) {
+      miniCtx.save();
+      miniCtx.globalAlpha = 0.76;
+      miniCtx.drawImage(image, 0, 0, width, height);
+      miniCtx.restore();
+    }
+
+    const active = routeFor(state.active);
+    if (active?.waypoints?.length > 1) {
+      drawMiniPath(active.waypoints, "#74d7ff", 2.3, [], 0.9);
+    }
+    if (state.supersededRoute?.length > 1) {
+      drawMiniPath(state.supersededRoute, "#778795", 1.4, [3, 4], 0.8);
+    }
+    if (state.pendingRoute?.route?.length > 1) {
+      drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88);
+    }
+    if (state.track?.length > 1) {
+      drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94);
+    }
+
+    const position = miniProject(state.lon, state.lat);
+    const viewportWidth = Math.min(width * 0.92, width / mapZoom);
+    const viewportHeight = Math.min(height * 0.92, height / mapZoom);
+    miniCtx.save();
+    miniCtx.translate(position.x, position.y);
+    miniCtx.rotate(normalizeDegrees(heading) * Math.PI / 180);
+    miniCtx.strokeStyle = "rgba(255, 255, 255, 0.78)";
+    miniCtx.lineWidth = 1.2;
+    miniCtx.setLineDash([4, 3]);
+    miniCtx.strokeRect(-viewportWidth / 2, -viewportHeight / 2, viewportWidth, viewportHeight);
+    miniCtx.setLineDash([]);
+    miniCtx.beginPath();
+    miniCtx.moveTo(0, -7);
+    miniCtx.lineTo(4.5, 5);
+    miniCtx.lineTo(0, 3);
+    miniCtx.lineTo(-4.5, 5);
+    miniCtx.closePath();
+    miniCtx.fillStyle = "#f7fbff";
+    miniCtx.fill();
+    miniCtx.strokeStyle = "#0b2b3c";
+    miniCtx.lineWidth = 1.4;
+    miniCtx.stroke();
+    miniCtx.restore();
+  }
+
   function draw() {
+    const s = stateAt(simMs);
+    const active = routeFor(s.active);
+    const heading = shipHeading(s, active);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    ctx.translate(mapPanX, mapPanY);
+    applyMapViewTransform(s, heading);
     if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const s = stateAt(simMs);
     updateSimulationReadout(s);
     renderRiskExplanation(s);
     drawRiskFrame(s.risk);
@@ -1573,7 +1909,6 @@
       drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs);
     }
 
-    const active = routeFor(s.active);
     if (layers.routes && active) {
       const future = active.waypoints.filter(
         (waypoint) => isoToMs(waypoint.eta) - startMs >= simMs
@@ -1608,13 +1943,14 @@
       }
     }
 
-    const heading = shipHeading(s, active);
     // This phase is derived from simulation time, so playback speed changes
     // the visual cadence and no independent CSS/timer animation is created.
     const motionPhase = Math.sin((simMs / 1000) * Math.PI * 2 / 180);
     drawShipIcon(pos, heading, motionPhase);
-    updateDebug(s, heading);
     ctx.restore();
+    updateMapUi(heading, s);
+    updateDebug(s, heading);
+    drawMiniMap(s, heading);
   }
 
   function drawShipIcon(pos, heading, motionPhase) {
@@ -1758,12 +2094,10 @@
   });
 
   scrub.addEventListener("input", () => {
-    simMs = voyageProgress
+    const nextMs = voyageProgress
       ? simulationMsAtVoyageDistance(Number(scrub.value) / 1000)
       : Number(scrub.value);
-    playing = false;
-    setRunButtonState();
-    draw();
+    seekSimulationTo(nextMs);
   });
 
   speedSel.addEventListener("change", () => {
@@ -1812,6 +2146,36 @@
     draw();
   });
 
+  eventTimelineEl.addEventListener("click", (event) => {
+    const jump = event.target.closest(".event-jump");
+    if (!jump) return;
+    seekSimulationToIso(jump.dataset.eventTime);
+  });
+
+  mapModeMainBtn.addEventListener("click", () => setMapMode("main"));
+  mapModeFollowBtn.addEventListener("click", () => setMapMode("follow"));
+  zoomInBtn.addEventListener("click", () => adjustMapZoom(1.2));
+  zoomOutBtn.addEventListener("click", () => adjustMapZoom(1 / 1.2));
+  resetMapBtn.addEventListener("click", resetMapView);
+
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    adjustMapZoom(event.deltaY < 0 ? 1.14 : 1 / 1.14);
+  }, { passive: false });
+
+  canvas.addEventListener("keydown", (event) => {
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      adjustMapZoom(1.2);
+    } else if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      adjustMapZoom(1 / 1.2);
+    } else if (event.key === "0") {
+      event.preventDefault();
+      resetMapView();
+    }
+  });
+
   canvas.addEventListener("pointerdown", (event) => {
     mapDrag = {
       id: event.pointerId,
@@ -1826,17 +2190,20 @@
 
   canvas.addEventListener("pointermove", (event) => {
     if (!mapDrag || event.pointerId !== mapDrag.id) return;
-    const rect = canvas.getBoundingClientRect();
+    const rect = canvasDisplayRect();
+    if (!rect) return;
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     const deltaX = (event.clientX - mapDrag.x) * scaleX;
     const deltaY = (event.clientY - mapDrag.y) * scaleY;
     if (Math.abs(deltaX) + Math.abs(deltaY) > 2) {
+      if (!mapDrag.moved) preserveFollowViewForManualPan();
       mapDrag.moved = true;
       mapWasDragged = true;
     }
     mapPanX += deltaX;
     mapPanY += deltaY;
+    clampMapPan();
     mapDrag.x = event.clientX;
     mapDrag.y = event.clientY;
     if (mapDrag.moved) draw();
@@ -1859,10 +2226,12 @@
     }
     const frame = riskAt(simMs);
     if (!frame || !basemap?.bbox) return;
-    const rect = canvas.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const x = (event.clientX - rect.left) / rect.width * canvas.width - mapPanX;
-    const y = (event.clientY - rect.top) / rect.height * canvas.height - mapPanY;
+    const state = stateAt(simMs);
+    const active = routeFor(state.active);
+    const point = screenPointToWorld(event, state, shipHeading(state, active));
+    if (!point) return;
+    const x = point.x;
+    const y = point.y;
     const lon = basemap.bbox.min_lon + x / canvas.width *
       (basemap.bbox.max_lon - basemap.bbox.min_lon);
     const lat = basemap.bbox.max_lat - y / canvas.height *
@@ -1968,10 +2337,16 @@
     if (basemap) {
       canvas.width = basemap.width;
       canvas.height = basemap.height;
+      if (miniMapCanvas) {
+        miniMapCanvas.width = 220;
+        miniMapCanvas.height = 220;
+      }
       image = new Image();
       image.onload = () => draw();
       image.src = window.VIEWER_BASEMAP || "gebco_basemap.png";
     }
+    const initialState = stateAt(simMs);
+    updateMapUi(shipHeading(initialState, routeFor(initialState.active)), initialState);
     window.__ARCTIC_VIEWER__ = {
       stateAt: () => stateAt(simMs),
       riskAt: () => riskAt(simMs),
@@ -2076,12 +2451,24 @@
         projection: basemap?.projection,
         bbox: basemap?.bbox,
       }),
-      setSimulationMs: (value) => {
-        simMs = Math.max(0, Math.min(totalMs, Number(value)));
-        playing = false;
-        setRunButtonState();
-        syncScrubToSimulation();
+      mapView: () => ({
+        mode: mapMode,
+        zoom: mapZoom,
+        pan_x: mapPanX,
+        pan_y: mapPanY,
+        follow: mapMode === "follow",
+      }),
+      setMapMode: (value) => setMapMode(value),
+      setMapZoom: (value) => {
+        const next = Number(value);
+        if (!Number.isFinite(next)) return;
+        mapZoom = clamp(next, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
+        clampMapPan();
         draw();
+      },
+      resetMapView: () => resetMapView(),
+      setSimulationMs: (value) => {
+        seekSimulationTo(Number(value));
       },
       voyageProgress: () => ({
         available: Boolean(voyageProgress),

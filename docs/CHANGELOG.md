@@ -11,6 +11,16 @@ Last Verified: 2026-08-23
 
 # 工作包 D 变更记录
 
+## Unreleased - Viewer rehearsal controls（2026-08-26）
+
+- feat: 里程碑时间线改为键盘可操作的跳转控件；点击出发、风险更新、待采用或已采用事件
+  会暂停并定位到对应仿真时刻，当前事件同步暴露 `aria-current=step`；
+- feat: 增加“重置地图”操作，恢复拖拽后的初始投影位置；不修改地图制品或业务坐标；
+- fix: 保留 `SINGLE_ROUTE_FALLBACK` 与 `Existing authoritative replay remains active` 稳定回退标识，
+  中文化不再破坏候选路线回退验收；
+- validation: 76 tests passed（排除宿主内存门禁项）、Ruff clean、三份 Viewer JavaScript syntax PASS、
+  本地静态资源与 `/api/state` HTTP 200。
+
 ## Unreleased - Docs directory reorganization（2026-08-24）
 
 参照 `work_package_c/docs/` 结构，为 D 建立对齐的 `docs/` 文档体系，**不触及代码逻辑**：
