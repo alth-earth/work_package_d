@@ -11,6 +11,7 @@ import pytest
 
 VIEWER = Path(__file__).resolve().parents[2] / "viewer"
 SCRIPT = VIEWER / "route_smoothing.js"
+RESEARCH_MOTION_SCRIPT = VIEWER / "research_route_motion.js"
 
 
 def _run_node_checks() -> None:
@@ -90,6 +91,58 @@ if (zigzagEnd.lon !== 2 || zigzagEnd.lat !== 1) process.exit(12);
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def _run_research_motion_checks() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available")
+    script_path = json.dumps(str(RESEARCH_MOTION_SCRIPT))
+    source = """
+const fs = require("fs");
+const vm = require("vm");
+const context = {{ window: {{}} }};
+vm.runInNewContext(fs.readFileSync(__SCRIPT_PATH__, "utf8"), context);
+const reader = context.window.ArcticRouteResearchMotion;
+if (!reader || reader.SCHEMA_VERSION !== "c.research-route-smoothing-sidecar.v1") process.exit(1);
+const route = {{
+  route_id: "route-1",
+  waypoints: [
+    {{lon: 0, lat: 0, eta: "2026-01-01T00:00:00Z"}},
+    {{lon: 1, lat: 0, eta: "2026-01-01T01:00:00Z"}},
+  ],
+}};
+const sidecar = {{
+  schema_version: "c.research-route-smoothing-sidecar.v1",
+  route_id: "route-1",
+  raw_route_digest: "a".repeat(64),
+  research_only: true,
+  status: "ACCEPTED",
+  applied: true,
+  authoritative_route: {{
+    route_digest: "a".repeat(64),
+    waypoints: route.waypoints,
+  }},
+  geometry: {{segments: [{{maximum_deviation_m: 100}}]}},
+  motion_samples: [
+    {{lon: 0, lat: 0, eta: "2026-01-01T00:00:00Z"}},
+    {{lon: 0.5, lat: 0.1, eta: "2026-01-01T00:30:00Z"}},
+    {{lon: 1, lat: 0, eta: "2026-01-01T01:00:00Z"}},
+  ],
+}};
+const inspection = reader.inspect(sidecar, route);
+if (!inspection.valid || inspection.samples.length !== 3) process.exit(2);
+const path = reader.buildPath(sidecar, route, Date.parse("2026-01-01T00:00:00Z"));
+if (!path || path.points.length !== 3 ||
+    path.source !== "c_research_route_smoothing_sidecar") process.exit(3);
+if (path.timesMs[1] !== 1800000 || path.distancesKm[2] <= path.distancesKm[1]) process.exit(4);
+if (reader.inspect(sidecar, {{...route, route_id: "other"}}).valid) process.exit(5);
+const fallback = {{...sidecar, status: "FALLBACK", applied: false, fallback_reason: "rejected"}};
+if (reader.inspect(fallback, route).valid ||
+    reader.buildPath(fallback, route, 0) !== null) process.exit(6);
+""".replace("__SCRIPT_PATH__", script_path).replace("{{", "{").replace("}}", "}")
+    result = subprocess.run([node, "-e", source], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_route_smoothing_is_loaded_before_the_viewer_application() -> None:
     html = (VIEWER / "index.html").read_text(encoding="utf-8")
     assert '<script src="route_smoothing.js"></script>' in html
@@ -100,6 +153,8 @@ def test_route_smoothing_is_inlined_for_offline_viewer() -> None:
     embed = (VIEWER / "embed.py").read_text(encoding="utf-8")
     assert 'viewer / "route_smoothing.js"' in embed
     assert '<script src="route_smoothing.js"></script>' in embed
+    assert 'viewer / "research_route_motion.js"' in embed
+    assert '<script src="research_route_motion.js"></script>' in embed
 
 
 def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
@@ -132,5 +187,21 @@ def test_curve_is_primary_route_layer_and_raw_polyline_is_optional() -> None:
     assert "drawRoutePolyline" in app
 
 
+def test_research_sidecar_motion_is_explicit_and_default_off() -> None:
+    html = (VIEWER / "index.html").read_text(encoding="utf-8")
+    app = (VIEWER / "app.js").read_text(encoding="utf-8")
+    assert 'id="route-smoothing-research" type="checkbox"' in html
+    assert "启用研究曲线运动（默认关闭）" in html
+    assert "let researchRouteSmoothingEnabled = false;" in app
+    assert "researchRouteSmoothingEnabled = false;" in app
+    assert "buildResearchRouteMotionPath" in app
+    assert "motion_source" in app
+    assert "timeline_fallback" in app
+
+
 def test_display_smoother_passes_synthetic_geometry_and_fail_closed_cases() -> None:
     _run_node_checks()
+
+
+def test_research_sidecar_reader_passes_synthetic_identity_and_eta_checks() -> None:
+    _run_research_motion_checks()

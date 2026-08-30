@@ -4,9 +4,10 @@ Content Status:
   - COMPLETED
   - PLANNED
 Document Role: CANONICAL
+Applicability: CURRENT
 Scope: work_package_d viewer implementation and runtime
 Branch: research-validation-system
-Last Verified: 2026-08-31 00:19 +08:00
+Last Verified: 2026-08-31 02:33 +08:00
 ---
 
 > **路径约定（2026-08-24）**：本文件中 `${ARCTIC_ROUTE_ROOT}` 为工作区根占位符，
@@ -167,12 +168,38 @@ waypoints、route metrics、ETA 或 active/pending/adopted 语义。该效果不
 ./.venv/bin/python viewer/render_proof.py --viewer-dir viewer --time 2026-08-15T10:30:00Z
 ```
 
+## 受约束研究曲线运动（2026-08-31 02:20 +08:00）
+
+当前 Viewer 的蓝色平滑曲线和仿真船位默认仍来自 D 的 display-only 路径。只有在
+Orchestrator 导出命令显式传入 `--route-smoothing-sidecar PATH`，并将一个已接受的
+`c.research-route-smoothing-sidecar.v1` 放入 bundle 后，界面中的“启用研究曲线运动”控件
+才可用；控件默认关闭。开启后，D 校验 sidecar 的 route id、原始 waypoint 坐标、ETA 和
+样本单调性，再让研究回放的路线绘制、船位、航向和近期轨迹使用 sidecar 样本。
+
+sidecar 缺失、身份不匹配、状态不是 `ACCEPTED` 或样本非法时，控件保持不可用或运动层
+回退现有 timeline，不把 display-only 曲线当作研究曲线后备。该 sidecar 当前是 C 的
+`GEOMETRY_ONLY` 研究输出，未重算 RiskFrame、hard mask、coverage、正式 ETA、船舶操纵性
+或资源资格；因此研究开关不改变 `cd.route-plan.v2/v3`、route metrics、replan adoption、
+生产数据流或 frozen artifact，也不代表实际船舶控制。
+
+```bash
+cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
+./.venv/bin/python scripts/replay_viewer_export.py \
+  --winter-plan-set PATH \
+  --route-smoothing-sidecar PATH \
+  ...
+```
+
+单文件离线 Viewer 由 `viewer/embed.py` 同步内联 `research_route_motion.js`；不传入 sidecar
+时，现有默认展示行为保持不变。
+
 ## 业务原则（不可破坏）
 
 ```text
 船必须动
 Simulation Clock -> vessel motion
-ship position = route waypoint ETA + simulation_time -> accepted display curve
+ship position = route waypoint ETA + simulation_time -> display curve by default;
+explicit research sidecar only when enabled and identity-validated
 snapshot cadence != render cadence
 REPLAN_DECIDED != REPLAN_ADOPTED
 pending route != authoritative route
@@ -200,6 +227,7 @@ id、last event、L1/L2 status。切换 horizon 不改变 Simulation Time。
 viewer/index.html         页面结构
 viewer/research_candidates.js  route candidate strict validation（browser + Node）
 viewer/risk_explanation.js  optional risk explanation strict validation（browser + Node）
+viewer/research_route_motion.js  C research smoothing sidecar strict reader（browser + Node）
 viewer/app.js             渲染 + timeline（只读 bundle）
 viewer/style.css          样式
 viewer/embed.py           单文件内嵌（bundle + basemap）

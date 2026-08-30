@@ -4,10 +4,11 @@ Content Status:
   - COMPLETED
   - PLANNED
 Document Role: CANONICAL
+Applicability: CURRENT
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: research-validation-system
-Last Verified: 2026-08-31 00:19 +08:00
+Last Verified: 2026-08-31 02:33 +08:00
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -218,6 +219,10 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
 - 图例和图层控件明确区分蓝色平滑曲线与白色原始折线；原始折线默认隐藏，可按需打开做
   几何对照；
 - Orchestrator 的 `presentation.viewer-presentation.v1` 明确声明该展示策略及原始折线回退。
+- C 另提供 `c.research-route-smoothing-sidecar.v1` 的 geometry-only 研究输出；只有在
+  Orchestrator 显式传入 sidecar 且操作员打开研究运动开关后，D 才读取它的曲线样本。该
+  研究路径校验 route/waypoint/ETA identity，失败时回退 timeline，默认不启用，不改变正式
+  route、风险、ETA、重规划或生产发布语义。
 
 ### 可见曲线修正（2026-08-31 00:19 +08:00）
 

@@ -53,6 +53,10 @@
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
   const layerRoutePolyline = document.getElementById("layer-route-polyline");
+  const routeSmoothingResearchEl = document.getElementById("route-smoothing-research");
+  const routeSmoothingResearchStatusEl = document.getElementById(
+    "route-smoothing-research-status"
+  );
   const layerTrack = document.getElementById("layer-track");
   const layerNavigation = document.getElementById("layer-navigation");
   const gateBadges = document.querySelector(".badges");
@@ -111,6 +115,8 @@
   let mapWasDragged = false;
   let voyageProgress = null;
   let routeMotionCache = new WeakMap();
+  let researchRouteMotionCache = new WeakMap();
+  let researchRouteSmoothingEnabled = false;
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
@@ -162,6 +168,8 @@
   if (!riskExplanationTools) throw new Error("risk explanation validator is not loaded");
   const routeSmoothingTools = window.ArcticRouteSmoothing;
   if (!routeSmoothingTools) throw new Error("route smoothing renderer is not loaded");
+  const researchMotionTools = window.ArcticRouteResearchMotion;
+  if (!researchMotionTools) throw new Error("research route motion reader is not loaded");
   const { ROUTE_LAYERS } = candidateTools;
   const CANDIDATE_STYLES = {
     fastest: { color: "#f0b35b", dash: [9, 5], width: 2.4 },
@@ -1366,6 +1374,43 @@
     return result;
   }
 
+  function researchRouteSmoothingSidecar() {
+    return bundle?.research_validation?.route_smoothing || null;
+  }
+
+  function inspectResearchRouteSmoothing(route) {
+    const sidecar = researchRouteSmoothingSidecar();
+    if (!sidecar) return { valid: false, reason: "missing_sidecar" };
+    if (!route) return { valid: false, reason: "no_active_route" };
+    return researchMotionTools.inspect(sidecar, route);
+  }
+
+  function buildResearchRouteMotionPath(route) {
+    if (!route || !researchRouteSmoothingEnabled) return null;
+    if (researchRouteMotionCache.has(route)) {
+      return researchRouteMotionCache.get(route);
+    }
+    const sidecar = researchRouteSmoothingSidecar();
+    const path = researchMotionTools.buildPath(sidecar, route, startMs);
+    researchRouteMotionCache.set(route, path);
+    return path;
+  }
+
+  function routeMotionPathFor(route) {
+    return researchRouteSmoothingEnabled
+      ? buildResearchRouteMotionPath(route)
+      : buildRouteMotionPath(route);
+  }
+
+  function routePaintPointsFor(route) {
+    if (!route?.waypoints || route.waypoints.length < 2) return [];
+    if (researchRouteSmoothingEnabled) {
+      const path = buildResearchRouteMotionPath(route);
+      return path?.points || route.waypoints;
+    }
+    return routeDisplayPoints(route.waypoints);
+  }
+
   function pathLocationAtDistance(path, distanceKm) {
     const target = clamp(distanceKm, 0, path.distancesKm[path.distancesKm.length - 1]);
     let low = 0;
@@ -1409,13 +1454,13 @@
   }
 
   function routeMotionPointAt(route, relativeMs) {
-    const path = buildRouteMotionPath(route);
+    const path = routeMotionPathFor(route);
     if (!path) return null;
     return pathLocationAtDistance(path, routeDistanceAtTime(path, relativeMs)).point;
   }
 
   function routeMotionPaintPointsAt(route, relativeMs) {
-    const path = buildRouteMotionPath(route);
+    const path = routeMotionPathFor(route);
     if (!path) return null;
     const location = pathLocationAtDistance(path, routeDistanceAtTime(path, relativeMs));
     const points = [location.point];
@@ -1440,7 +1485,7 @@
   function shipHeading(s, active) {
     if (!active || !active.waypoints || active.waypoints.length < 2) return 0;
     const relativeMs = s.time - startMs;
-    const motionPath = buildRouteMotionPath(active);
+    const motionPath = routeMotionPathFor(active);
     if (motionPath && relativeMs >= motionPath.timesMs[0] &&
         relativeMs <= motionPath.timesMs[motionPath.timesMs.length - 1]) {
       const before = routeMotionPointAt(
@@ -1510,7 +1555,7 @@
     const timelineMs = Math.max(0, Math.min(totalMs, ms));
     const linear = linearVesselPointAt(timelineMs);
     const active = routeFor(activeRevisionAt(timelineMs));
-    const motionPath = buildRouteMotionPath(active);
+    const motionPath = routeMotionPathFor(active);
     if (!motionPath || timelineMs < motionPath.timesMs[0] ||
         timelineMs > motionPath.timesMs[motionPath.timesMs.length - 1]) {
       return linear;
@@ -2102,10 +2147,11 @@
 
     const active = routeFor(state.active);
     if (active?.waypoints?.length > 1) {
+      const activePaintPoints = routePaintPointsFor(active);
       if (layers.routePolyline) {
         drawMiniPath(active.waypoints, ROUTE_POLYLINE_COLOR, 1.2, [3, 4], 0.72);
       }
-      drawMiniPath(active.waypoints, ROUTE_CURVE_COLOR, 2.3, [], 0.9, true);
+      drawMiniPath(activePaintPoints, ROUTE_CURVE_COLOR, 2.3, [], 0.9, false);
     }
     if (state.supersededRoute?.length > 1) {
       if (layers.routePolyline) {
@@ -2555,6 +2601,36 @@
     draw();
   });
 
+  function updateResearchRouteSmoothingUi() {
+    const sidecar = researchRouteSmoothingSidecar();
+    const active = bundle ? routeFor(activeRevisionAt(simMs)) : null;
+    const inspection = active
+      ? inspectResearchRouteSmoothing(active)
+      : { valid: false, reason: "no_active_route" };
+    if (routeSmoothingResearchEl) {
+      routeSmoothingResearchEl.disabled = !sidecar;
+      routeSmoothingResearchEl.checked = researchRouteSmoothingEnabled;
+    }
+    if (!routeSmoothingResearchStatusEl) return;
+    if (!sidecar) {
+      routeSmoothingResearchStatusEl.textContent =
+        "未发布研究 sidecar；使用当前 Viewer 展示路径";
+      routeSmoothingResearchStatusEl.classList.add("unavailable");
+      return;
+    }
+    if (inspection.valid) {
+      const count = sidecar.motion_samples?.length || 0;
+      routeSmoothingResearchStatusEl.textContent = researchRouteSmoothingEnabled
+        ? `研究 sidecar 已启用 · ${count} 个时间样本 · 失败时回退 timeline`
+        : `研究 sidecar 可用但默认关闭 · ${count} 个时间样本`;
+      routeSmoothingResearchStatusEl.classList.remove("unavailable");
+    } else {
+      routeSmoothingResearchStatusEl.textContent =
+        `研究 sidecar 不可用于当前路线 · 启用时回退 timeline · ${inspection.reason}`;
+      routeSmoothingResearchStatusEl.classList.add("unavailable");
+    }
+  }
+
   function updateModeUi() {
     presentationMode = viewMode !== "engineering";
     const researchAvailable = Boolean(candidateInspection?.valid);
@@ -2587,11 +2663,20 @@
       });
     });
 
+  routeSmoothingResearchEl.addEventListener("change", () => {
+    researchRouteSmoothingEnabled = routeSmoothingResearchEl.checked;
+    researchRouteMotionCache = new WeakMap();
+    updateResearchRouteSmoothingUi();
+    draw();
+  });
+
   async function start() {
     initializePanelControls();
     initializeSidebarToggle();
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
     routeMotionCache = new WeakMap();
+    researchRouteMotionCache = new WeakMap();
+    researchRouteSmoothingEnabled = false;
     renderPipelineOverview(bundle);
     const sidecar = window.RISK_EXPLANATION_SIDECAR ?? bundle.risk_explanation ?? null;
     riskExplanationInspection = riskExplanationTools.inspect(sidecar, bundle);
@@ -2643,6 +2728,7 @@
       image.onload = () => draw();
       image.src = window.VIEWER_BASEMAP || "gebco_basemap.png";
     }
+    updateResearchRouteSmoothingUi();
     const initialState = stateAt(simMs);
     updateMapUi(shipHeading(initialState, routeFor(initialState.active)), initialState);
     window.__ARCTIC_VIEWER__ = {
@@ -2661,7 +2747,7 @@
       routeMotion: () => {
         const current = stateAt(simMs);
         const active = routeFor(current.active);
-        const path = buildRouteMotionPath(active);
+        const path = routeMotionPathFor(active);
         const linear = linearVesselPointAt(simMs);
         const curved = path ? routeMotionPointAt(active, simMs) : null;
         const gapKm = curved
@@ -2677,6 +2763,11 @@
           linear_position: linear,
           curved_position: curved,
           gap_km: Number.isFinite(gapKm) ? gapKm : null,
+          motion_source: researchRouteSmoothingEnabled
+            ? (path ? "research_sidecar" : "timeline_fallback")
+            : (path ? "display_curve" : "timeline_fallback"),
+          research_smoothing_enabled: researchRouteSmoothingEnabled,
+          research_smoothing_inspection: inspectResearchRouteSmoothing(active),
           route_polyline_visible: layers.routePolyline,
         };
       },
@@ -2702,6 +2793,10 @@
         available: Boolean(candidateInspection?.valid),
         reason: candidateInspection?.reason || null,
         view_mode: viewMode,
+        route_smoothing_research_enabled: researchRouteSmoothingEnabled,
+        route_smoothing_research: inspectResearchRouteSmoothing(
+          routeFor(activeRevisionAt(simMs))
+        ),
         selected_layer: selectedRouteLayer,
         highlighted_candidate_id: highlightedCandidateId,
         canonical_selected_candidate_id: bundle?.route_candidates?.selected_candidate_id || null,
@@ -2743,6 +2838,18 @@
         if (viewMode !== "engineering") previousNonEngineeringMode = viewMode;
         updateModeUi();
         draw();
+      },
+      setResearchRouteSmoothing: (value) => {
+        researchRouteSmoothingEnabled = Boolean(value);
+        researchRouteMotionCache = new WeakMap();
+        updateResearchRouteSmoothingUi();
+        draw();
+        return {
+          enabled: researchRouteSmoothingEnabled,
+          inspection: inspectResearchRouteSmoothing(
+            routeFor(activeRevisionAt(simMs))
+          ),
+        };
       },
       setRouteLayer: (value) => {
         if (!ROUTE_LAYERS.includes(value) || !candidateInspection?.valid) return;

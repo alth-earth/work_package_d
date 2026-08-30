@@ -291,6 +291,10 @@
           <label><input id="layer-hard" type="checkbox" checked /> 硬约束 / 可用性</label>
           <label><input id="layer-routes" type="checkbox" checked /> 路线</label>
           <label><input id="layer-route-polyline" type="checkbox" /> 原始权威路径（默认隐藏）</label>
+          <label><input id="route-smoothing-research" type="checkbox" /> 启用研究曲线运动（默认关闭）</label>
+          <div id="route-smoothing-research-status" class="status summary-note">
+            未启用研究曲线；使用当前 Viewer 展示路径
+          </div>
           <label><input id="layer-track" type="checkbox" checked /> 航迹与近期轨迹</label>
           <label><input id="layer-navigation" type="checkbox" checked /> 导航辅助</label>
         </section>
@@ -310,6 +314,7 @@
     <script src="research_candidates.js"></script>
     <script src="risk_explanation.js"></script>
     <script src="route_smoothing.js"></script>
+    <script src="research_route_motion.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
