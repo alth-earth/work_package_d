@@ -57,6 +57,7 @@
   const routeSmoothingResearchStatusEl = document.getElementById(
     "route-smoothing-research-status"
   );
+  const formalMotionStatusEl = document.getElementById("formal-motion-status");
   const layerTrack = document.getElementById("layer-track");
   const layerNavigation = document.getElementById("layer-navigation");
   const gateBadges = document.querySelector(".badges");
@@ -115,6 +116,7 @@
   let mapWasDragged = false;
   let voyageProgress = null;
   let routeMotionCache = new WeakMap();
+  let formalRouteMotionCache = new WeakMap();
   let researchRouteMotionCache = new WeakMap();
   let researchRouteSmoothingEnabled = false;
   let lastRiskSummaryKey = null;
@@ -170,6 +172,8 @@
   if (!routeSmoothingTools) throw new Error("route smoothing renderer is not loaded");
   const researchMotionTools = window.ArcticRouteResearchMotion;
   if (!researchMotionTools) throw new Error("research route motion reader is not loaded");
+  const formalMotionTools = window.ArcticRouteMotion;
+  if (!formalMotionTools) throw new Error("formal route motion reader is not loaded");
   const { ROUTE_LAYERS } = candidateTools;
   const CANDIDATE_STYLES = {
     fastest: { color: "#f0b35b", dash: [9, 5], width: 2.4 },
@@ -1396,19 +1400,55 @@
     return path;
   }
 
+  function inspectFormalRouteMotion(route) {
+    if (!route) return { valid: false, reason: "no_active_route" };
+    return formalMotionTools.inspect(bundle, route);
+  }
+
+  function buildFormalRouteMotionPath(route) {
+    if (!route) return null;
+    if (formalRouteMotionCache.has(route)) return formalRouteMotionCache.get(route);
+    const path = formalMotionTools.buildPath(bundle, route, startMs);
+    formalRouteMotionCache.set(route, path);
+    return path;
+  }
+
   function routeMotionPathFor(route) {
-    return researchRouteSmoothingEnabled
+    const formal = buildFormalRouteMotionPath(route);
+    if (formal) return formal;
+    return researchRouteSmoothingEnabled && viewMode === "research"
       ? buildResearchRouteMotionPath(route)
-      : buildRouteMotionPath(route);
+      : null;
   }
 
   function routePaintPointsFor(route) {
     if (!route?.waypoints || route.waypoints.length < 2) return [];
-    if (researchRouteSmoothingEnabled) {
+    const formal = buildFormalRouteMotionPath(route);
+    if (formal) return formal.points;
+    if (researchRouteSmoothingEnabled && viewMode === "research") {
       const path = buildResearchRouteMotionPath(route);
       return path?.points || route.waypoints;
     }
-    return routeDisplayPoints(route.waypoints);
+    return route.waypoints;
+  }
+
+  function pathValueAtTime(path, relativeMs, values, circular = false) {
+    if (!path || !Array.isArray(values) || values.length !== path.timesMs.length) return null;
+    const target = clamp(relativeMs, path.timesMs[0], path.timesMs[path.timesMs.length - 1]);
+    let low = 0;
+    let high = path.timesMs.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (path.timesMs[mid] <= target) low = mid;
+      else high = mid - 1;
+    }
+    const next = Math.min(low + 1, path.timesMs.length - 1);
+    const span = path.timesMs[next] - path.timesMs[low];
+    const fraction = span > 0 ? (target - path.timesMs[low]) / span : 0;
+    if (!Number.isFinite(values[low]) || !Number.isFinite(values[next])) return null;
+    if (!circular) return values[low] + (values[next] - values[low]) * fraction;
+    const delta = (values[next] - values[low] + 540) % 360 - 180;
+    return (values[low] + delta * fraction + 360) % 360;
   }
 
   function pathLocationAtDistance(path, distanceKm) {
@@ -1470,6 +1510,18 @@
     return points;
   }
 
+  function routeMotionCompletedPointsAt(route, relativeMs) {
+    const path = routeMotionPathFor(route);
+    if (!path) return null;
+    const location = pathLocationAtDistance(path, routeDistanceAtTime(path, relativeMs));
+    const points = path.points.slice(0, location.index + 1);
+    const previous = points[points.length - 1];
+    if (!previous || previous.lon !== location.point.lon || previous.lat !== location.point.lat) {
+      points.push(location.point);
+    }
+    return points;
+  }
+
   function bearingDegrees(start, end) {
     const a = coordinateOf(start);
     const b = coordinateOf(end);
@@ -1486,6 +1538,14 @@
     if (!active || !active.waypoints || active.waypoints.length < 2) return 0;
     const relativeMs = s.time - startMs;
     const motionPath = routeMotionPathFor(active);
+    const producerCourse = pathValueAtTime(
+      motionPath,
+      relativeMs,
+      motionPath?.courseDegrees,
+      true,
+    );
+    if (motionPath?.source === "cd.route-motion-set.v1" &&
+        Number.isFinite(producerCourse)) return producerCourse;
     if (motionPath && relativeMs >= motionPath.timesMs[0] &&
         relativeMs <= motionPath.timesMs[motionPath.timesMs.length - 1]) {
       const before = routeMotionPointAt(
@@ -1547,10 +1607,9 @@
     return bundle.timeline[timelineIndex(timelineMs)]?.arv ?? null;
   }
 
-  // Viewer simulation motion follows the local cubic display path while
-  // preserving each authoritative waypoint ETA as a time anchor. If route
-  // identity, ETA ordering, geometry, or the adoption boundary is invalid,
-  // fail closed to the bundle timeline position and avoid a visual teleport.
+  // Viewer simulation motion follows only validated producer motion samples.
+  // When formal motion is absent or invalid, production mode fails closed to
+  // the authoritative bundle timeline; research motion remains opt-in.
   function vesselPointAt(ms) {
     const timelineMs = Math.max(0, Math.min(totalMs, ms));
     const linear = linearVesselPointAt(timelineMs);
@@ -1562,6 +1621,7 @@
     }
     const curved = routeMotionPointAt(active, timelineMs);
     if (!curved || !Number.isFinite(curved.lon) || !Number.isFinite(curved.lat)) return linear;
+    if (motionPath.source === "cd.route-motion-set.v1") return curved;
     const gapKm = haversineKm(linear.lon, linear.lat, curved.lon, curved.lat);
     return Number.isFinite(gapKm) && gapKm <= MAX_CURVE_MOTION_GAP_KM ? curved : linear;
   }
@@ -1671,16 +1731,22 @@
     const denom = isoToMs(b.t) - isoToMs(a.t) || 1;
     const f = Math.max(0, Math.min(1, (ms - (isoToMs(a.t) - startMs)) / denom));
     const lerp = (x, y) => x + (y - x) * f;
-    const track = previousTimelineValue(i, "track") || [];
+    const rawTrack = previousTimelineValue(i, "track") || [];
     const pending = previousTimelineValue(i, "pending");
     const superseded = previousTimelineValue(i, "superseded");
     const riskSelection = riskSelectionAt(ms);
     const vessel = vesselPointAt(ms);
+    const activeRoute = routeFor(activeRevisionAt(ms));
+    const formalPath = buildFormalRouteMotionPath(activeRoute);
+    const formalSpeed = pathValueAtTime(formalPath, ms, formalPath?.speedKnots);
+    const formalTrack = formalPath
+      ? routeMotionCompletedPointsAt(activeRoute, ms)
+      : null;
     return {
       time: startMs + ms,
       lon: vessel.lon,
       lat: vessel.lat,
-      kn: lerp(a.v.kn ?? 0, b.v.kn ?? 0),
+      kn: Number.isFinite(formalSpeed) ? formalSpeed : lerp(a.v.kn ?? 0, b.v.kn ?? 0),
       status: a.v.status,
       edge: lerp(a.v.ep ?? 0, b.v.ep ?? 0),
       edgeIndex: a.v.eidx,
@@ -1690,7 +1756,7 @@
       decisionTime: a.dt,
       effectiveAdoption: a.eat,
       segment: a.seg,
-      track: track.slice(0, a.ctl),
+      track: formalTrack || rawTrack.slice(0, a.ctl),
       pendingRoute: pending,
       supersededRoute: superseded,
       trail: vesselTrailAt(ms),
@@ -2607,6 +2673,15 @@
     const inspection = active
       ? inspectResearchRouteSmoothing(active)
       : { valid: false, reason: "no_active_route" };
+    const formalInspection = active
+      ? inspectFormalRouteMotion(active)
+      : { valid: false, reason: "no_active_route" };
+    if (formalMotionStatusEl) {
+      formalMotionStatusEl.textContent = formalInspection.valid
+        ? "正式曲线运动已默认启用 · C producer samples · 失败时回退 timeline"
+        : `正式曲线不可用 · 使用权威 raw timeline · ${formalInspection.reason}`;
+      formalMotionStatusEl.classList.toggle("unavailable", !formalInspection.valid);
+    }
     if (routeSmoothingResearchEl) {
       routeSmoothingResearchEl.disabled = !sidecar;
       routeSmoothingResearchEl.checked = researchRouteSmoothingEnabled;
@@ -2674,7 +2749,9 @@
     initializePanelControls();
     initializeSidebarToggle();
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
+    await formalMotionTools.prevalidate(bundle);
     routeMotionCache = new WeakMap();
+    formalRouteMotionCache = new WeakMap();
     researchRouteMotionCache = new WeakMap();
     researchRouteSmoothingEnabled = false;
     renderPipelineOverview(bundle);
@@ -2763,9 +2840,12 @@
           linear_position: linear,
           curved_position: curved,
           gap_km: Number.isFinite(gapKm) ? gapKm : null,
-          motion_source: researchRouteSmoothingEnabled
-            ? (path ? "research_sidecar" : "timeline_fallback")
-            : (path ? "display_curve" : "timeline_fallback"),
+          motion_source: path?.source === "cd.route-motion-set.v1"
+            ? "formal_route_motion"
+            : (researchRouteSmoothingEnabled && viewMode === "research" && path
+              ? "research_sidecar"
+              : "timeline_fallback"),
+          formal_motion_inspection: inspectFormalRouteMotion(active),
           research_smoothing_enabled: researchRouteSmoothingEnabled,
           research_smoothing_inspection: inspectResearchRouteSmoothing(active),
           route_polyline_visible: layers.routePolyline,
@@ -2803,6 +2883,9 @@
         candidates: candidatesForLayer(),
         metadata: Object.fromEntries(experimentMetadataRows()),
       }),
+      formalRouteMotion: () => inspectFormalRouteMotion(
+        routeFor(activeRevisionAt(simMs))
+      ),
       identitySafety: () => ({ ...combinedIdentityInspection }),
       riskExplanation: () => ({
         valid: Boolean(riskExplanationInspection?.valid),

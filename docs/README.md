@@ -206,7 +206,16 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
   no synthetic environmental layer is shown;
 - D tests: 58 passed; Ruff and JS syntax are clean.
 
-## Route display smoothing（2026-08-31 00:56 +08:00）
+## Formal engineering route motion（2026-08-31）
+
+- Viewer 新增 `cd.route-motion-set.v1` strict reader；有效 artifact 默认驱动路线、船位、
+  producer course/speed、trail 和 completed-track，缺失或非法时整体回退 raw timeline；
+- D 仅验证和插值 C 发布的 motion samples，不在生产模式重算曲线、ETA、风险或运动学；
+- research sidecar 继续默认关闭且只在研究视图显式启用，不是生产 fallback；
+- synthetic bulk-carrier profile 与声明 raster-model corridor 只构成工程仿真资格，不表示
+  实船、导航或 UKC 认证。完整边界见 [Viewer 技术说明](viewer/README.md)。
+
+## Route display smoothing（2026-08-31 00:56 +08:00，历史展示实现）
 
 - Replay Viewer 对计划路线启用展示-only 的局部受约束三次 B 样条绘制：使用局部米制坐标、
   入射/出射方向、有限显示偏离和 fail-closed 回退，降低航点处的锐角折线观感；

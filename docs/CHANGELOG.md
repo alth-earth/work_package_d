@@ -11,6 +11,15 @@ Last Verified: 2026-08-23
 
 # 工作包 D 变更记录
 
+## Unreleased - Formal engineering route motion（2026-08-31）
+
+- 新增 `cd.route-motion-set.v1` strict reader；启动时用 WebCrypto 校验完整 set、curve、motion
+  canonical digest，并校验四层顺序、plan/full-waypoint identity、ETA 和 adoption。
+- 有效正式 motion 默认驱动路线、船位、producer course/speed、trail 和 completed-track；
+  缺失、过期、篡改或逐层 `RAW_PASSTHROUGH` 均回退 raw waypoint/timeline。
+- 生产模式不再调用 D 本地 cubic smoother；research sidecar 仍只在研究视图显式启用，不能
+  充当生产 fallback。工程船模明确为 synthetic reference，不表示实船或导航认证。
+
 ## Unreleased - Viewer rehearsal controls（2026-08-26）
 
 - feat: 里程碑时间线改为键盘可操作的跳转控件；点击出发、风险更新、待采用或已采用事件

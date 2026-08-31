@@ -11,8 +11,8 @@ Last Verified: 2026-08-31 00:19 +08:00
 
 # 工作包 D 交接说明
 
-> Status: CURRENT — Replay-driven Viewer presentation polish（2026-08-21）
-> 更新：2026-08-21。D 现为 **Viewer 唯一实现 owner**（HTML/JS/CSS、
+> Status: CURRENT — Formal engineering route motion consumer（2026-08-31）
+> 更新：2026-08-31。D 现为 **Viewer 唯一实现 owner**（HTML/JS/CSS、
 > Simulation Clock UI、moving ship、静态 server、proof renderer），
 > 消费 orchestrator `scripts/replay_viewer_export.py` 导出的稳定制品
 > （`bundle.json` / `gebco_basemap.png` / `basemap_metadata.json`）。
@@ -25,6 +25,12 @@ D 0.1.0 的 Legacy Display 只读消费 C 顶层
 `cd.route-plan.v2` 后备，输出 `d.display-snapshot.v1`。当前 **Replay-driven Viewer** 不
 直接读取 C 集合，而只消费 Orchestrator 的 `replay.viewer-bundle.v1`（`viewer/`：
 `app.js`/`index.html`/`style.css` + `pngcodec.py`/`embed.py`/`render_proof.py`）。
+
+Replay bundle 可在顶层携带 `cd.route-motion-set.v1`。D 对完整 canonical identity、四层
+records、plan/full-waypoint digest、ETA 和 adoption 做严格校验；有效 artifact 默认同源驱动
+路线、船位、航向、速度、trail 和 completed-track，失败整体回退 raw waypoint/timeline。
+生产模式不再本地重算曲线；research sidecar 仍需研究视图显式启用。本路径只声明公式散货船
+工程仿真，不声明实船校准、导航级 corridor 或 UKC。
 
 ## Viewer Product Mainline（2026-08-20 21:13 +08:00）
 

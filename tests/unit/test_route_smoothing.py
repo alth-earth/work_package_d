@@ -176,6 +176,8 @@ def test_route_smoothing_is_inlined_for_offline_viewer() -> None:
     assert '<script src="route_smoothing.js"></script>' in embed
     assert 'viewer / "research_route_motion.js"' in embed
     assert '<script src="research_route_motion.js"></script>' in embed
+    assert 'viewer / "route_motion.js"' in embed
+    assert '<script src="route_motion.js"></script>' in embed
 
 
 def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
@@ -192,7 +194,7 @@ def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
     assert "vesselPointAt(ms)" in app
 
 
-def test_curve_is_primary_route_layer_and_raw_polyline_is_optional() -> None:
+def test_formal_curve_is_primary_when_valid_and_raw_polyline_remains_available() -> None:
     html = (VIEWER / "index.html").read_text(encoding="utf-8")
     stylesheet = (VIEWER / "style.css").read_text(encoding="utf-8")
     app = (VIEWER / "app.js").read_text(encoding="utf-8")

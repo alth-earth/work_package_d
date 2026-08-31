@@ -151,12 +151,13 @@
   */
   function floatHint(key) {
     return [
-      "lon", "lat", "course_degrees", "speed_knots",
+      "lon", "lat", "longitude", "latitude", "course_degrees", "speed_knots",
+      "recommended_speed_mps",
       "minimum_radius_m", "maximum_deviation_m", "maximum_yaw_rate",
       "maximum_lateral_acceleration", "risk", "delta", "tolerance",
       "curvature", "acceleration", "radius", "radius_m", "distance_m", "distance_km",
       "travel_hours", "integrated_risk_hours", "average_risk", "maximum_risk",
-      "minimum_confidence", "path_length_m", "anchor_distances_m",
+      "minimum_confidence", "path_length_m", "arc_length_m", "anchor_distances_m",
       "parameter_start", "parameter_end", "trim_fraction", "points_m", "points", "raw_points", "samples",
       "radii_m", "curvatures_m_inv", "samples_m", "first_derivatives_m", "second_derivatives_m",
       "control_points_m", "entry_m", "vertex_m", "scale_m", "trim_m", "parameters",
@@ -329,6 +330,19 @@
   function canonicalDigest(value) {
     const candidates = canonicalDigestCandidates(value);
     return candidates[0] || null;
+  }
+
+  function canonicalDigestAt(value, key) {
+    const candidates = canonicalDigestCandidatesAt(value, key);
+    return candidates[0] || null;
+  }
+
+  async function canonicalDigestAtAsync(value, key = "") {
+    const subtle = window.crypto?.subtle;
+    if (!subtle || typeof TextEncoder !== "function") return canonicalDigestAt(value, key);
+    const bytes = new TextEncoder().encode(canonicalJson(value, "python", key));
+    const digest = new Uint8Array(await subtle.digest("SHA-256", bytes));
+    return Array.from(digest, (item) => item.toString(16).padStart(2, "0")).join("");
   }
 
   function digestMatches(value, declared) {
@@ -722,5 +736,7 @@
     // Exposed only as a deterministic fixture/provenance helper. It does not
     // qualify a sidecar and is never used to compute risk or vessel limits.
     canonicalDigest,
+    canonicalDigestAt,
+    canonicalDigestAtAsync,
   });
 })();

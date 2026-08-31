@@ -168,9 +168,24 @@ waypoints、route metrics、ETA 或 active/pending/adopted 语义。该效果不
 ./.venv/bin/python viewer/render_proof.py --viewer-dir viewer --time 2026-08-15T10:30:00Z
 ```
 
-## 受约束研究曲线运动（2026-08-31 02:20 +08:00）
+## 正式工程曲线运动（2026-08-31）
 
-当前 Viewer 的蓝色平滑曲线和仿真船位默认仍来自 D 的 display-only 路径。只有在
+bundle 顶层可包含一个或多个 `cd.route-motion-set.v1`。D 启动时严格校验 canonical
+`motion_set_id`、四层固定顺序、plan 和完整 waypoint/ETA/推荐速度 digest、RiskWindow、
+curve/motion digest、ETA 单调性与 adoption 起终点。验证使用 WebCrypto 做异步预校验并冻结
+artifact；有效正式 motion 没有生产开关，默认同时驱动蓝色路线、船位、producer
+course/speed、近期 trail 和 completed-track。
+
+缺失、陈旧、顺序/身份不符、digest 篡改、非单调 ETA 或 `RAW_PASSTHROUGH` 时，整条活动
+路线稳定回退原始 waypoint/timeline；界面显示具体原因。生产路径不调用 D 本地 cubic
+smoother，也不会重算 ETA、风险、hard mask、corridor 或运动学。这里的“正式”只表示工程
+仿真 C→D 合同通过；profile 仍为 `FORMULA_DERIVED_ENGINEERING_REFERENCE`、
+`real_vessel_calibrated=false`，不表示实船校准、导航认证或 UKC。
+
+## 受约束研究曲线运动（2026-08-31 02:20 +08:00，历史兼容）
+
+没有有效正式 motion 时，生产视图直接回退 raw timeline；D 本地 display-only 曲线不再是
+生产后备。只有在
 Orchestrator 导出命令显式传入 `--route-smoothing-sidecar PATH`，并将一个已接受的
 `c.research-route-smoothing-sidecar.v1` 放入 bundle 后，界面中的“启用研究曲线运动”控件
 才可用；控件默认关闭。开启后，D 校验 sidecar 的 route id、原始 waypoint 坐标、ETA 和
@@ -198,8 +213,8 @@ cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
 ```text
 船必须动
 Simulation Clock -> vessel motion
-ship position = route waypoint ETA + simulation_time -> display curve by default;
-explicit research sidecar only when enabled and identity-validated
+ship position = formal producer motion when identity-validated -> otherwise raw timeline;
+explicit research sidecar only in Research View when enabled and identity-validated
 snapshot cadence != render cadence
 REPLAN_DECIDED != REPLAN_ADOPTED
 pending route != authoritative route
