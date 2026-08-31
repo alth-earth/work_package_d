@@ -154,9 +154,11 @@ const unqualified = {{...sidecar, research_eligible: false}};
 if (reader.inspect(unqualified, route).reason !== "research_gate_not_passed") process.exit(7);
 const revisionRoute = {{...route, revision: 1, effective_adoption_time: "2026-01-01T00:00:00Z"}};
 const revisionDrift = {{...sidecar, plan_revision: 2}};
-if (reader.inspect(revisionDrift, revisionRoute).reason !== "plan_revision_mismatch") process.exit(8);
+if (reader.inspect(revisionDrift, revisionRoute).reason !==
+    "plan_revision_mismatch") process.exit(8);
 const adoptionDrift = {{...sidecar, adoption_time: "2026-01-01T00:01:00Z"}};
-if (reader.inspect(adoptionDrift, revisionRoute).reason !== "adoption_time_mismatch") process.exit(9);
+if (reader.inspect(adoptionDrift, revisionRoute).reason !==
+    "adoption_time_mismatch") process.exit(9);
 """.replace("__SCRIPT_PATH__", script_path).replace("{{", "{").replace("}}", "}")
     result = subprocess.run([node, "-e", source], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr or result.stdout
