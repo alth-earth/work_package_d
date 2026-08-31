@@ -273,7 +273,7 @@
             <li><i class="sw sw-hard-other"></i>OTHER · 硬约束不可用</li>
             <li><i class="sw sw-trail"></i>近期船舶轨迹 · 展示</li>
             <li><i class="sw sw-track"></i>已完成航迹</li>
-            <li><i class="sw sw-active"></i>平滑曲线路径 · 蓝色</li>
+            <li><i class="sw sw-active"></i>正式曲线路径 · 蓝色</li>
             <li><i class="sw sw-route-polyline"></i>原始折线路径 · 默认隐藏</li>
             <li class="research-only"><i class="sw sw-candidate-fastest"></i>候选路线 · 最快</li>
             <li class="research-only"><i class="sw sw-candidate-low-risk"></i>候选路线 · 低风险</li>
@@ -294,10 +294,6 @@
           <div id="formal-motion-status" class="status summary-note">
             正在校验正式曲线运动制品
           </div>
-          <label><input id="route-smoothing-research" type="checkbox" /> 启用研究曲线运动（默认关闭）</label>
-          <div id="route-smoothing-research-status" class="status summary-note">
-            未启用研究曲线；使用当前 Viewer 展示路径
-          </div>
           <label><input id="layer-track" type="checkbox" checked /> 航迹与近期轨迹</label>
           <label><input id="layer-navigation" type="checkbox" checked /> 导航辅助</label>
         </section>
@@ -316,8 +312,6 @@
     </main>
     <script src="research_candidates.js"></script>
     <script src="risk_explanation.js"></script>
-    <script src="route_smoothing.js"></script>
-    <script src="research_route_motion.js"></script>
     <script src="route_motion.js"></script>
     <script src="app.js"></script>
   </body>

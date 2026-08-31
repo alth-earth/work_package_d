@@ -20,8 +20,6 @@ def main(argv: list[str] | None = None) -> int:
     css = (viewer / "style.css").read_text(encoding="utf-8")
     research_candidates = (viewer / "research_candidates.js").read_text(encoding="utf-8")
     risk_explanation = (viewer / "risk_explanation.js").read_text(encoding="utf-8")
-    route_smoothing = (viewer / "route_smoothing.js").read_text(encoding="utf-8")
-    research_route_motion = (viewer / "research_route_motion.js").read_text(encoding="utf-8")
     route_motion = (viewer / "route_motion.js").read_text(encoding="utf-8")
     app = (viewer / "app.js").read_text(encoding="utf-8")
     bundle = (viewer / "bundle.json").read_bytes()
@@ -48,12 +46,6 @@ def main(argv: list[str] | None = None) -> int:
         + risk_explanation
         + "\n</script>\n"
         + "<script>\n"
-        + route_smoothing
-        + "\n</script>\n"
-        + "<script>\n"
-        + research_route_motion
-        + "\n</script>\n"
-        + "<script>\n"
         + route_motion
         + "\n</script>\n"
         + "<script>\n"
@@ -63,8 +55,6 @@ def main(argv: list[str] | None = None) -> int:
     html = html.replace('<link rel="stylesheet" href="style.css" />', "")
     html = html.replace('<script src="research_candidates.js"></script>\n    ', "")
     html = html.replace('<script src="risk_explanation.js"></script>\n    ', "")
-    html = html.replace('<script src="route_smoothing.js"></script>\n    ', "")
-    html = html.replace('<script src="research_route_motion.js"></script>\n    ', "")
     html = html.replace('<script src="route_motion.js"></script>\n    ', "")
     html = html.replace('<script src="app.js"></script>', inline)
     output = args.output or viewer / "index_self_contained.html"

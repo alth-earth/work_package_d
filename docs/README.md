@@ -121,10 +121,10 @@ The viewer lives in `viewer/`:
 
 The static server lives in `scripts/replay_viewer_serve.py`.
 
-## Viewer Product Mainline（2026-08-20 21:13 +08:00）
+## Viewer Product Mainline（2026-08-31）
 
-The current D mainline is browser-verified on the real
-`sb-viewer-baseline-12h-det` artifact:
+The current D mainline is the browser-verified C-published
+`cd.route-motion-set.v1` artifact in the default Winter bundle:
 
 - `bundle.json` carries presentation-ready `bc.risk-frame.v2` spatial frames;
   D only selects and renders them;
@@ -141,9 +141,14 @@ The current D mainline is browser-verified on the real
 - Presentation Mode and Engineering Debug Mode are separated by the toggle.
 - Presentation layers can be toggled independently: Risk, Hard/Availability,
   Routes, original route polyline, and Completed Track. The original route
-  polyline is off by default; the blue smoothed route is the primary route
-  layer. Presentation Mode starts with engineering text hidden; Debug Mode
-  exposes the full timing and adoption diagnostics.
+  polyline is off by default; the blue formal producer motion route is the
+  primary route layer. Presentation Mode starts with engineering text hidden;
+  Debug Mode exposes the full timing and adoption diagnostics.
+- The formal motion samples are the single geometry source for the route,
+  vessel position, heading, speed, trail, and completed track. D does not run
+  a local display smoother. Missing, stale, tampered, or identity-inconsistent
+  formal motion falls back to the authoritative raw waypoint/timeline and
+  displays the concrete reason.
 
 Browser evidence is kept outside Git under
 `${ARCTIC_ROUTE_ROOT}/.runtime/viewer-proof/`. Verified environment: Firefox on
@@ -151,19 +156,19 @@ Browser evidence is kept outside Git under
 warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
 +12h/+24h = unavailable. D full tests: 57 passed; ruff and JS syntax are clean.
 
-## Viewer Presentation Polish（2026-08-21 01:20 +08:00）
+## Viewer Presentation Polish（历史兼容，2026-08-21 01:20 +08:00）
 
 - Presentation Mode uses softer exact-cell risk rendering and pixel-aligned
   fills; Engineering Debug retains the raw cell grid and diagnostics.
-- Route drawing applies display-side constrained local cubic B-spline geometry
-  with linear densification as its fail-closed fallback; authoritative
-  waypoints, ETA, adoption, and completed-track semantics do not change.
+- Historical route drawing applied display-side constrained local cubic B-spline
+  geometry with linear densification as its fail-closed fallback. Those scripts
+  remain for compatibility tests but are not loaded by the default Viewer.
 - The white vessel dot is now a small top-down ship icon. Its position remains
   backend ETA + Simulation Clock; its rotation is derived from the active
   authoritative route segment bearing. Pixel speed remains absent.
 - The Orchestrator bundle declares `presentation.viewer-presentation.v1`:
   exact risk cells/no interpolation, separate fail-closed hard reasons,
-  display-only route smoothing with authoritative-polyline fallback, and
+  formal producer motion samples with raw waypoint/timeline fallback, and
   ETA-based vessel rendering.
 - A real Firefox smoke after the polish rechecked horizon availability,
   continuous movement, pending/adopted routes, layer toggles, and both modes;
@@ -266,8 +271,8 @@ cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 - Completed track is append-only
 - Replan only changes future route
 - Viewer does not invent speed, ETA, risk or route authority. Planned route
-  lines may use constrained local cubic B-spline paint geometry; this is
-  display-only and falls back to collinear authoritative-polyline densification.
+  lines use producer-published formal motion samples when identity-validated;
+  otherwise they use the authoritative raw waypoint/timeline.
 
 ## Display Layer（snapshot / coverage / demo）
 

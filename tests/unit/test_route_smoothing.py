@@ -1,4 +1,4 @@
-"""Display-only constrained cubic B-spline route rendering checks."""
+"""Historical renderer compatibility and formal Viewer-path checks."""
 
 from __future__ import annotations
 
@@ -164,33 +164,36 @@ if (reader.inspect(adoptionDrift, revisionRoute).reason !==
     assert result.returncode == 0, result.stderr or result.stdout
 
 
-def test_route_smoothing_is_loaded_before_the_viewer_application() -> None:
+def test_historical_smoothers_are_not_loaded_by_the_production_viewer() -> None:
     html = (VIEWER / "index.html").read_text(encoding="utf-8")
-    assert '<script src="route_smoothing.js"></script>' in html
-    assert html.index('route_smoothing.js') < html.index('app.js')
+    assert '<script src="route_smoothing.js"></script>' not in html
+    assert '<script src="research_route_motion.js"></script>' not in html
+    assert html.index('route_motion.js') < html.index('app.js')
 
 
-def test_route_smoothing_is_inlined_for_offline_viewer() -> None:
+def test_offline_viewer_inlines_formal_reader_only() -> None:
     embed = (VIEWER / "embed.py").read_text(encoding="utf-8")
-    assert 'viewer / "route_smoothing.js"' in embed
-    assert '<script src="route_smoothing.js"></script>' in embed
-    assert 'viewer / "research_route_motion.js"' in embed
-    assert '<script src="research_route_motion.js"></script>' in embed
+    assert 'viewer / "route_smoothing.js"' not in embed
+    assert '<script src="route_smoothing.js"></script>' not in embed
+    assert 'viewer / "research_route_motion.js"' not in embed
+    assert '<script src="research_route_motion.js"></script>' not in embed
     assert 'viewer / "route_motion.js"' in embed
     assert '<script src="route_motion.js"></script>' in embed
 
 
 def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
     app = (VIEWER / "app.js").read_text(encoding="utf-8")
-    assert "routeDisplayPoints" in app
-    assert "smoothRoute = false" in app
+    assert "routeDisplayPoints" not in app
+    assert "smoothRoute = false" not in app
+    assert "routeSmoothingTools" not in app
+    assert "researchMotionTools" not in app
     assert "routeMotionPointAt" in app
     assert "routeMotionPaintPointsAt(active, simMs)" in app
     assert "linearVesselPointAt" in app
     assert "activeRevisionAt" in app
     assert "drawPath(s.trail" in app
-    assert 'drawPath(s.track, "#5cc47a", 3, [], null, 1, !formalActive)' in app
-    assert 'drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94, !formalActive)' in app
+    assert 'drawPath(s.track, "#5cc47a", 3, [], null, 1)' in app
+    assert 'drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94)' in app
     assert "if (formalActive && candidate.candidate_id === canonicalId) continue;" in app
     assert "shipHeading(s, active)" in app
     assert "vesselPointAt(ms)" in app
@@ -212,14 +215,13 @@ def test_formal_curve_is_primary_when_valid_and_raw_polyline_remains_available()
     assert "drawRoutePolyline" in app
 
 
-def test_research_sidecar_motion_is_explicit_and_default_off() -> None:
+def test_research_sidecar_motion_is_not_a_production_runtime_capability() -> None:
     html = (VIEWER / "index.html").read_text(encoding="utf-8")
     app = (VIEWER / "app.js").read_text(encoding="utf-8")
-    assert 'id="route-smoothing-research" type="checkbox"' in html
-    assert "启用研究曲线运动（默认关闭）" in html
-    assert "let researchRouteSmoothingEnabled = false;" in app
-    assert "researchRouteSmoothingEnabled = false;" in app
-    assert "buildResearchRouteMotionPath" in app
+    assert 'id="route-smoothing-research" type="checkbox"' not in html
+    assert "启用研究曲线运动（默认关闭）" not in html
+    assert "researchRouteSmoothingEnabled" not in app
+    assert "buildResearchRouteMotionPath" not in app
     assert "motion_source" in app
     assert "timeline_fallback" in app
 

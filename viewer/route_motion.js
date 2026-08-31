@@ -14,6 +14,155 @@
   const objectLike = (value) => value !== null && typeof value === "object" &&
     !Array.isArray(value);
 
+  // Keep the formal consumer self-contained.  The production Viewer must not
+  // load the historical research reader merely to verify a formal artifact.
+  function floatHint(key) {
+    return [
+      "lon", "lat", "longitude", "latitude", "course_degrees", "speed_knots",
+      "recommended_speed_mps", "minimum_radius_m", "maximum_deviation_m",
+      "maximum_yaw_rate", "maximum_lateral_acceleration", "risk", "delta",
+      "tolerance", "curvature", "acceleration", "radius", "radius_m",
+      "distance_m", "distance_km", "travel_hours", "integrated_risk_hours",
+      "average_risk", "maximum_risk", "minimum_confidence", "path_length_m",
+      "arc_length_m", "anchor_distances_m", "parameter_start", "parameter_end",
+      "trim_fraction", "points_m", "points", "raw_points", "samples", "radii_m",
+      "curvatures_m_inv", "samples_m", "first_derivatives_m", "second_derivatives_m",
+      "control_points_m", "entry_m", "vertex_m", "scale_m", "trim_m", "parameters",
+      "curve_samples", "cumulative_distance_m", "error_m", "error_rad",
+      "curvature_abs_m_inv", "expansion_m", "span_convex_hulls_m",
+      "lateral_acceleration_m_s2", "yaw_rate_deg_s", "yaw_rate_rad_s",
+      "lateral_accelerations_m_s2", "yaw_rates_deg_s", "yaw_rates_rad_s",
+      "additional_peak_rss_gate_mib",
+    ].some((suffix) => key === suffix || key.endsWith(`_${suffix}`)) ||
+      key === "knot_vector" || key === "route_coordinates" || key === "coordinates";
+  }
+
+  function pythonNumber(value, key) {
+    if (Object.is(value, -0)) return floatHint(key) ? "-0.0" : "0";
+    const magnitude = Math.abs(value);
+    if (Number.isInteger(value) && floatHint(key) && magnitude < 1e16) return `${value}.0`;
+    let result = String(value);
+    if (magnitude >= 1e-6 && magnitude < 1e-4 && !/[eE]/.test(result)) {
+      result = value.toExponential();
+    }
+    if (magnitude >= 1e16 && !/[eE]/.test(result)) result = value.toExponential();
+    const exponent = result.match(/^(-?\d+(?:\.\d+)?)[eE]([+-]?\d+)$/);
+    if (exponent) {
+      const sign = Number(exponent[2]) < 0 ? "-" : "+";
+      const digits = String(Math.abs(Number(exponent[2]))).padStart(2, "0");
+      result = `${exponent[1]}e${sign}${digits}`;
+    }
+    return result;
+  }
+
+  function canonicalJson(value, key = "") {
+    if (value === null) return "null";
+    if (value === true) return "true";
+    if (value === false) return "false";
+    if (typeof value === "number") {
+      if (!finite(value)) throw new TypeError("canonical JSON cannot contain a non-finite number");
+      return pythonNumber(value, key);
+    }
+    if (typeof value === "string") return JSON.stringify(value);
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => canonicalJson(item, key)).join(",")}]`;
+    }
+    if (!objectLike(value)) throw new TypeError("canonical JSON contains an unsupported value");
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((name) =>
+      `${JSON.stringify(name)}:${canonicalJson(value[name], name)}`
+    ).join(",")}}`;
+  }
+
+  function utf8Bytes(value) {
+    const bytes = [];
+    for (let index = 0; index < value.length; index += 1) {
+      let code = value.charCodeAt(index);
+      if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length) {
+        const low = value.charCodeAt(index + 1);
+        if (low >= 0xdc00 && low <= 0xdfff) {
+          code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+          index += 1;
+        }
+      }
+      if (code <= 0x7f) bytes.push(code);
+      else if (code <= 0x7ff) {
+        bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+      } else if (code <= 0xffff) {
+        bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+      } else {
+        bytes.push(
+          0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f),
+          0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f),
+        );
+      }
+    }
+    return bytes;
+  }
+
+  function sha256Hex(value) {
+    const input = utf8Bytes(value);
+    const bitLength = input.length * 8;
+    input.push(0x80);
+    while ((input.length + 8) % 64 !== 0) input.push(0);
+    for (let shift = 7; shift >= 0; shift -= 1) {
+      input.push(Math.floor(bitLength / 2 ** (shift * 8)) & 0xff);
+    }
+    const constants = [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b,
+      0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
+      0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7,
+      0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+      0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152,
+      0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+      0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+      0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
+      0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08,
+      0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f,
+      0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+      0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    let state = [
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ];
+    const words = new Array(64);
+    for (let offset = 0; offset < input.length; offset += 64) {
+      for (let index = 0; index < 16; index += 1) {
+        const base = offset + index * 4;
+        words[index] = (
+          (input[base] << 24) | (input[base + 1] << 16) |
+          (input[base + 2] << 8) | input[base + 3]
+        ) >>> 0;
+      }
+      for (let index = 16; index < 64; index += 1) {
+        const valueWord = words[index - 15];
+        const sigma0 = ((valueWord >>> 7) | (valueWord << 25)) ^
+          ((valueWord >>> 18) | (valueWord << 14)) ^ (valueWord >>> 3);
+        const previous = words[index - 2];
+        const sigma1 = ((previous >>> 17) | (previous << 15)) ^
+          ((previous >>> 19) | (previous << 13)) ^ (previous >>> 10);
+        words[index] = (words[index - 16] + sigma0 + words[index - 7] + sigma1) >>> 0;
+      }
+      let [a, b, c, d, e, f, g, h] = state;
+      for (let index = 0; index < 64; index += 1) {
+        const sum1 = ((e >>> 6) | (e << 26)) ^
+          ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        const choice = (e & f) ^ (~e & g);
+        const temp1 = (h + sum1 + choice + constants[index] + words[index]) >>> 0;
+        const sum0 = ((a >>> 2) | (a << 30)) ^
+          ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        const majority = (a & b) ^ (a & c) ^ (b & c);
+        const temp2 = (sum0 + majority) >>> 0;
+        h = g; g = f; f = e; e = (d + temp1) >>> 0;
+        d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
+      }
+      state = state.map((value, index) => (value + [a, b, c, d, e, f, g, h][index]) >>> 0);
+    }
+    return state.map((value) => value.toString(16).padStart(8, "0")).join("");
+  }
+
   function invalid(reason, details = {}) {
     return { valid: false, usable: false, reason, ...details };
   }
@@ -27,13 +176,36 @@
   }
 
   function canonicalDigest(value) {
-    const helper = window.ArcticRouteResearchMotion?.canonicalDigest;
-    return typeof helper === "function" ? helper(value) : null;
+    try {
+      return sha256Hex(canonicalJson(value));
+    } catch (error) {
+      return null;
+    }
   }
 
   function canonicalCoordinateDigest(value) {
-    const helper = window.ArcticRouteResearchMotion?.canonicalDigestAt;
-    return typeof helper === "function" ? helper(value, "coordinates") : null;
+    try {
+      return sha256Hex(canonicalJson(value, "coordinates"));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function canonicalDigestAsync(value, key = "") {
+    try {
+      const canonical = canonicalJson(value, key);
+      const subtle = window.crypto?.subtle;
+      if (!subtle || typeof TextEncoder !== "function") return sha256Hex(canonical);
+      const bytes = new TextEncoder().encode(canonical);
+      const hashed = new Uint8Array(await subtle.digest("SHA-256", bytes));
+      return Array.from(hashed, (item) => item.toString(16).padStart(2, "0")).join("");
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function canonicalCoordinateDigestAsync(value) {
+    return canonicalDigestAsync(value, "coordinates");
   }
 
   function digest(value) {
@@ -189,21 +361,19 @@
       return invalid("motion_set_shape_invalid");
     }
     if (verifiedSets.has(value)) return inspectSet(value);
-    const helper = window.ArcticRouteResearchMotion?.canonicalDigestAtAsync;
-    if (typeof helper !== "function") return inspectSet(value);
     const payload = {...value};
     delete payload.motion_set_id;
     const expectedSetDigest = typeof value.motion_set_id === "string"
       ? value.motion_set_id.slice("route-motion-set-sha256-".length)
       : null;
-    const checks = [helper(payload)];
+    const checks = [canonicalDigestAsync(payload)];
     for (const record of value.records) {
       if (!objectLike(record) || !Array.isArray(record.motion_samples)) {
         return invalid("motion_set_records_invalid");
       }
       checks.push(
-        helper(record.motion_samples.map(({lon, lat}) => [lon, lat]), "coordinates"),
-        helper(record.motion_samples),
+        canonicalCoordinateDigestAsync(record.motion_samples.map(({lon, lat}) => [lon, lat])),
+        canonicalDigestAsync(record.motion_samples),
       );
     }
     const digests = await Promise.all(checks);
@@ -218,7 +388,15 @@
     }
     verifiedSets.add(value);
     const inspection = inspectSet(value);
-    if (inspection.valid) deepFreeze(value);
+    if (inspection.valid) {
+      deepFreeze(value);
+    } else {
+      // Never retain verification markers for an invalid or incomplete set.
+      // The object may still be mutable because it was not frozen; keeping a
+      // marker here would let a later mutation bypass canonical digest checks.
+      verifiedSets.delete(value);
+      for (const record of value.records) verifiedRecords.delete(record);
+    }
     return inspection;
   }
 

@@ -172,9 +172,9 @@ waypoints、route metrics、ETA 或 active/pending/adopted 语义。该效果不
 
 bundle 顶层可包含一个或多个 `cd.route-motion-set.v1`。D 启动时严格校验 canonical
 `motion_set_id`、四层固定顺序、plan 和完整 waypoint/ETA/推荐速度 digest、RiskWindow、
-curve/motion digest、ETA 单调性与 adoption 起终点。验证使用 WebCrypto 做异步预校验并冻结
-artifact；有效正式 motion 没有生产开关，默认同时驱动蓝色路线、船位、producer
-course/speed、近期 trail 和 completed-track。
+curve/motion digest、ETA 单调性与 adoption 起终点。验证使用独立的规范化 SHA-256 与异步
+预校验并冻结 artifact；有效正式 motion 没有生产开关，默认同时驱动蓝色路线、船位、
+producer course/speed、近期 trail 和 completed-track。
 
 缺失、陈旧、顺序/身份不符、digest 篡改、非单调 ETA 或 `RAW_PASSTHROUGH` 时，整条活动
 路线稳定回退原始 waypoint/timeline；界面显示具体原因。生产路径不调用 D 本地 cubic
@@ -182,17 +182,14 @@ smoother，也不会重算 ETA、风险、hard mask、corridor 或运动学。�
 仿真 C→D 合同通过；profile 仍为 `FORMULA_DERIVED_ENGINEERING_REFERENCE`、
 `real_vessel_calibrated=false`，不表示实船校准、导航认证或 UKC。
 
-## 受约束研究曲线运动（2026-08-31 02:20 +08:00，历史兼容）
+## 受约束研究曲线运动（2026-08-31，历史兼容）
 
-没有有效正式 motion 时，生产视图直接回退 raw timeline；D 本地 display-only 曲线不再是
-生产后备。只有在
-Orchestrator 导出命令显式传入 `--route-smoothing-sidecar PATH`，并将一个已接受的
-`c.research-route-smoothing-sidecar.v1` 放入 bundle 后，界面中的“启用研究曲线运动”控件
-才可用；控件默认关闭。开启后，D 校验 sidecar 的 route id、原始 waypoint 坐标、ETA 和
-样本单调性，再让研究回放的路线绘制、船位、航向和近期轨迹使用 sidecar 样本。
+没有有效正式 motion 时，生产视图直接回退 raw timeline；D 本地 display-only 曲线和
+研究 sidecar 都不再接管生产路径。研究 reader 只为历史 bundle 的离线兼容和独立测试保留，
+默认 Viewer 不加载，也不提供“启用研究曲线运动”运行开关。
 
-sidecar 缺失、身份不匹配、状态不是 `ACCEPTED` 或样本非法时，控件保持不可用或运动层
-回退现有 timeline，不把 display-only 曲线当作研究曲线后备。该 sidecar 当前是 C 的
+sidecar 缺失、身份不匹配、状态不是 `ACCEPTED` 或样本非法时，历史 reader 回退既有
+timeline，不把 display-only 曲线当作研究曲线后备。该 sidecar 当前是 C 的
 `GEOMETRY_ONLY` 研究输出，未重算 RiskFrame、hard mask、coverage、正式 ETA、船舶操纵性
 或资源资格；因此研究开关不改变 `cd.route-plan.v2/v3`、route metrics、replan adoption、
 生产数据流或 frozen artifact，也不代表实际船舶控制。
@@ -205,8 +202,7 @@ cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
   ...
 ```
 
-单文件离线 Viewer 由 `viewer/embed.py` 同步内联 `research_route_motion.js`；不传入 sidecar
-时，现有默认展示行为保持不变。
+默认单文件离线 Viewer 只内联正式 `route_motion.js`；历史 sidecar 不进入默认内联路径。
 
 ## 业务原则（不可破坏）
 
@@ -214,7 +210,7 @@ cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
 船必须动
 Simulation Clock -> vessel motion
 ship position = formal producer motion when identity-validated -> otherwise raw timeline;
-explicit research sidecar only in Research View when enabled and identity-validated
+research sidecar is historical compatibility only and never production fallback
 snapshot cadence != render cadence
 REPLAN_DECIDED != REPLAN_ADOPTED
 pending route != authoritative route

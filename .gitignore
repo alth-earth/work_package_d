@@ -14,5 +14,10 @@ viewer/bundle.json
 viewer/gebco_basemap.png
 viewer/basemap_metadata.json
 viewer/replay-viewer-preflight.json
+viewer/winter-combined-viewer-manifest.json
+viewer/checksums.json
+viewer/four-layer-route-plan-set-v3.json
+viewer/route-motion-set.json
 viewer/index_self_contained.html
 viewer/replay-viewer-proof-*.png
+.playwright-cli/

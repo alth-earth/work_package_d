@@ -196,6 +196,20 @@ if (reader.inspect(revisionBundle, route2).valid) process.exit(10);
   const results = await reader.prevalidate(asyncBundle);
   if (!results[0].valid || !Object.isFrozen(asyncBundle.route_motion_sets[0]) ||
       !reader.buildPath(asyncBundle, route, Date.parse(waypoints[0].eta))) process.exit(11);
+
+  // A failed async inspection must not leave a verification marker behind.
+  // Otherwise a later mutation could bypass the canonical digest checks.
+  const invalidAfterDigest = clone(bundle);
+  const invalidSet = invalidAfterDigest.route_motion_sets[0];
+  invalidSet.records[0].qualification.result = "BROKEN";
+  const invalidPayload = clone(invalidSet);
+  delete invalidPayload.motion_set_id;
+  invalidSet.motion_set_id = `route-motion-set-sha256-${helper.canonicalDigest(invalidPayload)}`;
+  const invalidResults = await reader.prevalidate(invalidAfterDigest);
+  if (invalidResults[0].valid) process.exit(13);
+  invalidSet.records[0].qualification.result = "QUALIFIED_ENGINEERING_REFERENCE";
+  invalidSet.records[0].motion_samples[1].lat += 0.1;
+  if (reader.inspectSet(invalidSet).valid) process.exit(14);
 })().catch((error) => {
   console.error(error);
   process.exit(12);
@@ -225,5 +239,9 @@ def test_production_motion_uses_formal_samples_or_raw_timeline_only() -> None:
     assert '"formal_route_motion"' in app
     assert "formal_motion_inspection" in app
     assert "buildFormalRouteMotionPath" in app
-    assert "return route.waypoints;" in app
-    assert 'viewMode === "research"' in app
+    assert "return formal?.points || route.waypoints;" in app
+    assert 'viewMode = "presentation";' in app
+    assert "researchRouteSmoothingEnabled" not in app
+    assert "buildResearchRouteMotionPath" not in app
+    assert "setResearchRouteSmoothing" not in app
+    assert "production_research_path_removed" in app

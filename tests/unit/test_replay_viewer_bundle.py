@@ -55,6 +55,16 @@ def test_bundle_gates_and_basemap(bundle: dict) -> None:
     if bundle["replay"].get("identity_kind") == "combined_presentation_assembly":
         assert bundle["route_candidates"]["status"] == "PUBLISHED"
         assert len(bundle["route_candidates"]["candidates"]) == 12
+        formal_inspection = bundle["formal_motion_inspection"]
+        assert formal_inspection["valid"] is True
+        assert formal_inspection["schema_version"] == "cd.route-motion-set.v1"
+        assert formal_inspection["record_count"] == 4
+        assert formal_inspection["record_layers"] == [
+            "full_voyage",
+            "main_corridor_24_72h",
+            "rolling_0_24h",
+            "executable_0_6h",
+        ]
         combined = bundle["combined_presentation"]
         assert combined["status"] == "PUBLISHED"
         assert combined["candidate_set_id"] == bundle["route_candidates"]["candidate_set_id"]

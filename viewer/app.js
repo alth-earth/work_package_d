@@ -53,10 +53,6 @@
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
   const layerRoutePolyline = document.getElementById("layer-route-polyline");
-  const routeSmoothingResearchEl = document.getElementById("route-smoothing-research");
-  const routeSmoothingResearchStatusEl = document.getElementById(
-    "route-smoothing-research-status"
-  );
   const formalMotionStatusEl = document.getElementById("formal-motion-status");
   const layerTrack = document.getElementById("layer-track");
   const layerNavigation = document.getElementById("layer-navigation");
@@ -115,10 +111,7 @@
   let mapDrag = null;
   let mapWasDragged = false;
   let voyageProgress = null;
-  let routeMotionCache = new WeakMap();
   let formalRouteMotionCache = new WeakMap();
-  let researchRouteMotionCache = new WeakMap();
-  let researchRouteSmoothingEnabled = false;
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
@@ -168,10 +161,6 @@
   if (!candidateTools) throw new Error("research candidate validator is not loaded");
   const riskExplanationTools = window.ArcticRiskExplanation;
   if (!riskExplanationTools) throw new Error("risk explanation validator is not loaded");
-  const routeSmoothingTools = window.ArcticRouteSmoothing;
-  if (!routeSmoothingTools) throw new Error("route smoothing renderer is not loaded");
-  const researchMotionTools = window.ArcticRouteResearchMotion;
-  if (!researchMotionTools) throw new Error("research route motion reader is not loaded");
   const formalMotionTools = window.ArcticRouteMotion;
   if (!formalMotionTools) throw new Error("formal route motion reader is not loaded");
   const { ROUTE_LAYERS } = candidateTools;
@@ -1237,8 +1226,9 @@
 
   // Display-only densification keeps every point on the authoritative straight
   // segment. It remains the fail-closed fallback for route smoothing; the
-  // Viewer motion layer uses the accepted display curve and falls back here
-  // only when the curve cannot be built safely.
+  // Formal producer motion samples are the only curve geometry.  When the
+  // formal artifact is unavailable, this remains the authoritative raw
+  // waypoint/timeline rendering path.
   function densifyPoints(points, subdivisions = 4) {
     if (points.length < 2 || subdivisions < 2) return points;
     const result = [];
@@ -1261,145 +1251,6 @@
     return result;
   }
 
-  // The smoother returns display coordinates only. Raw waypoints remain the
-  // source for ETA, active revision, route identity, and route metrics; the
-  // Viewer motion layer derives position/heading from the same curve and ETA
-  // anchors without writing those coordinates back to the artifact.
-  function routeDisplayPoints(points) {
-    const result = routeSmoothingTools.smoothDisplayPoints(points);
-    return result.applied ? result.points : densifyPoints(points);
-  }
-
-  function finiteRoutePoint(point) {
-    if (!point || typeof point !== "object") return null;
-    const coordinate = coordinateOf(point);
-    const lon = Number(coordinate.lon);
-    const lat = Number(coordinate.lat);
-    return Number.isFinite(lon) && Number.isFinite(lat) &&
-      lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90
-      ? { lon, lat }
-      : null;
-  }
-
-  // Build a cached time-parameterized paint path. The authoritative ETA of
-  // each waypoint remains an anchor: at a corner, that ETA is assigned to the
-  // nearest point on the local curve. This makes the simulated vessel follow
-  // the curve without changing route metrics or the published waypoint list.
-  function buildRouteMotionPath(route) {
-    if (!route || !Array.isArray(route.waypoints) || route.waypoints.length < 2) return null;
-    if (routeMotionCache.has(route)) return routeMotionCache.get(route);
-    const rawPoints = route.waypoints.map(finiteRoutePoint);
-    const timesMs = route.waypoints.map((point) => isoToMs(point.eta) - startMs);
-    if (rawPoints.some((point) => point === null) ||
-        timesMs.some((value) => !Number.isFinite(value))) {
-      routeMotionCache.set(route, null);
-      return null;
-    }
-    for (let index = 1; index < timesMs.length; index += 1) {
-      if (timesMs[index] <= timesMs[index - 1]) {
-        routeMotionCache.set(route, null);
-        return null;
-      }
-    }
-    const smoothing = routeSmoothingTools.smoothDisplayPoints(rawPoints);
-    const pathPoints = (smoothing.applied ? smoothing.points : rawPoints).map(finiteRoutePoint);
-    if (pathPoints.length < 2 || pathPoints.some((point) => point === null)) {
-      routeMotionCache.set(route, null);
-      return null;
-    }
-    const pathDistancesKm = [0];
-    for (let index = 1; index < pathPoints.length; index += 1) {
-      const previous = pathPoints[index - 1];
-      const current = pathPoints[index];
-      const segmentKm = haversineKm(
-        previous.lon,
-        previous.lat,
-        current.lon,
-        current.lat,
-      );
-      if (!Number.isFinite(segmentKm) || segmentKm <= 1e-9) {
-        routeMotionCache.set(route, null);
-        return null;
-      }
-      pathDistancesKm.push(pathDistancesKm[index - 1] + segmentKm);
-    }
-
-    // A smoothed corner no longer contains the raw vertex. Map each raw
-    // waypoint to its nearest monotonic paint-path point so its ETA remains a
-    // deterministic temporal anchor.
-    const anchorDistancesKm = [];
-    let searchStart = 0;
-    for (let rawIndex = 0; rawIndex < rawPoints.length; rawIndex += 1) {
-      const lastSearchIndex = pathPoints.length - (rawPoints.length - rawIndex - 1) - 1;
-      const forcedIndex = rawIndex === 0
-        ? 0
-        : rawIndex === rawPoints.length - 1 ? pathPoints.length - 1 : null;
-      let bestIndex = forcedIndex;
-      if (bestIndex === null) {
-        let bestDistanceKm = Infinity;
-        for (let pathIndex = searchStart; pathIndex <= lastSearchIndex; pathIndex += 1) {
-          const raw = rawPoints[rawIndex];
-          const display = pathPoints[pathIndex];
-          const distanceKm = haversineKm(
-            raw.lon,
-            raw.lat,
-            display.lon,
-            display.lat,
-          );
-          if (distanceKm < bestDistanceKm) {
-            bestDistanceKm = distanceKm;
-            bestIndex = pathIndex;
-          }
-        }
-      }
-      if (!Number.isInteger(bestIndex) || bestIndex < searchStart ||
-          bestIndex > lastSearchIndex) {
-        routeMotionCache.set(route, null);
-        return null;
-      }
-      anchorDistancesKm.push(pathDistancesKm[bestIndex]);
-      searchStart = bestIndex;
-    }
-    for (let index = 1; index < anchorDistancesKm.length; index += 1) {
-      if (anchorDistancesKm[index] <= anchorDistancesKm[index - 1]) {
-        routeMotionCache.set(route, null);
-        return null;
-      }
-    }
-    const result = Object.freeze({
-      points: pathPoints,
-      distancesKm: pathDistancesKm,
-      anchorDistancesKm,
-      timesMs,
-      smoothingApplied: Boolean(smoothing.applied),
-      maximumDeviationM: Number(smoothing.maximum_deviation_m) || 0,
-    });
-    routeMotionCache.set(route, result);
-    return result;
-  }
-
-  function researchRouteSmoothingSidecar() {
-    return bundle?.research_validation?.route_smoothing || null;
-  }
-
-  function inspectResearchRouteSmoothing(route) {
-    const sidecar = researchRouteSmoothingSidecar();
-    if (!sidecar) return { valid: false, reason: "missing_sidecar" };
-    if (!route) return { valid: false, reason: "no_active_route" };
-    return researchMotionTools.inspect(sidecar, route);
-  }
-
-  function buildResearchRouteMotionPath(route) {
-    if (!route || !researchRouteSmoothingEnabled) return null;
-    if (researchRouteMotionCache.has(route)) {
-      return researchRouteMotionCache.get(route);
-    }
-    const sidecar = researchRouteSmoothingSidecar();
-    const path = researchMotionTools.buildPath(sidecar, route, startMs);
-    researchRouteMotionCache.set(route, path);
-    return path;
-  }
-
   function inspectFormalRouteMotion(route) {
     if (!route) return { valid: false, reason: "no_active_route" };
     return formalMotionTools.inspect(bundle, route);
@@ -1414,22 +1265,13 @@
   }
 
   function routeMotionPathFor(route) {
-    const formal = buildFormalRouteMotionPath(route);
-    if (formal) return formal;
-    return researchRouteSmoothingEnabled && viewMode === "research"
-      ? buildResearchRouteMotionPath(route)
-      : null;
+    return buildFormalRouteMotionPath(route);
   }
 
   function routePaintPointsFor(route) {
     if (!route?.waypoints || route.waypoints.length < 2) return [];
     const formal = buildFormalRouteMotionPath(route);
-    if (formal) return formal.points;
-    if (researchRouteSmoothingEnabled && viewMode === "research") {
-      const path = buildResearchRouteMotionPath(route);
-      return path?.points || route.waypoints;
-    }
-    return route.waypoints;
+    return formal?.points || route.waypoints;
   }
 
   function pathValueAtTime(path, relativeMs, values, circular = false) {
@@ -1609,7 +1451,8 @@
 
   // Viewer simulation motion follows only validated producer motion samples.
   // When formal motion is absent or invalid, production mode fails closed to
-  // the authoritative bundle timeline; research motion remains opt-in.
+  // the authoritative bundle timeline; historical research motion is not
+  // part of this runtime path.
   function vesselPointAt(ms) {
     const timelineMs = Math.max(0, Math.min(totalMs, ms));
     const linear = linearVesselPointAt(timelineMs);
@@ -2114,13 +1957,12 @@
     dash,
     filterFutureMs = null,
     alpha = 1,
-    smoothRoute = false,
   ) {
     const visible = filterFutureMs === null ? points : points.filter(
       (point) => !point.eta || isoToMs(point.eta) - startMs >= filterFutureMs
     );
     if (visible.length < 2) return;
-    const rendered = smoothRoute ? routeDisplayPoints(visible) : densifyPoints(visible);
+    const rendered = densifyPoints(visible);
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = color;
@@ -2140,7 +1982,7 @@
 
   function drawRoutePolyline(points, width, dash, filterFutureMs = null, alpha = 0.72) {
     if (!layers.routePolyline) return;
-    drawPath(points, ROUTE_POLYLINE_COLOR, width, dash, filterFutureMs, alpha, false);
+    drawPath(points, ROUTE_POLYLINE_COLOR, width, dash, filterFutureMs, alpha);
   }
 
   function drawResearchCandidateRoutes() {
@@ -2151,9 +1993,8 @@
     const canonicalId = bundle?.route_candidates?.selected_candidate_id;
     for (const candidate of candidatesForLayer()) {
       // The canonical candidate is represented by the formal producer motion
-      // path whenever one is bound.  Drawing its old display-only smoother as
-      // well creates two blue geometries at every turn.  Keep the other
-      // candidates available for the explicit research comparison view.
+      // path whenever one is bound.  Keep the other candidates available for
+      // the explicit research comparison view, but never smooth them locally.
       if (formalActive && candidate.candidate_id === canonicalId) continue;
       const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
       const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
@@ -2172,7 +2013,6 @@
         style.dash,
         null,
         isHighlighted ? 0.96 : 0.48,
-        true,
       );
     }
   }
@@ -2185,9 +2025,9 @@
     };
   }
 
-  function drawMiniPath(points, color, width, dash = [], alpha = 1, smoothRoute = false) {
+  function drawMiniPath(points, color, width, dash = [], alpha = 1) {
     if (!miniCtx || !points || points.length < 2) return;
-    const rendered = smoothRoute ? routeDisplayPoints(points) : points;
+    const rendered = points;
     miniCtx.save();
     miniCtx.globalAlpha = alpha;
     miniCtx.strokeStyle = color;
@@ -2220,31 +2060,29 @@
     }
 
     const active = routeFor(state.active);
-    const formalActive = Boolean(buildFormalRouteMotionPath(active));
     if (active?.waypoints?.length > 1) {
       const activePaintPoints = routePaintPointsFor(active);
       if (layers.routePolyline) {
         drawMiniPath(active.waypoints, ROUTE_POLYLINE_COLOR, 1.2, [3, 4], 0.72);
       }
-      drawMiniPath(activePaintPoints, ROUTE_CURVE_COLOR, 2.3, [], 0.9, false);
+      drawMiniPath(activePaintPoints, ROUTE_CURVE_COLOR, 2.3, [], 0.9);
     }
     if (state.supersededRoute?.length > 1) {
       if (layers.routePolyline) {
         drawMiniPath(state.supersededRoute, ROUTE_POLYLINE_COLOR, 1.1, [3, 4], 0.62);
       }
-      drawMiniPath(state.supersededRoute, "#778795", 1.4, [3, 4], 0.8, true);
+      drawMiniPath(state.supersededRoute, "#778795", 1.4, [3, 4], 0.8);
     }
     if (state.pendingRoute?.route?.length > 1) {
       if (layers.routePolyline) {
         drawMiniPath(state.pendingRoute.route, ROUTE_POLYLINE_COLOR, 1.2, [4, 4], 0.68);
       }
-      drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88, true);
+      drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88);
     }
     if (state.track?.length > 1) {
-      // A formal track is already producer geometry.  Do not run the
-      // research/display smoother over it a second time: that would make the
-      // completed track differ from the vessel position and formal route.
-      drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94, !formalActive);
+      // The completed track is already sampled from the same formal motion
+      // record as the vessel position.  Never run a local smoother over it.
+      drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94);
     }
 
     const position = miniProject(state.lon, state.lat);
@@ -2275,7 +2113,6 @@
   function draw() {
     const s = stateAt(simMs);
     const active = routeFor(s.active);
-    const formalActive = Boolean(buildFormalRouteMotionPath(active));
     const heading = shipHeading(s, active);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
@@ -2291,15 +2128,14 @@
       drawPath(s.trail, "#d7e6ed", 2.2, [], null, presentationMode ? 0.72 : 0.45);
     }
 
-    // Candidate geometry is consumed exactly as published, then converted to
-    // display-only curve coordinates. The local highlight and smoothing do
-    // not change C's selected_candidate_id, ranking, geometry, risk metrics,
-    // ETA, or the simulation's route-adoption events.
+    // Candidate geometry is consumed exactly as published.  Only the bound
+    // formal motion set may provide curve samples; candidates remain raw
+    // comparison geometry and never enter the production motion path.
     drawResearchCandidateRoutes();
 
     if (layers.routes && s.supersededRoute && s.supersededRoute.length > 1) {
       drawRoutePolyline(s.supersededRoute, 1.2, [3, 8], simMs, 0.7);
-      drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs, 1, true);
+      drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs, 1);
     }
 
     if (layers.routes && active) {
@@ -2327,16 +2163,14 @@
           [],
           null,
           0.88 + pulse * 0.12,
-          false,
         );
       }
     }
 
     if (layers.track && s.track.length > 1) {
-      // stateAt() supplies completed formal motion samples when available.
-      // They are authoritative producer samples, not input for the
-      // display-only research smoother.
-      drawPath(s.track, "#5cc47a", 3, [], null, 1, !formalActive);
+      // stateAt() supplies completed samples from the same formal motion
+      // record used for vessel position and heading.
+      drawPath(s.track, "#5cc47a", 3, [], null, 1);
     }
 
     if (layers.routes && s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {
@@ -2354,7 +2188,6 @@
         [8, 6],
         null,
         pendingRouteAlpha(s),
-        true,
       );
     }
 
@@ -2684,41 +2517,15 @@
   });
 
   function updateResearchRouteSmoothingUi() {
-    const sidecar = researchRouteSmoothingSidecar();
     const active = bundle ? routeFor(activeRevisionAt(simMs)) : null;
-    const inspection = active
-      ? inspectResearchRouteSmoothing(active)
-      : { valid: false, reason: "no_active_route" };
     const formalInspection = active
       ? inspectFormalRouteMotion(active)
       : { valid: false, reason: "no_active_route" };
     if (formalMotionStatusEl) {
       formalMotionStatusEl.textContent = formalInspection.valid
-        ? "正式曲线运动已默认启用 · C producer samples · 失败时回退 timeline"
-        : `正式曲线不可用 · 使用权威 raw timeline · ${formalInspection.reason}`;
+        ? "正式曲线运动已启用 · C producer motion_samples · 船位/航向/航迹同源"
+        : `正式曲线不可用 · 已回退权威 raw timeline · ${formalInspection.reason}`;
       formalMotionStatusEl.classList.toggle("unavailable", !formalInspection.valid);
-    }
-    if (routeSmoothingResearchEl) {
-      routeSmoothingResearchEl.disabled = !sidecar;
-      routeSmoothingResearchEl.checked = researchRouteSmoothingEnabled;
-    }
-    if (!routeSmoothingResearchStatusEl) return;
-    if (!sidecar) {
-      routeSmoothingResearchStatusEl.textContent =
-        "未发布研究 sidecar；使用当前 Viewer 展示路径";
-      routeSmoothingResearchStatusEl.classList.add("unavailable");
-      return;
-    }
-    if (inspection.valid) {
-      const count = sidecar.motion_samples?.length || 0;
-      routeSmoothingResearchStatusEl.textContent = researchRouteSmoothingEnabled
-        ? `研究 sidecar 已启用 · ${count} 个时间样本 · 失败时回退 timeline`
-        : `研究 sidecar 可用但默认关闭 · ${count} 个时间样本`;
-      routeSmoothingResearchStatusEl.classList.remove("unavailable");
-    } else {
-      routeSmoothingResearchStatusEl.textContent =
-        `研究 sidecar 不可用于当前路线 · 启用时回退 timeline · ${inspection.reason}`;
-      routeSmoothingResearchStatusEl.classList.add("unavailable");
     }
   }
 
@@ -2754,22 +2561,12 @@
       });
     });
 
-  routeSmoothingResearchEl.addEventListener("change", () => {
-    researchRouteSmoothingEnabled = routeSmoothingResearchEl.checked;
-    researchRouteMotionCache = new WeakMap();
-    updateResearchRouteSmoothingUi();
-    draw();
-  });
-
   async function start() {
     initializePanelControls();
     initializeSidebarToggle();
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
     await formalMotionTools.prevalidate(bundle);
-    routeMotionCache = new WeakMap();
     formalRouteMotionCache = new WeakMap();
-    researchRouteMotionCache = new WeakMap();
-    researchRouteSmoothingEnabled = false;
     renderPipelineOverview(bundle);
     const sidecar = window.RISK_EXPLANATION_SIDECAR ?? bundle.risk_explanation ?? null;
     riskExplanationInspection = riskExplanationTools.inspect(sidecar, bundle);
@@ -2786,7 +2583,10 @@
         reason: combinedIdentityInspection.reason,
         candidates: Object.freeze([]),
       });
-    viewMode = candidateInspection.valid ? "research" : "presentation";
+    // Candidate comparison remains an explicit research view.  The default
+    // runtime is the operational presentation so candidate geometries cannot
+    // visually overlap the formal motion route on first load.
+    viewMode = "presentation";
     previousNonEngineeringMode = viewMode;
     selectedRouteLayer = "full_voyage";
     routeLayerSel.value = selectedRouteLayer;
@@ -2858,12 +2658,13 @@
           gap_km: Number.isFinite(gapKm) ? gapKm : null,
           motion_source: path?.source === "cd.route-motion-set.v1"
             ? "formal_route_motion"
-            : (researchRouteSmoothingEnabled && viewMode === "research" && path
-              ? "research_sidecar"
-              : "timeline_fallback"),
+            : "timeline_fallback",
           formal_motion_inspection: inspectFormalRouteMotion(active),
-          research_smoothing_enabled: researchRouteSmoothingEnabled,
-          research_smoothing_inspection: inspectResearchRouteSmoothing(active),
+          research_smoothing_enabled: false,
+          research_smoothing_inspection: {
+            valid: false,
+            reason: "production_research_path_removed",
+          },
           route_polyline_visible: layers.routePolyline,
         };
       },
@@ -2889,10 +2690,11 @@
         available: Boolean(candidateInspection?.valid),
         reason: candidateInspection?.reason || null,
         view_mode: viewMode,
-        route_smoothing_research_enabled: researchRouteSmoothingEnabled,
-        route_smoothing_research: inspectResearchRouteSmoothing(
-          routeFor(activeRevisionAt(simMs))
-        ),
+        route_smoothing_research_enabled: false,
+        route_smoothing_research: {
+          valid: false,
+          reason: "production_research_path_removed",
+        },
         selected_layer: selectedRouteLayer,
         highlighted_candidate_id: highlightedCandidateId,
         canonical_selected_candidate_id: bundle?.route_candidates?.selected_candidate_id || null,
@@ -2937,18 +2739,6 @@
         if (viewMode !== "engineering") previousNonEngineeringMode = viewMode;
         updateModeUi();
         draw();
-      },
-      setResearchRouteSmoothing: (value) => {
-        researchRouteSmoothingEnabled = Boolean(value);
-        researchRouteMotionCache = new WeakMap();
-        updateResearchRouteSmoothingUi();
-        draw();
-        return {
-          enabled: researchRouteSmoothingEnabled,
-          inspection: inspectResearchRouteSmoothing(
-            routeFor(activeRevisionAt(simMs))
-          ),
-        };
       },
       setRouteLayer: (value) => {
         if (!ROUTE_LAYERS.includes(value) || !candidateInspection?.valid) return;
