@@ -2146,7 +2146,15 @@
   function drawResearchCandidateRoutes() {
     if (viewMode !== "research" || !layers.routes || !candidateInspection?.valid) return;
     const highlight = highlightedCandidate();
+    const active = routeFor(activeRevisionAt(simMs));
+    const formalActive = Boolean(buildFormalRouteMotionPath(active));
+    const canonicalId = bundle?.route_candidates?.selected_candidate_id;
     for (const candidate of candidatesForLayer()) {
+      // The canonical candidate is represented by the formal producer motion
+      // path whenever one is bound.  Drawing its old display-only smoother as
+      // well creates two blue geometries at every turn.  Keep the other
+      // candidates available for the explicit research comparison view.
+      if (formalActive && candidate.candidate_id === canonicalId) continue;
       const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
       const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
       const geometry = candidateGeometryPoints(candidate);
@@ -2212,6 +2220,7 @@
     }
 
     const active = routeFor(state.active);
+    const formalActive = Boolean(buildFormalRouteMotionPath(active));
     if (active?.waypoints?.length > 1) {
       const activePaintPoints = routePaintPointsFor(active);
       if (layers.routePolyline) {
@@ -2232,7 +2241,10 @@
       drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88, true);
     }
     if (state.track?.length > 1) {
-      drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94, true);
+      // A formal track is already producer geometry.  Do not run the
+      // research/display smoother over it a second time: that would make the
+      // completed track differ from the vessel position and formal route.
+      drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94, !formalActive);
     }
 
     const position = miniProject(state.lon, state.lat);
@@ -2263,6 +2275,7 @@
   function draw() {
     const s = stateAt(simMs);
     const active = routeFor(s.active);
+    const formalActive = Boolean(buildFormalRouteMotionPath(active));
     const heading = shipHeading(s, active);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
@@ -2320,7 +2333,10 @@
     }
 
     if (layers.track && s.track.length > 1) {
-      drawPath(s.track, "#5cc47a", 3, [], null, 1, true);
+      // stateAt() supplies completed formal motion samples when available.
+      // They are authoritative producer samples, not input for the
+      // display-only research smoother.
+      drawPath(s.track, "#5cc47a", 3, [], null, 1, !formalActive);
     }
 
     if (layers.routes && s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {

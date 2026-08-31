@@ -189,7 +189,9 @@ def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
     assert "linearVesselPointAt" in app
     assert "activeRevisionAt" in app
     assert "drawPath(s.trail" in app
-    assert 'drawPath(s.track, "#5cc47a", 3, [], null, 1, true)' in app
+    assert 'drawPath(s.track, "#5cc47a", 3, [], null, 1, !formalActive)' in app
+    assert 'drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94, !formalActive)' in app
+    assert "if (formalActive && candidate.candidate_id === canonicalId) continue;" in app
     assert "shipHeading(s, active)" in app
     assert "vesselPointAt(ms)" in app
 
