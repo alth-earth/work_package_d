@@ -294,6 +294,14 @@
           <div id="formal-motion-status" class="status summary-note">
             正在校验正式曲线运动制品
           </div>
+          <div class="curve-diagnostics" aria-live="polite">
+            <div id="curve-diagnostics-status" class="status summary-note">
+              正在读取曲线诊断
+            </div>
+            <div id="curve-diagnostics-metrics" class="curve-diagnostics-metrics"></div>
+            <canvas id="curve-detail-canvas" width="280" height="92"
+              aria-label="当前曲线路段局部放大图"></canvas>
+          </div>
           <label><input id="layer-track" type="checkbox" checked /> 航迹与近期轨迹</label>
           <label><input id="layer-navigation" type="checkbox" checked /> 导航辅助</label>
         </section>

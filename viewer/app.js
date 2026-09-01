@@ -54,6 +54,10 @@
   const layerRoutes = document.getElementById("layer-routes");
   const layerRoutePolyline = document.getElementById("layer-route-polyline");
   const formalMotionStatusEl = document.getElementById("formal-motion-status");
+  const curveDiagnosticsStatusEl = document.getElementById("curve-diagnostics-status");
+  const curveDiagnosticsMetricsEl = document.getElementById("curve-diagnostics-metrics");
+  const curveDetailCanvas = document.getElementById("curve-detail-canvas");
+  const curveDetailCtx = curveDetailCanvas?.getContext("2d") || null;
   const layerTrack = document.getElementById("layer-track");
   const layerNavigation = document.getElementById("layer-navigation");
   const gateBadges = document.querySelector(".badges");
@@ -116,6 +120,7 @@
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
   let lastRiskExplanationKey = null;
+  let lastCurveDiagnosticsKey = null;
   const SINGLE_ROUTE_FALLBACK = "SINGLE_ROUTE_FALLBACK";
   const EXISTING_AUTHORITATIVE_REPLAY_ACTIVE = "Existing authoritative replay remains active";
   const DISPLAY_ONLY_COMPARISON_SELECTION = "display-only comparison selection";
@@ -566,6 +571,17 @@
     if (!riskTimelineEl) return;
     riskTimelineEl.replaceChildren();
     const frames = riskFrames();
+    // The full hourly sequence remains in the DOM.  At narrow 344/528px
+    // sidebars each tick gets a bounded minimum width and the container
+    // scrolls, preserving the actual green/yellow bars instead of letting
+    // flexbox resolve them to 0px.  Wider panels use a slightly roomier tick.
+    const visibleWidth = riskTimelineEl.clientWidth || 344;
+    const tickWidth = Math.max(
+      8,
+      Math.min(18, (visibleWidth - Math.max(0, frames.length - 1) * 3) /
+        Math.max(1, Math.min(frames.length, 80))),
+    );
+    riskTimelineEl.style.setProperty("--risk-tick-width", `${tickWidth}px`);
     const summaries = frames
       .map((frame) => frame.summary)
       .filter((summary) => summary && Number.isFinite(summary.risk_score_max));
@@ -640,6 +656,20 @@
           label: `R${event.rev} 已采用 · 权威路线已更新`,
         });
       }
+    }
+    const hasReplanningEvents = events.some((event) =>
+      event.type === "REPLAN_DECIDED" || event.type === "REPLAN_ADOPTED"
+    );
+    if (!hasReplanningEvents) {
+      const item = document.createElement("li");
+      item.className = "timeline-unavailable";
+      const label = document.createElement("span");
+      label.textContent = bundle.combined_presentation?.replanning_status ===
+        "UNAVAILABLE_IDENTITY_BOUND_CAUSAL_REPLAY_REQUIRED"
+        ? "动态重规划回放不可用 · 需要身份绑定的真实因果回放制品"
+        : "动态重规划事件未发布 · 当前仅显示权威路线时间线";
+      item.append(label);
+      eventTimelineEl.append(item);
     }
     for (const milestone of milestones) {
       const time = milestone.time;
@@ -1362,6 +1392,125 @@
       points.push(location.point);
     }
     return points;
+  }
+
+  function currentSegmentPaintPointsAt(route, state) {
+    if (!route?.waypoints || route.waypoints.length < 2 ||
+        !state?.segment?.start_eta || !state.segment.end_eta) return [];
+    const segmentStartMs = isoToMs(state.segment.start_eta) - startMs;
+    const segmentEndMs = isoToMs(state.segment.end_eta) - startMs;
+    if (!Number.isFinite(segmentStartMs) || !Number.isFinite(segmentEndMs) ||
+        segmentEndMs <= segmentStartMs) return [];
+    const relativeMs = clamp(state.time - startMs, segmentStartMs, segmentEndMs);
+    const path = routeMotionPathFor(route);
+    if (path?.source === "cd.route-motion-set.v1" &&
+        relativeMs >= path.timesMs[0] && relativeMs <= path.timesMs[path.timesMs.length - 1] &&
+        segmentEndMs >= path.timesMs[0] && segmentStartMs <= path.timesMs[path.timesMs.length - 1]) {
+      const startPoint = routeMotionPointAt(route, relativeMs);
+      const endPoint = routeMotionPointAt(route, segmentEndMs);
+      if (startPoint && endPoint) {
+        const points = [{...startPoint, eta: new Date(startMs + relativeMs).toISOString()}];
+        for (let index = 0; index < path.points.length; index += 1) {
+          if (path.timesMs[index] > relativeMs && path.timesMs[index] < segmentEndMs) {
+            points.push({...path.points[index],
+              eta: new Date(startMs + path.timesMs[index]).toISOString()});
+          }
+        }
+        points.push({...endPoint, eta: new Date(startMs + segmentEndMs).toISOString()});
+        return points;
+      }
+    }
+    const raw = route.waypoints.filter((point) => {
+      const pointMs = isoToMs(point.eta) - startMs;
+      return pointMs >= segmentStartMs && pointMs <= segmentEndMs;
+    });
+    const current = {lon: state.lon, lat: state.lat, eta: new Date(state.time).toISOString()};
+    const end = raw[raw.length - 1];
+    return end ? [current, end] : raw;
+  }
+
+  function formatDiagnosticDistance(value) {
+    if (!Number.isFinite(value)) return "未发布";
+    if (value >= 1000) return `${(value / 1000).toFixed(1)} km`;
+    return `${value.toFixed(0)} m`;
+  }
+
+  function drawCurveDetail(route, state, path) {
+    if (!curveDetailCtx || !curveDetailCanvas) return;
+    const width = curveDetailCanvas.width;
+    const height = curveDetailCanvas.height;
+    curveDetailCtx.clearRect(0, 0, width, height);
+    curveDetailCtx.fillStyle = "rgba(5, 18, 28, 0.85)";
+    curveDetailCtx.fillRect(0, 0, width, height);
+    const formal = currentSegmentPaintPointsAt(route, state);
+    const segmentIndex = Number.isInteger(state?.segment?.index) ? state.segment.index : 0;
+    const raw = route?.waypoints?.slice(segmentIndex, segmentIndex + 2) || [];
+    const points = [...formal, ...raw].map(coordinateOf).filter((point) =>
+      Number.isFinite(point.lon) && Number.isFinite(point.lat));
+    if (points.length < 2) return;
+    const minLon = Math.min(...points.map((point) => point.lon));
+    const maxLon = Math.max(...points.map((point) => point.lon));
+    const minLat = Math.min(...points.map((point) => point.lat));
+    const maxLat = Math.max(...points.map((point) => point.lat));
+    const lonSpan = Math.max(maxLon - minLon, 1e-9);
+    const latSpan = Math.max(maxLat - minLat, 1e-9);
+    const padding = 14;
+    const projectLocal = (point) => ({
+      x: padding + (point.lon - minLon) / lonSpan * (width - 2 * padding),
+      y: height - padding - (point.lat - minLat) / latSpan * (height - 2 * padding),
+    });
+    const drawLocal = (items, color, lineWidth, dash = []) => {
+      if (items.length < 2) return;
+      curveDetailCtx.save();
+      curveDetailCtx.strokeStyle = color;
+      curveDetailCtx.lineWidth = lineWidth;
+      curveDetailCtx.lineJoin = "round";
+      curveDetailCtx.lineCap = "round";
+      curveDetailCtx.setLineDash(dash);
+      curveDetailCtx.beginPath();
+      items.forEach((item, index) => {
+        const projected = projectLocal(coordinateOf(item));
+        if (index === 0) curveDetailCtx.moveTo(projected.x, projected.y);
+        else curveDetailCtx.lineTo(projected.x, projected.y);
+      });
+      curveDetailCtx.stroke();
+      curveDetailCtx.restore();
+    };
+    drawLocal(raw, "rgba(245, 248, 251, 0.62)", 1.4, [4, 3]);
+    drawLocal(formal, ROUTE_CURVE_COLOR, 2.4);
+    const vessel = projectLocal({lon: state.lon, lat: state.lat});
+    curveDetailCtx.fillStyle = "#f7fbff";
+    curveDetailCtx.beginPath();
+    curveDetailCtx.arc(vessel.x, vessel.y, 3, 0, Math.PI * 2);
+    curveDetailCtx.fill();
+  }
+
+  function updateCurveDiagnostics(state) {
+    if (!curveDiagnosticsStatusEl) return;
+    const active = state ? routeFor(state.active) : null;
+    const path = active ? routeMotionPathFor(active) : null;
+    const key = [state?.active, state?.segment?.index, state?.time,
+      path?.minimumRadiusM, path?.maximumDeviationM, path?.source].join("|");
+    if (key === lastCurveDiagnosticsKey) return;
+    lastCurveDiagnosticsKey = key;
+    if (!path || path.source !== "cd.route-motion-set.v1") {
+      curveDiagnosticsStatusEl.classList.add("unavailable");
+      curveDiagnosticsStatusEl.textContent =
+        `曲线诊断不可用 · ${path ? "未采用正式 motion_samples" : "formal_motion_unavailable"}`;
+      if (curveDiagnosticsMetricsEl) curveDiagnosticsMetricsEl.textContent = "";
+      if (curveDetailCtx && curveDetailCanvas) {
+        curveDetailCtx.clearRect(0, 0, curveDetailCanvas.width, curveDetailCanvas.height);
+      }
+      return;
+    }
+    curveDiagnosticsStatusEl.classList.remove("unavailable");
+    curveDiagnosticsStatusEl.textContent = "局部曲线窗口 · 仅诊断，不改变正式几何";
+    if (curveDiagnosticsMetricsEl) {
+      curveDiagnosticsMetricsEl.textContent =
+        `最小曲率半径 ${formatDiagnosticDistance(path.minimumRadiusM)} · ` +
+        `相对原始航点最大偏离 ${formatDiagnosticDistance(path.maximumDeviationM)}`;
+    }
+    drawCurveDetail(active, state, path);
   }
 
   function bearingDegrees(start, end) {
@@ -2192,11 +2341,22 @@
     }
 
     if (layers.routes && s.segment && s.segment.start_eta && s.segment.end_eta && active) {
-      const seg = active.waypoints.filter(
-        (waypoint) => isoToMs(waypoint.eta) >= isoToMs(s.segment.start_eta)
-      );
-      if (seg.length >= 2 && layers.routePolyline) {
-        drawPath(seg.slice(0, 2), ROUTE_POLYLINE_COLOR, 1.3, [3, 3], null, 0.8);
+      // Current segment is an operational overlay, not the raw-polyline
+      // layer.  Keep it visible when the original authoritative polyline is
+      // hidden, and derive it from formal motion_samples whenever available.
+      const currentSegment = currentSegmentPaintPointsAt(active, s);
+      if (currentSegment.length >= 2) {
+        drawPath(currentSegment, "#f7fbff", 3.1, [], null, 0.96);
+      }
+      if (layers.routePolyline) {
+        const rawSegment = active.waypoints.filter((waypoint) => {
+          const pointMs = isoToMs(waypoint.eta);
+          return pointMs >= isoToMs(s.segment.start_eta) &&
+            pointMs <= isoToMs(s.segment.end_eta);
+        });
+        if (rawSegment.length >= 2) {
+          drawPath(rawSegment, ROUTE_POLYLINE_COLOR, 1.3, [3, 3], null, 0.8);
+        }
       }
     }
 
@@ -2207,6 +2367,7 @@
     ctx.restore();
     updateMapUi(heading, s);
     updateDebug(s, heading);
+    updateCurveDiagnostics(s);
     drawMiniMap(s, heading);
   }
 
@@ -2652,7 +2813,12 @@
           raw_point_count: active?.waypoints?.length || 0,
           display_point_count: path?.points?.length || 0,
           anchor_count: path?.anchorDistancesKm?.length || 0,
-          maximum_deviation_m: path?.maximumDeviationM || 0,
+          minimum_radius_m: Number.isFinite(path?.minimumRadiusM)
+            ? path.minimumRadiusM : null,
+          maximum_deviation_m: Number.isFinite(path?.maximumDeviationM)
+            ? path.maximumDeviationM : null,
+          curvature_sample_count: path?.curvatureSampleCount || 0,
+          diagnostics_source: path?.diagnosticsSource || null,
           linear_position: linear,
           curved_position: curved,
           gap_km: Number.isFinite(gapKm) ? gapKm : null,

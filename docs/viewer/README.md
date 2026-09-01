@@ -7,7 +7,7 @@ Document Role: CANONICAL
 Applicability: CURRENT
 Scope: work_package_d viewer implementation and runtime
 Branch: research-validation-system
-Last Verified: 2026-08-31 02:33 +08:00
+Last Verified: 2026-09-01
 ---
 
 > **路径约定（2026-08-24）**：本文件中 `${ARCTIC_ROUTE_ROOT}` 为工作区根占位符，
@@ -39,8 +39,9 @@ grid rows/columns/CRS、逐格坐标以及 RiskFrame 风险镜像。任一 misma
 提供的 contributors/contribution/reason/uncertainty。面板从 RiskFrame 读取 risk level/score/
 confidence，绝不使用 sidecar 覆盖。
 
-当前 Firefox E2E 的 explanation 内容来自明确标记为 `synthetic/design_example` 的 B 测试
-fixture，只验证 D consumer。真实 B producer 与 Orchestrator immutable transport 尚未发布。
+当前 Firefox E2E 的 explanation 内容仍来自明确标记为 `synthetic/design_example` 的 B 测试
+fixture；真实 B producer 与 Orchestrator transport 已具备 manifest/digest/identity 链，
+但 sidecar 仍标记 `demo_unvalidated` / `research_unvalidated`，不能当作科学标定。
 
 ## Winter Combined Package（2026-08-23 20:14 +08:00）
 
@@ -54,10 +55,13 @@ route-candidates-sha256-46baf02084d67ffe5b0b734b2ad1b27631b7970b6e25a28011cd917d
 ```
 
 `combined_presentation` 与 `risk.source`、`route_candidates.provenance`、
-`research_validation` 必须一致，否则 Research View fail closed。航行时间线来自 C
-selected full-voyage recommended route 的 waypoint ETA，标记为
-`cd.route-plan.v3.waypoints.eta`；它不是 causal replay，不包含 replan event。RiskWindow
-保留完整 145 个 hourly frames，risk/hard cell 均原样投影。
+`research_validation` 必须一致，否则 Research View fail closed。没有同身份 causal replay
+时，航行时间线来自 C selected full-voyage recommended route 的 waypoint ETA，标记为
+`cd.route-plan.v3.waypoints.eta`，且 bundle 明确标记
+`UNAVAILABLE_IDENTITY_BOUND_CAUSAL_REPLAY_REQUIRED`，不含伪造 replan event。传入真实身份
+绑定回放后，才显示多 revision 的 pending/superseded 与真实
+`REPLAN_DECIDED/REPLAN_ADOPTED`。RiskWindow 保留完整 145 个 hourly frames，risk/hard cell
+均原样投影。
 
 ## 输入：Orchestrator Presentation Package
 
@@ -68,6 +72,7 @@ bundle.json
 gebco_basemap.png
 basemap_metadata.json
 replay-viewer-preflight.json
+optional: risk_explanation + risk-explanation-transport.v1
 ```
 
 导出命令（orchestrator 负责）：
@@ -80,6 +85,11 @@ cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
   --route-id tromso_to_isfjorden_outer \
   --output-dir ${ARCTIC_ROUTE_ROOT}/work_package_d/viewer
 ```
+
+Winter combined export additionally accepts `--winter-replay-manifest PATH`
+(`--winter-replay-snapshots-dir PATH` only when snapshots are copied) and
+`--risk-explanation-manifest PATH`. The first is required for real
+`REPLAN_DECIDED/REPLAN_ADOPTED` presentation; the second is the B immutable sidecar transport.
 
 生成的 `bundle.json` / `gebco_basemap.png` / `basemap_metadata.json` /
 `replay-viewer-preflight.json` 被 D `.gitignore` 忽略（本地制品，不提交）。
@@ -141,13 +151,12 @@ Viewer 明确回退为既有 authoritative 单路线。`DATA_UNAVAILABLE` 仍由
 
 Presentation Mode 仍逐 cell 消费 formal presentation bundle，但使用像素对齐
 和较柔和 alpha，避免相邻透明 cell 的抗锯齿接缝；没有空间插值。Engineering
-Debug 显示原始 cell 边界。路线绘制使用同一 authoritative waypoint 折线的展示-only
-局部受约束 cubic B-spline；当前展示尺度专门放大到可见范围，但不产生新的权威路线
-几何。若几何检查失败则回退 linear densification。Viewer 仿真船位、航向、近期轨迹和
-completed-track 的绘制使用同一条平滑曲线，原始 waypoint ETA 作为时间锚点；曲线路径
-无效或与 timeline 偏差超过保护阈值时回退原始 timeline。路线 authority、route metrics、
-ETA、active/pending/adopted 事件和 C→D 合同不变。图层控件默认显示蓝色曲线路径，并默认
-隐藏白色原始折线路径；后者可按需打开作对照。
+Debug 显示原始 cell 边界。路线绘制优先使用 C 发布且身份校验通过的
+`cd.route-motion-set.v1` `motion_samples`，失效时回退 authoritative waypoint/timeline；
+D 不在生产路径本地重算 cubic B-spline，也不放大正式平滑幅度。Viewer 仿真船位、航向、
+近期轨迹和 completed-track 使用同一正式 motion，原始 waypoint ETA 作为时间锚点；路线
+authority、route metrics、ETA、active/pending/adopted 事件和 C→D 合同不变。图层控件默认
+显示蓝色正式曲线路径，并默认隐藏白色原始折线路径；后者可按需打开作对照。
 
 Replay Viewer 和旧版 `web/demo_viewer.html` 都只改变路线线条的 paint geometry；Replay
 Viewer 额外让仿真船沿该展示曲线移动，但不把曲线写回 route artifact，也不改变原始
@@ -181,6 +190,13 @@ producer course/speed、近期 trail 和 completed-track。
 smoother，也不会重算 ETA、风险、hard mask、corridor 或运动学。这里的“正式”只表示工程
 仿真 C→D 合同通过；profile 仍为 `FORMULA_DERIVED_ENGINEERING_REFERENCE`、
 `real_vessel_calibrated=false`，不表示实船校准、导航认证或 UKC。
+
+“当前路段”是独立 operational overlay，不受原始折线图层开关影响；有正式
+`motion_samples` 时按当前 segment 的 ETA 窗口截取曲线，否则回退当前 raw segment。曲线
+面板提供局部放大、最小曲率半径和相对权威航点的最大真实偏离，均为 presentation
+diagnostics，不改变正式 geometry、安全门禁或平滑幅度。Risk Forecast Timeline 保留完整
+小时帧；窄侧栏通过横向滚动和最小 tick/bar 宽度保证绿色/黄色柱可见，`make
+browser-regression` 覆盖 344px 与 528px。
 
 ## 受约束研究曲线运动（2026-08-31，历史兼容）
 
@@ -216,8 +232,8 @@ REPLAN_DECIDED != REPLAN_ADOPTED
 pending route != authoritative route
 completed track = append-only
 replan 只改变未来
-Viewer 不猜航速 / 不改 route geometry 掩盖 LAND；display densification 只在
-authoritative straight segment 上增加绘制点
+Viewer 不猜航速 / 不改 route geometry 掩盖 LAND；formal motion samples 是曲线来源，
+失效时只在 authoritative straight segment 上做绘制 densification
 land_sea_mask: 1 = sea, 0 = land_or_coast
 ```
 

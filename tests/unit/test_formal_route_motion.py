@@ -135,7 +135,10 @@ const inspection = reader.inspect(bundle, route);
 if (!inspection.valid || inspection.source !== "cd.route-motion-set.v1") process.exit(2);
 const path = reader.buildPath(bundle, route, Date.parse(waypoints[0].eta));
 if (!path || path.points.length !== 3 || path.courseDegrees[1] !== 30.0 ||
-    path.speedKnots[2] !== 9.9 || path.timesMs[1] !== 1800000) process.exit(3);
+    path.speedKnots[2] !== 9.9 || path.timesMs[1] !== 1800000 ||
+    !Number.isFinite(path.minimumRadiusM) || !Number.isFinite(path.maximumDeviationM) ||
+    path.curvatureSampleCount !== 1 ||
+    path.diagnosticsSource !== "formal_motion_samples_vs_authoritative_waypoints") process.exit(3);
 
 const tampered = clone(document);
 tampered.records[0].motion_samples[1].lat += 0.1;
@@ -245,3 +248,17 @@ def test_production_motion_uses_formal_samples_or_raw_timeline_only() -> None:
     assert "buildResearchRouteMotionPath" not in app
     assert "setResearchRouteSmoothing" not in app
     assert "production_research_path_removed" in app
+    assert "timeline-unavailable" in app
+
+
+def test_current_segment_and_curve_diagnostics_are_independent_of_raw_polyline_layer() -> None:
+    app = (VIEWER / "app.js").read_text(encoding="utf-8")
+    stylesheet = (VIEWER / "style.css").read_text(encoding="utf-8")
+    assert "currentSegmentPaintPointsAt" in app
+    assert 'drawPath(currentSegment, "#f7fbff", 3.1' in app
+    assert "const currentSegment = currentSegmentPaintPointsAt(active, s);" in app
+    assert "minimum_radius_m" in app
+    assert "maximum_deviation_m" in app
+    assert "overflow-x: auto" in stylesheet
+    assert "flex: 0 0 var(--risk-tick-width, 8px)" in stylesheet
+    assert "min-width: 3px" in stylesheet

@@ -298,3 +298,13 @@ def test_winter_combined_bundle_keeps_one_experiment_identity(bundle: dict) -> N
         candidate["provenance"]["scenario_id"]
         for candidate in bundle["route_candidates"]["candidates"]
     } == {bundle["replay"]["scenario_id"]}
+
+
+def test_default_winter_bundle_does_not_fabricate_replan_events(bundle: dict) -> None:
+    if _is_causal_replay(bundle):
+        pytest.skip("causal replay supplies its observed replan events")
+    combined = bundle["combined_presentation"]
+    assert combined["replanning_status"] == (
+        "UNAVAILABLE_IDENTITY_BOUND_CAUSAL_REPLAY_REQUIRED"
+    )
+    assert bundle["events"] == []

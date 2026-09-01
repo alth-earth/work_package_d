@@ -8,7 +8,7 @@ Applicability: CURRENT
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: research-validation-system
-Last Verified: 2026-08-31 02:33 +08:00
+Last Verified: 2026-09-01
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -35,10 +35,12 @@ sidecar 可由 presentation package 的可选 `risk_explanation` 字段传入；
 无效或 identity mismatch 的 sidecar 仅在 explanation gate 内失败关闭，基础 RiskFrame
 继续显示。
 
-验证：D `91 passed / 3 causal-replay-only skipped`；Firefox 对真实 Winter bundle 的 missing /
+验证：D `114 passed / 3 causal-replay-only skipped`；Firefox 对真实 Winter bundle 的 missing /
 invalid fallback 以及 synthetic B fixture 的 PARTIAL / COMPLETE rendering E2E 通过，8 个静态
-资源 HTTP 200，console errors/warnings 为 0。真实 B producer artifact 和 Orchestrator
-immutable transport 尚未实现，因此当前不能声称真实风险贡献解释已发布。
+资源 HTTP 200，console errors/warnings 为 0。B producer 已发布 content-addressed sidecar/
+manifest，Orchestrator 已完成 digest/schema/identity 复核与传输；sidecar 仍标记
+`demo_unvalidated` / `research_unvalidated`，因此不能声称科学标定或真实导航资格。未传入真实
+sidecar 时，Viewer 继续显示 `Explanation unavailable`。
 
 ## Winter Combined Research Viewer（2026-08-23 20:14 +08:00）
 
@@ -49,9 +51,12 @@ D 已通过同一 Winter experiment identity 的 combined package 完成 Firefox
 RiskWindow 与 assembly identity。
 
 combined identity 在浏览器内继续 fail closed：scenario/run/bundle/risk-window/candidate set
-或 canonical selected route 不一致时不启用 Research View。该时间线是 C route ETA 的
-presentation projection，`source_replay=null`，不是新生成的 causal replay；D 不重算风险、
-ETA、route geometry 或 route ranking。既有 Summer single-route fallback 保持可用。
+或 canonical selected route 不一致时不启用 Research View。没有同身份 causal replay 时，该
+时间线是 C route ETA 的 presentation projection，`source_replay=null`，并显示
+`UNAVAILABLE_IDENTITY_BOUND_CAUSAL_REPLAY_REQUIRED`；不包含伪造 replan event。只有
+Orchestrator 传入真实身份绑定回放后，才展示多 revision 的 pending/superseded 与
+`REPLAN_DECIDED/ADOPTED`。D 不重算风险、ETA、route geometry 或 route ranking。既有 Summer
+single-route fallback 保持可用。
 
 ## Research Validation role（2026-08-21 23:18）
 
@@ -121,7 +126,7 @@ The viewer lives in `viewer/`:
 
 The static server lives in `scripts/replay_viewer_serve.py`.
 
-## Viewer Product Mainline（2026-08-31）
+## Viewer Product Mainline（2026-09-01）
 
 The current D mainline is the browser-verified C-published
 `cd.route-motion-set.v1` artifact in the default Winter bundle:
@@ -149,12 +154,19 @@ The current D mainline is the browser-verified C-published
   a local display smoother. Missing, stale, tampered, or identity-inconsistent
   formal motion falls back to the authoritative raw waypoint/timeline and
   displays the concrete reason.
+- “当前路段”是独立的 operational overlay，不受原始折线图层开关影响；有正式
+  `motion_samples` 时按当前 segment 的 ETA 窗口截取曲线，否则回退当前 raw segment。
+- 曲线控件提供当前窗口局部放大、最小曲率半径和相对权威航点的最大真实偏离；这些是
+  presentation diagnostics，不改变正式 motion、安全门禁或平滑幅度。
+- Risk Forecast Timeline 保留完整小时帧；窄侧栏使用横向滚动、最小 tick/bar 宽度，不再
+  让 flex 布局把绿色/黄色柱压成 0px。`make browser-regression` 已覆盖 344px 与 528px。
 
 Browser evidence is kept outside Git under
 `${ARCTIC_ROUTE_ROOT}/.runtime/viewer-proof/`. Verified environment: Firefox on
 `127.0.0.1:8131`, final required resources all HTTP 200, zero console errors or
 warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
-+12h/+24h = unavailable. D full tests: 57 passed; ruff and JS syntax are clean.
++12h/+24h = unavailable. D full tests: 114 passed, 3 replay-only skips; ruff and JS syntax are
+clean. Browser layout regression passes at 344px and 528px.
 
 ## Viewer Presentation Polish（历史兼容，2026-08-21 01:20 +08:00）
 
@@ -220,17 +232,17 @@ warnings. Horizon checks include 10:30 +6h = 16:00 / actual +5h30m and 10:30
 - synthetic bulk-carrier profile 与声明 raster-model corridor 只构成工程仿真资格，不表示
   实船、导航或 UKC 认证。完整边界见 [Viewer 技术说明](viewer/README.md)。
 
-## Route display smoothing（2026-08-31 00:56 +08:00，历史展示实现）
+## Route display smoothing（2026-08-31，历史实现与当前边界）
 
-- Replay Viewer 对计划路线启用展示-only 的局部受约束三次 B 样条绘制：使用局部米制坐标、
-  入射/出射方向、有限显示偏离和 fail-closed 回退，降低航点处的锐角折线观感；
+- 历史版本曾在 Viewer 侧启用 display-only 局部三次 B 样条；当前默认 Viewer 已切换为
+  C 发布的 `cd.route-motion-set.v1` `motion_samples`，D 不再本地重算或放大平滑幅度；
 - 原始 `routes.waypoints`、候选 geometry、ETA、route metrics、active/pending/adopted
   语义和 C→D 合同均不改；曲线只存在于 Canvas paint coordinates 和 Viewer 本地仿真呈现状态；
-- Viewer 仿真中的船位、船头方向、近期轨迹和 completed-track 的绘制跟随同一条平滑曲线；
-  原始 waypoint ETA 作为时间锚点，曲线无法安全构建或与 timeline 偏差超过保护阈值时回退
-  timeline。原始 route waypoint、active revision、route metrics、ETA、adoption 事件和
-  C→D 合同仍保持权威，不被回写；因此该功能不是船舶操纵性、安全走廊或生产资格证明；
-- 图例和图层控件明确区分蓝色平滑曲线与白色原始折线；原始折线默认隐藏，可按需打开做
+- Viewer 仿真中的船位、船头方向、近期轨迹和 completed-track 跟随正式 motion samples；
+  原始 waypoint ETA 仍是时间锚点，formal motion 失效时回退 timeline。原始 route waypoint、
+  active revision、route metrics、ETA、adoption 事件和 C→D 合同仍保持权威，不被回写；
+  因此该功能不是船舶操纵性、安全走廊或生产资格证明；
+- 图例和图层控件明确区分蓝色正式曲线与白色原始折线；原始折线默认隐藏，可按需打开做
   几何对照；
 - Orchestrator 的 `presentation.viewer-presentation.v1` 明确声明该展示策略及原始折线回退。
 - C 另提供 `c.research-route-smoothing-sidecar.v1` 的 geometry-only 研究输出；只有在

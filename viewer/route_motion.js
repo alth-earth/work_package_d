@@ -489,11 +489,94 @@
       if (!finite(distance) || distance <= 1e-9) return null;
       distancesKm.push(distancesKm[index - 1] + distance);
     }
+    const diagnostics = motionDiagnostics(route, points);
     return Object.freeze({points, timesMs, distancesKm, anchorDistancesKm: distancesKm,
       courseDegrees: inspection.samples.map((sample) => sample.course_degrees),
       speedKnots: inspection.samples.map((sample) => sample.speed_knots),
-      smoothingApplied: true, maximumDeviationM: 0, source: inspection.source,
+      smoothingApplied: true,
+      minimumRadiusM: diagnostics.minimumRadiusM,
+      maximumDeviationM: diagnostics.maximumDeviationM,
+      curvatureSampleCount: diagnostics.curvatureSampleCount,
+      diagnosticsSource: "formal_motion_samples_vs_authoritative_waypoints",
+      source: inspection.source,
       motionSetId: inspection.motion_set_id, planId: inspection.record.plan_id});
+  }
+
+  // These are presentation diagnostics only.  They never alter the formal
+  // motion samples, ETA interpolation, or any safety gate.  A local
+  // equirectangular projection is sufficient for the short route segments in
+  // this Viewer and keeps the diagnostic deterministic and dependency-free.
+  const EARTH_RADIUS_M = 6371008.8;
+
+  function localMeters(point, originLat, originLon) {
+    const radians = Math.PI / 180;
+    return {
+      x: (point.lon - originLon) * radians * EARTH_RADIUS_M *
+        Math.cos(originLat * radians),
+      y: (point.lat - originLat) * radians * EARTH_RADIUS_M,
+    };
+  }
+
+  function pointToSegmentDistanceM(point, start, end) {
+    const originLat = (point.lat + start.lat + end.lat) / 3;
+    const originLon = (point.lon + start.lon + end.lon) / 3;
+    const p = localMeters(point, originLat, originLon);
+    const a = localMeters(start, originLat, originLon);
+    const b = localMeters(end, originLat, originLon);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared <= 1e-12) return Math.hypot(p.x - a.x, p.y - a.y);
+    const fraction = Math.max(0, Math.min(1,
+      ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared));
+    return Math.hypot(p.x - (a.x + fraction * dx), p.y - (a.y + fraction * dy));
+  }
+
+  function circumradiusM(first, middle, last) {
+    const originLat = (first.lat + middle.lat + last.lat) / 3;
+    const originLon = (first.lon + middle.lon + last.lon) / 3;
+    const a = localMeters(first, originLat, originLon);
+    const b = localMeters(middle, originLat, originLon);
+    const c = localMeters(last, originLat, originLon);
+    const ab = Math.hypot(b.x - a.x, b.y - a.y);
+    const bc = Math.hypot(c.x - b.x, c.y - b.y);
+    const ca = Math.hypot(a.x - c.x, a.y - c.y);
+    const twiceArea = Math.abs(
+      (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x),
+    );
+    // Straight samples have no finite curvature radius; omit them rather
+    // than reporting a misleading infinity or an unstable huge value.
+    if (twiceArea <= 1e-6 || ab <= 1e-6 || bc <= 1e-6 || ca <= 1e-6) return null;
+    const radius = (ab * bc * ca) / (2 * twiceArea);
+    return finite(radius) && radius > 0 ? radius : null;
+  }
+
+  function motionDiagnostics(route, samples) {
+    const waypoints = (route?.waypoints || []).map(coordinate).filter(Boolean);
+    let maximumDeviationM = null;
+    if (waypoints.length >= 2 && samples.length) {
+      let maximum = 0;
+      for (const sample of samples) {
+        let nearest = Infinity;
+        for (let index = 1; index < waypoints.length; index += 1) {
+          nearest = Math.min(
+            nearest,
+            pointToSegmentDistanceM(sample, waypoints[index - 1], waypoints[index]),
+          );
+        }
+        if (finite(nearest)) maximum = Math.max(maximum, nearest);
+      }
+      maximumDeviationM = maximum;
+    }
+    let minimumRadiusM = null;
+    let curvatureSampleCount = 0;
+    for (let index = 1; index < samples.length - 1; index += 1) {
+      const radius = circumradiusM(samples[index - 1], samples[index], samples[index + 1]);
+      if (radius === null) continue;
+      curvatureSampleCount += 1;
+      minimumRadiusM = minimumRadiusM === null ? radius : Math.min(minimumRadiusM, radius);
+    }
+    return {minimumRadiusM, maximumDeviationM, curvatureSampleCount};
   }
 
   function haversineKm(a, b) {

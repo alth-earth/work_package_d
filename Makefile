@@ -4,7 +4,7 @@ PYTHON ?= $(ARCTIC_ROUTE_ROOT)/arctic_route_orchestrator/.mamba-env/bin/python
 export UV_CACHE_DIR ?= $(CURDIR)/.uv-cache
 export UV_PYTHON_INSTALL_DIR ?= $(CURDIR)/.uv-python
 
-.PHONY: sync lint test check clean
+.PHONY: sync lint test check browser-regression clean
 
 sync:
 	$(UV) sync --locked --python "$(PYTHON)"
@@ -18,6 +18,9 @@ test:
 check: lint test
 	$(UV) sync --check --locked --python "$(PYTHON)"
 	$(UV) run --locked arctic-route-display --help
+
+browser-regression:
+	./scripts/browser_layout_regression.sh
 
 clean:
 	rm -rf .venv .pytest_cache .ruff_cache
