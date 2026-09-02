@@ -199,6 +199,47 @@
           <div id="risk-horizon-status" class="status horizon-status">正在加载风险时域</div>
         </section>
 
+        <section class="block decision-snapshot" aria-labelledby="decision-snapshot-heading">
+          <h2 id="decision-snapshot-heading">A→D 跨包状态</h2>
+          <div class="decision-grid" aria-live="polite">
+            <article class="decision-item" data-package="a" data-state="loading">
+              <div class="decision-item-heading">
+                <span class="decision-code">A</span>
+                <span>环境数据</span>
+              </div>
+              <strong id="snapshot-a-value">--</strong>
+              <small id="snapshot-a-detail">正在读取 DatasetBundle</small>
+            </article>
+            <article class="decision-item" data-package="b" data-state="loading">
+              <div class="decision-item-heading">
+                <span class="decision-code">B</span>
+                <span>风险评估</span>
+              </div>
+              <strong id="snapshot-b-value">--</strong>
+              <small id="snapshot-b-detail">正在读取 RiskFrame</small>
+            </article>
+            <article class="decision-item" data-package="c" data-state="loading">
+              <div class="decision-item-heading">
+                <span class="decision-code">C</span>
+                <span>路线规划</span>
+              </div>
+              <strong id="snapshot-c-value">--</strong>
+              <small id="snapshot-c-detail">正在读取 RoutePlan</small>
+            </article>
+            <article class="decision-item" data-package="d" data-state="loading">
+              <div class="decision-item-heading">
+                <span class="decision-code">D</span>
+                <span>展示运行时</span>
+              </div>
+              <strong id="snapshot-d-value">--</strong>
+              <small id="snapshot-d-detail">正在读取 motion 制品</small>
+            </article>
+          </div>
+          <div id="snapshot-identity" class="snapshot-identity" aria-live="polite">
+            正在校验 A→D 统一身份
+          </div>
+        </section>
+
         <section id="research-panel" class="block research-panel" hidden>
           <h2>航行决策</h2>
           <div id="research-status" class="status">正在加载研究制品</div>
@@ -274,6 +315,14 @@
           <h2>执行决策状态</h2>
           <div id="route-decision-status" class="status">正在加载路线决策</div>
           <dl id="route-decision-metrics" class="summary-grid"></dl>
+          <div class="selection-rationale" aria-live="polite">
+            <div class="selection-rationale-heading">C 选择理由 · 可选制品</div>
+            <div id="selection-rationale-status" class="status summary-note">
+              未随当前 Viewer 制品发布；不影响路线消费
+            </div>
+            <p id="selection-rationale-summary" class="selection-rationale-summary" hidden></p>
+            <dl id="selection-rationale-metrics" class="summary-grid" hidden></dl>
+          </div>
           <div id="route-decision-trace" class="status summary-note"></div>
           <div id="route-fallback-note" class="status summary-note"></div>
         </section>

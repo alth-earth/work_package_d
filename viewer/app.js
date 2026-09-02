@@ -70,6 +70,18 @@
   const pipelineAEl = document.getElementById("pipeline-a");
   const pipelineBEl = document.getElementById("pipeline-b");
   const pipelineCEl = document.getElementById("pipeline-c");
+  const snapshotAValueEl = document.getElementById("snapshot-a-value");
+  const snapshotADetailEl = document.getElementById("snapshot-a-detail");
+  const snapshotBValueEl = document.getElementById("snapshot-b-value");
+  const snapshotBDetailEl = document.getElementById("snapshot-b-detail");
+  const snapshotCValueEl = document.getElementById("snapshot-c-value");
+  const snapshotCDetailEl = document.getElementById("snapshot-c-detail");
+  const snapshotDValueEl = document.getElementById("snapshot-d-value");
+  const snapshotDDetailEl = document.getElementById("snapshot-d-detail");
+  const snapshotIdentityEl = document.getElementById("snapshot-identity");
+  const selectionRationaleStatusEl = document.getElementById("selection-rationale-status");
+  const selectionRationaleSummaryEl = document.getElementById("selection-rationale-summary");
+  const selectionRationaleMetricsEl = document.getElementById("selection-rationale-metrics");
   const layoutEl = document.querySelector(".layout");
   const sidebarEl = document.getElementById("viewer-sidebar");
   const sidebarToggleEl = document.getElementById("sidebar-toggle");
@@ -135,6 +147,8 @@
   let lastRiskExplanationKey = null;
   let lastCurveDiagnosticsKey = null;
   let lastFormalMotionStatusKey = null;
+  let lastDecisionSnapshotKey = null;
+  let lastSelectionRationaleKey = null;
   const SINGLE_ROUTE_FALLBACK = "SINGLE_ROUTE_FALLBACK";
   const EXISTING_AUTHORITATIVE_REPLAY_ACTIVE = "Existing authoritative replay remains active";
   const DISPLAY_ONLY_COMPARISON_SELECTION = "display-only comparison selection";
@@ -212,6 +226,112 @@
     pipelineCEl.textContent = candidates.length
       ? `${candidates.length} 条路线`
       : "后备路线";
+  }
+
+  function compactIdentity(value, length = 18) {
+    if (typeof value !== "string" || !value) return "未发布";
+    return value.length > length ? `${value.slice(0, length)}…` : value;
+  }
+
+  function setDecisionCard(valueEl, detailEl, value, detail, state) {
+    if (valueEl) valueEl.textContent = value;
+    if (detailEl) detailEl.textContent = detail;
+    const card = valueEl?.closest(".decision-item");
+    if (card) card.dataset.state = state;
+  }
+
+  function updateDecisionSnapshot(s) {
+    if (!bundle || !s) return;
+    const combined = bundle.combined_presentation || {};
+    const research = bundle.research_validation || {};
+    const riskSource = bundle.risk?.source || {};
+    const risk = bundle.risk || {};
+    const datasetBundleId = combined.dataset_bundle_id ||
+      research.dataset_bundle_id || riskSource.dataset_bundle_id;
+    const frameCount = Array.isArray(risk.frames) ? risk.frames.length : 0;
+    const grid = risk.grid;
+    const riskAvailable = Boolean(
+      s.risk && s.riskSelection?.availability === "AVAILABLE"
+    );
+    const riskSummary = s.risk?.summary || {};
+    const active = routeFor(s.active);
+    const runtimeCandidate = runtimeRouteLocked ? runtimeSelectedCandidate() : null;
+    const displayRoute = runtimeCandidate ? runtimeCandidateRoute(runtimeCandidate) : active;
+    const candidateCount = candidateInspection?.valid ? candidateInspection.candidates.length : 0;
+    const revisionCount = new Set((bundle.routes || []).map((route) => route.revision)).size;
+    const adoptionCount = (bundle.events || []).filter(
+      (event) => event.type === "REPLAN_ADOPTED"
+    ).length;
+    const motionInspection = runtimeCandidate
+      ? runtimeMotionInspection(runtimeCandidate)
+      : active ? inspectFormalRouteMotion(active) : { valid: false, reason: "no_active_route" };
+    const motionMode = runtimeCandidate
+      ? runtimeRouteMotionMode
+      : motionInspection.record?.mode || "RAW_PASSTHROUGH";
+    const identityPass = Boolean(
+      combinedIdentityInspection?.valid &&
+      bundle.gates?.status === "PASS" &&
+      bundle.gates?.l2_status === "PASS"
+    );
+    const key = [
+      datasetBundleId,
+      s.active,
+      riskAvailable,
+      s.risk?.risk_id,
+      selectedHorizon,
+      candidateCount,
+      runtimeSelectedCandidateId,
+      runtimeRouteLocked,
+      motionMode,
+      identityPass,
+    ].join("|");
+    if (key === lastDecisionSnapshotKey) return;
+    lastDecisionSnapshotKey = key;
+
+    setDecisionCard(
+      snapshotAValueEl,
+      snapshotADetailEl,
+      datasetBundleId ? "已绑定" : "未发布",
+      datasetBundleId ? `DatasetBundle · ${compactIdentity(datasetBundleId)}` :
+        "A DatasetBundle 身份缺失",
+      datasetBundleId ? "pass" : "warn",
+    );
+    setDecisionCard(
+      snapshotBValueEl,
+      snapshotBDetailEl,
+      riskAvailable ? `均值 ${formatScore(riskSummary.risk_score_mean)}` : "预测不可用",
+      `${frameCount || "?"} 帧 · ${grid ? `${grid.rows}×${grid.cols}` : "网格未发布"} · ` +
+        `${horizonLabel(selectedHorizon)}${riskSource.provenance?.[0] ? ` · ${riskSource.provenance[0]}` : ""}`,
+      risk.status === "PASS" && frameCount > 0 ? "pass" : "warn",
+    );
+    setDecisionCard(
+      snapshotCValueEl,
+      snapshotCDetailEl,
+      displayRoute ? `R${displayRoute.revision} · ${objectiveLabel(displayRoute.objective)}` :
+        "路线不可用",
+      candidateCount
+        ? `4 层×3 目标 · ${runtimeRouteLocked ? "运行路线已锁定" : "C selected"}`
+        : "RoutePlan · 单路线后备",
+      displayRoute && (candidateCount || active) ? "pass" : "warn",
+    );
+    setDecisionCard(
+      snapshotDValueEl,
+      snapshotDDetailEl,
+      motionInspection.valid
+        ? motionMode === "CURVE" ? "正式曲线" : "RAW 回退"
+        : "已回退 raw",
+      `${runtimeCandidate ? "运行路线" : "C motion_samples"} · ${
+        Array.isArray(bundle.route_motion_sets) ? bundle.route_motion_sets.length : "?"
+      } 组 · ${revisionCount || "?"} revisions / ${adoptionCount} 次采用`,
+      motionInspection.valid ? "pass" : "warn",
+    );
+    if (snapshotIdentityEl) {
+      snapshotIdentityEl.dataset.state = identityPass ? "pass" : "warn";
+      snapshotIdentityEl.textContent = identityPass
+        ? `A DatasetBundle → B RiskFrame → C RoutePlan v3 → D Viewer · ` +
+          `同一 assembly ${compactIdentity(combined.assembly_id || bundle.replay?.manifest_semantic_digest)}`
+        : `链路降级 · ${combinedIdentityInspection?.reason || "统一制品身份不可用"}`;
+    }
   }
 
   function inspectCombinedIdentity(value, routeInspection) {
