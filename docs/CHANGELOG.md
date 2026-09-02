@@ -6,10 +6,28 @@ Content Status:
 Document Role: SUPPORTING
 Scope: work package D change history
 Branch: research-validation-system
-Last Verified: 2026-08-23
+Last Verified: 2026-09-02
 ---
 
 # 工作包 D 变更记录
+
+## Unreleased - Qualified obstacle-aware route curves（2026-09-02）
+
+- feat: 当前权威路线接入同身份的 C 正式 motion set，从 22 个 RoutePlan 航点提升为
+  982 个曲线采样点；关键转弯使用受约束局部三次 B 样条，船位、航向和航迹同源；
+- safety: 仅消费风险、硬约束、连续走廊、曲率和操纵性门禁均通过的正式曲线；当前制品
+  的最小曲率半径约 7.46 km、相对原始航点最大偏离约 723 m，最近网格复核硬约束命中为 0；
+- compatibility: 兼容历史 Viewer 将路线投影为 lon/lat/ETA、未携带推荐速度的包；仍要求
+  content-addressed plan ID、全部航点 ETA 锚点、起终点、层、run、scenario、RiskWindow 和
+  motion-set digest 一致，部分字段缺失或任何身份漂移继续失败关闭；
+- polish: 活动曲线增加半透明深色衬线，在风险网格和硬约束纹理上保持清晰可见；原始权威
+  折线仍只在工程调试图层中按需显示。
+
+## Unreleased - Simplified user view picker（2026-09-02）
+
+- fix: 视图下拉框只保留“研究验证”和“航行仿真”两种用户视图；
+- fix: “工程调试”保留为专用按钮入口，避免与下拉选项重复，同时继续保留工程诊断能力；
+- validation: 工程调试模式下禁用用户视图下拉框，退出后恢复到进入调试前的视图。
 
 ## Unreleased - Formal engineering route motion（2026-08-31）
 

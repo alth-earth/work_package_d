@@ -71,3 +71,31 @@ def test_rehearsal_controls_seek_milestones_and_reset_map_view() -> None:
     assert 'setAttribute("aria-current", "step")' in script
     assert "mapPanX = 0" in script
     assert ".event-jump:focus-visible" in stylesheet
+
+
+def test_cross_package_snapshot_and_optional_selection_rationale_are_exposed() -> None:
+    html = (VIEWER / "index.html").read_text(encoding="utf-8")
+    script = (VIEWER / "app.js").read_text(encoding="utf-8")
+    stylesheet = (VIEWER / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="decision-snapshot-heading"' in html
+    for package in "abcd":
+        assert f'id="snapshot-{package}-value"' in html
+    assert 'id="selection-rationale-status"' in html
+    assert 'id="selection-rationale-metrics"' in html
+    assert "function updateDecisionSnapshot" in script
+    assert "function updateSelectionRationale" in script
+    assert 'schema_version !== "selection-rationale.v1"' in script
+    assert "displayRouteForState" in script
+    assert ".decision-grid" in stylesheet
+    assert ".selection-rationale" in stylesheet
+
+
+def test_engineering_debug_is_reached_by_the_dedicated_button_only() -> None:
+    html = (VIEWER / "index.html").read_text(encoding="utf-8")
+    script = (VIEWER / "app.js").read_text(encoding="utf-8")
+
+    assert 'option value="engineering"' not in html
+    assert 'id="toggle-debug"' in html
+    assert "viewModeSel.disabled = engineeringMode" in script
+    assert '["research", "presentation"].includes(requested)' in script

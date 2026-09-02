@@ -136,8 +136,9 @@ Research Presentation Mode 的实现见下一节。
 
 ## Research Presentation Mode Phase 1（2026-08-23 16:59 +08:00）
 
-D 在既有 Replay Viewer 上新增三态视图：`Research Validation`、
-`Operational Replay`、`Engineering Debug`。只有经过 D fail-closed 检查的
+D 在既有 Replay Viewer 上提供两种用户视图：`Research Validation`、
+`Operational Replay`；`Engineering Debug` 保留为旁边的专用按钮入口，不再占用用户视图下拉框。
+只有经过 D fail-closed 检查的
 `presentation.route-candidates.v1` 原子发布才启用 Research View：必须恰好覆盖
 四层 × 三目标、12 个唯一 `candidate_id`、合法 `LineString` geometry、完整 canonical
 metrics、`hard_violation_count=0`，且 candidate scenario 与 Viewer bundle 一致。
@@ -209,8 +210,8 @@ The current D mainline is the browser-verified C-published
   displays the concrete reason.
 - “当前路段”是独立的 operational overlay，不受原始折线图层开关影响；有正式
   `motion_samples` 时按当前 segment 的 ETA 窗口截取曲线，否则回退当前 raw segment。
-- 曲线控件提供当前窗口局部放大、最小曲率半径和相对权威航点的最大真实偏离；这些是
-  presentation diagnostics，不改变正式 motion、安全门禁或平滑幅度。
+- 低辨识度的局部曲线放大面板不再占用常规图层区；最小曲率半径和相对权威航点的最大
+  真实偏离仍保留在正式 motion 诊断数据中，不改变正式 motion、安全门禁或平滑幅度。
 - Risk Forecast Timeline 保留完整小时帧；窄侧栏使用横向滚动、最小 tick/bar 宽度，不再
   让 flex 布局把绿色/黄色柱压成 0px。`make browser-regression` 已覆盖 344px 与 528px。
 

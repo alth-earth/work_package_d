@@ -57,10 +57,6 @@
   const layerRoutes = document.getElementById("layer-routes");
   const layerRoutePolyline = document.getElementById("layer-route-polyline");
   const formalMotionStatusEl = document.getElementById("formal-motion-status");
-  const curveDiagnosticsStatusEl = document.getElementById("curve-diagnostics-status");
-  const curveDiagnosticsMetricsEl = document.getElementById("curve-diagnostics-metrics");
-  const curveDetailCanvas = document.getElementById("curve-detail-canvas");
-  const curveDetailCtx = curveDetailCanvas?.getContext("2d") || null;
   const layerTrack = document.getElementById("layer-track");
   const layerNavigation = document.getElementById("layer-navigation");
   const gateBadges = document.querySelector(".badges");
@@ -145,7 +141,6 @@
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
   let lastRiskExplanationKey = null;
-  let lastCurveDiagnosticsKey = null;
   let lastFormalMotionStatusKey = null;
   let lastDecisionSnapshotKey = null;
   let lastSelectionRationaleKey = null;
@@ -518,6 +513,158 @@
   function formatResearchMetric(value, digits = 6, suffix = "") {
     const number = Number(value);
     return Number.isFinite(number) ? `${number.toFixed(digits)}${suffix}` : "未发布";
+  }
+
+  function formatSignedMetric(value, digits = 2, suffix = "") {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "未发布";
+    const sign = number > 0 ? "+" : "";
+    return `${sign}${number.toFixed(digits)}${suffix}`;
+  }
+
+  function formatPercentMetric(value, digits = 1) {
+    return formatSignedMetric(value, digits, "%");
+  }
+
+  function valueProvenanceLabel(value) {
+    return {
+      formal: "formal 合同来源",
+      synthetic: "synthetic 演示来源",
+      legacy_unverified: "legacy 未验证来源",
+    }[value] || value || "来源未发布";
+  }
+
+  function selectionRationaleArtifact() {
+    return window.SELECTION_RATIONALE_SIDECAR ??
+      bundle?.selection_rationale ??
+      bundle?.combined_presentation?.selection_rationale ??
+      bundle?.presentation?.selection_rationale ??
+      bundle?.route_candidates?.selection_rationale ??
+      null;
+  }
+
+  function inspectSelectionRationale(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { valid: false, reason: "sidecar_not_published" };
+    }
+    if (value.schema_version !== "selection-rationale.v1") {
+      return { valid: false, reason: "unsupported_schema_version" };
+    }
+    const allowedFields = new Set([
+      "schema_version", "run_id", "scenario_id", "corridor_id", "vessel_profile_id",
+      "config_digest", "model_config_digest", "planner_config_digest", "provenance",
+      "generation_id", "planning_request_id", "input_revision", "selected_plan_id",
+      "baseline_plan_id", "selected_objective", "baseline_objective", "tradeoffs",
+      "summary_text",
+    ]);
+    if (Object.keys(value).some((key) => !allowedFields.has(key))) {
+      return { valid: false, reason: "unsupported_fields" };
+    }
+    const requiredStrings = [
+      "run_id", "scenario_id", "corridor_id", "vessel_profile_id",
+      "config_digest", "model_config_digest", "planner_config_digest",
+      "planning_request_id", "selected_plan_id", "baseline_plan_id", "summary_text",
+    ];
+    if (requiredStrings.some((key) => typeof value[key] !== "string" || !value[key])) {
+      return { valid: false, reason: "required_fields_missing" };
+    }
+    if (["config_digest", "model_config_digest", "planner_config_digest"].some((key) =>
+      !/^[0-9a-f]{64}$/.test(value[key]))) {
+      return { valid: false, reason: "digest_invalid" };
+    }
+    if (!Number.isInteger(value.generation_id) || value.generation_id < 0 ||
+        !Number.isInteger(value.input_revision) || value.input_revision < 0) {
+      return { valid: false, reason: "generation_or_revision_invalid" };
+    }
+    if (!["formal", "legacy_unverified", "synthetic"].includes(value.provenance)) {
+      return { valid: false, reason: "provenance_invalid" };
+    }
+    if (!["fastest", "low_risk", "recommended"].includes(value.selected_objective) ||
+        value.baseline_objective !== "fastest") {
+      return { valid: false, reason: "objective_pair_invalid" };
+    }
+    const tradeoffs = value.tradeoffs;
+    const numericFields = [
+      "delta_distance_km", "delta_eta_hours", "delta_avg_risk", "delta_max_risk",
+      "delta_integrated_risk_hours", "avg_risk_reduction_pct", "max_risk_reduction_pct",
+    ];
+    if (!tradeoffs || typeof tradeoffs !== "object" || Array.isArray(tradeoffs) ||
+        Object.keys(tradeoffs).some((key) => !numericFields.includes(key)) ||
+        numericFields.some((key) => typeof tradeoffs[key] !== "number" ||
+          !Number.isFinite(tradeoffs[key]))) {
+      return { valid: false, reason: "tradeoffs_invalid" };
+    }
+    if (tradeoffs.delta_avg_risk < -1 || tradeoffs.delta_avg_risk > 1 ||
+        tradeoffs.delta_max_risk < -1 || tradeoffs.delta_max_risk > 1) {
+      return { valid: false, reason: "risk_delta_out_of_range" };
+    }
+    const replay = bundle?.replay || {};
+    const combined = bundle?.combined_presentation || {};
+    const expectedRunId = combined.run_context_id || bundle?.risk?.source?.run_id;
+    if (replay.scenario_id && value.scenario_id !== replay.scenario_id) {
+      return { valid: false, reason: "scenario_identity_mismatch" };
+    }
+    if (expectedRunId && value.run_id !== expectedRunId) {
+      return { valid: false, reason: "run_identity_mismatch" };
+    }
+    const candidates = bundle?.route_candidates?.candidates;
+    if (Array.isArray(candidates) && candidates.length) {
+      const selected = candidates.find((candidate) => candidate.candidate_id === value.selected_plan_id);
+      const baseline = candidates.find((candidate) => candidate.candidate_id === value.baseline_plan_id);
+      if (!selected || !baseline || selected.objective !== value.selected_objective ||
+          baseline.objective !== "fastest") {
+        return { valid: false, reason: "plan_identity_mismatch" };
+      }
+    }
+    return Object.freeze({ valid: true, reason: null, value });
+  }
+
+  function updateSelectionRationale() {
+    if (!selectionRationaleStatusEl) return;
+    const artifact = selectionRationaleArtifact();
+    const inspection = inspectSelectionRationale(artifact);
+    const key = artifact
+      ? `${artifact.schema_version}|${artifact.run_id}|${artifact.selected_plan_id}|${artifact.summary_text}`
+      : "missing";
+    if (key === lastSelectionRationaleKey) return;
+    lastSelectionRationaleKey = key;
+    selectionRationaleStatusEl.classList.remove("unavailable");
+    if (selectionRationaleSummaryEl) {
+      selectionRationaleSummaryEl.hidden = true;
+      selectionRationaleSummaryEl.textContent = "";
+    }
+    if (selectionRationaleMetricsEl) {
+      selectionRationaleMetricsEl.hidden = true;
+      setDefinitionRows(selectionRationaleMetricsEl, []);
+    }
+    if (!artifact) {
+      selectionRationaleStatusEl.textContent = "未随当前 Viewer 制品发布；不影响路线消费";
+      return;
+    }
+    if (!inspection.valid) {
+      selectionRationaleStatusEl.classList.add("unavailable");
+      selectionRationaleStatusEl.textContent = `未显示 · ${inspection.reason}`;
+      return;
+    }
+    const { tradeoffs } = inspection.value;
+    selectionRationaleStatusEl.textContent =
+      `${valueProvenanceLabel(inspection.value.provenance)} · 推荐路线相对最快基线的可审计权衡`;
+    if (selectionRationaleSummaryEl) {
+      selectionRationaleSummaryEl.hidden = false;
+      selectionRationaleSummaryEl.textContent = inspection.value.summary_text;
+    }
+    if (selectionRationaleMetricsEl) {
+      selectionRationaleMetricsEl.hidden = false;
+      setDefinitionRows(selectionRationaleMetricsEl, [
+        ["距离变化", formatSignedMetric(tradeoffs.delta_distance_km, 2, " km")],
+        ["ETA 变化", formatSignedMetric(tradeoffs.delta_eta_hours, 2, " h")],
+        ["平均风险变化", formatSignedMetric(tradeoffs.delta_avg_risk, 3)],
+        ["最大风险变化", formatSignedMetric(tradeoffs.delta_max_risk, 3)],
+        ["综合风险变化", formatSignedMetric(tradeoffs.delta_integrated_risk_hours, 3, " 风险·小时")],
+        ["平均风险降低", formatPercentMetric(tradeoffs.avg_risk_reduction_pct, 1)],
+        ["最大风险降低", formatPercentMetric(tradeoffs.max_risk_reduction_pct, 1)],
+      ]);
+    }
   }
 
   function riskCellSnapshot(frame, row, column) {
@@ -1302,7 +1449,7 @@
     mapPanY = 0;
     mapZoom = mapMode === "follow" ? FOLLOW_MAP_ZOOM : 1;
     const state = bundle ? stateAt(simMs) : null;
-    const active = state ? routeFor(state.active) : null;
+    const active = displayRouteForState(state);
     updateMapUi(state ? shipHeading(state, active) : 0, state);
     if (bundle) draw();
   }
@@ -1311,7 +1458,7 @@
     mapZoom = clamp(mapZoom * factor, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
     clampMapPan();
     const state = bundle ? stateAt(simMs) : null;
-    const active = state ? routeFor(state.active) : null;
+    const active = displayRouteForState(state);
     updateMapUi(state ? shipHeading(state, active) : 0, state);
     if (bundle) draw();
   }
@@ -1323,7 +1470,7 @@
     mapPanY = 0;
     mapZoom = nextMode === "follow" ? Math.max(mapZoom, FOLLOW_MAP_ZOOM) : 1;
     const state = bundle ? stateAt(simMs) : null;
-    const active = state ? routeFor(state.active) : null;
+    const active = displayRouteForState(state);
     updateMapUi(state ? shipHeading(state, active) : 0, state);
     if (bundle) draw();
   }
@@ -1336,7 +1483,7 @@
     mapPanX = -mapZoom * (position.x - canvas.width / 2);
     mapPanY = -mapZoom * (position.y - canvas.height / 2);
     clampMapPan();
-    const active = routeFor(state.active);
+    const active = displayRouteForState(state);
     updateMapUi(shipHeading(state, active), state);
   }
 
@@ -1794,90 +1941,6 @@
     return result;
   }
 
-  function formatDiagnosticDistance(value) {
-    if (!Number.isFinite(value)) return "未发布";
-    if (value >= 1000) return `${(value / 1000).toFixed(1)} km`;
-    return `${value.toFixed(0)} m`;
-  }
-
-  function drawCurveDetail(route, state, path) {
-    if (!curveDetailCtx || !curveDetailCanvas) return;
-    const width = curveDetailCanvas.width;
-    const height = curveDetailCanvas.height;
-    curveDetailCtx.clearRect(0, 0, width, height);
-    curveDetailCtx.fillStyle = "rgba(5, 18, 28, 0.85)";
-    curveDetailCtx.fillRect(0, 0, width, height);
-    const formal = currentSegmentPaintPointsAt(route, state);
-    const segmentIndex = Number.isInteger(state?.segment?.index) ? state.segment.index : 0;
-    const raw = route?.waypoints?.slice(segmentIndex, segmentIndex + 2) || [];
-    const points = [...formal, ...raw].map(coordinateOf).filter((point) =>
-      Number.isFinite(point.lon) && Number.isFinite(point.lat));
-    if (points.length < 2) return;
-    const minLon = Math.min(...points.map((point) => point.lon));
-    const maxLon = Math.max(...points.map((point) => point.lon));
-    const minLat = Math.min(...points.map((point) => point.lat));
-    const maxLat = Math.max(...points.map((point) => point.lat));
-    const lonSpan = Math.max(maxLon - minLon, 1e-9);
-    const latSpan = Math.max(maxLat - minLat, 1e-9);
-    const padding = 14;
-    const projectLocal = (point) => ({
-      x: padding + (point.lon - minLon) / lonSpan * (width - 2 * padding),
-      y: height - padding - (point.lat - minLat) / latSpan * (height - 2 * padding),
-    });
-    const drawLocal = (items, color, lineWidth, dash = []) => {
-      if (items.length < 2) return;
-      curveDetailCtx.save();
-      curveDetailCtx.strokeStyle = color;
-      curveDetailCtx.lineWidth = lineWidth;
-      curveDetailCtx.lineJoin = "round";
-      curveDetailCtx.lineCap = "round";
-      curveDetailCtx.setLineDash(dash);
-      curveDetailCtx.beginPath();
-      items.forEach((item, index) => {
-        const projected = projectLocal(coordinateOf(item));
-        if (index === 0) curveDetailCtx.moveTo(projected.x, projected.y);
-        else curveDetailCtx.lineTo(projected.x, projected.y);
-      });
-      curveDetailCtx.stroke();
-      curveDetailCtx.restore();
-    };
-    drawLocal(raw, "rgba(245, 248, 251, 0.62)", 1.4, [4, 3]);
-    drawLocal(formal, ROUTE_CURVE_COLOR, 2.4);
-    const vessel = projectLocal({lon: state.lon, lat: state.lat});
-    curveDetailCtx.fillStyle = "#f7fbff";
-    curveDetailCtx.beginPath();
-    curveDetailCtx.arc(vessel.x, vessel.y, 3, 0, Math.PI * 2);
-    curveDetailCtx.fill();
-  }
-
-  function updateCurveDiagnostics(state) {
-    if (!curveDiagnosticsStatusEl) return;
-    const active = runtimeRouteLocked ? runtimeRouteObject() : state ? routeFor(state.active) : null;
-    const path = active ? routeMotionPathFor(active) : null;
-    const key = [state?.active, state?.segment?.index, state?.time,
-      path?.minimumRadiusM, path?.maximumDeviationM, path?.source].join("|");
-    if (key === lastCurveDiagnosticsKey) return;
-    lastCurveDiagnosticsKey = key;
-    if (!path || !path.source?.startsWith("cd.route-motion")) {
-      curveDiagnosticsStatusEl.classList.add("unavailable");
-      curveDiagnosticsStatusEl.textContent =
-        `曲线诊断不可用 · ${path ? "未采用正式 motion_samples" : "formal_motion_unavailable"}`;
-      if (curveDiagnosticsMetricsEl) curveDiagnosticsMetricsEl.textContent = "";
-      if (curveDetailCtx && curveDetailCanvas) {
-        curveDetailCtx.clearRect(0, 0, curveDetailCanvas.width, curveDetailCanvas.height);
-      }
-      return;
-    }
-    curveDiagnosticsStatusEl.classList.remove("unavailable");
-    curveDiagnosticsStatusEl.textContent = "局部曲线窗口 · 仅诊断，不改变正式几何";
-    if (curveDiagnosticsMetricsEl) {
-      curveDiagnosticsMetricsEl.textContent =
-        `最小曲率半径 ${formatDiagnosticDistance(path.minimumRadiusM)} · ` +
-        `相对原始航点最大偏离 ${formatDiagnosticDistance(path.maximumDeviationM)}`;
-    }
-    drawCurveDetail(active, state, path);
-  }
-
   function bearingDegrees(start, end) {
     const a = coordinateOf(start);
     const b = coordinateOf(end);
@@ -2196,6 +2259,10 @@
 
   function routeFor(revision) {
     return bundle.routes.find((route) => route.revision === revision) || null;
+  }
+
+  function displayRouteForState(state) {
+    return runtimeRouteLocked ? runtimeRouteObject() : state ? routeFor(state.active) : null;
   }
 
   function lastEvent(ms) {
@@ -2880,6 +2947,16 @@
         const curvePoints = curvedFuture?.length > 1
           ? curvedFuture
           : [{ lon: s.lon, lat: s.lat, eta: formatAbsolute(s.time) }, ...future];
+        // A dark, translucent casing keeps the qualified curve legible above
+        // risk cells and hard-mask hatching without changing its geometry.
+        drawPath(
+          curvePoints,
+          "rgba(4, 18, 28, 0.78)",
+          7.2 + pulse * 1.1,
+          [],
+          null,
+          0.76 + pulse * 0.08,
+        );
         drawPath(
           curvePoints,
           ROUTE_CURVE_COLOR,
@@ -2943,7 +3020,6 @@
     updateMapUi(heading, s);
     updateDebug(s, heading);
     updateResearchRouteSmoothingUi();
-    updateCurveDiagnostics(s);
     drawMiniMap(s, heading);
   }
 
@@ -3057,6 +3133,8 @@
     updateRiskTimeline(s);
     updateRiskSummary(s);
     updateRouteDecision(s);
+    updateDecisionSnapshot(s);
+    updateSelectionRationale();
     updateResearchPanel();
     updateEventTimeline(s);
   }
@@ -3128,6 +3206,7 @@
 
   viewModeSel.addEventListener("change", () => {
     const requested = viewModeSel.value;
+    if (!["research", "presentation"].includes(requested)) return;
     if (requested === "research" && !candidateInspection?.valid) {
       viewMode = "presentation";
     } else {
@@ -3274,7 +3353,7 @@
     const frame = riskAt(simMs);
     if (!frame || !basemap?.bbox) return;
     const state = stateAt(simMs);
-    const active = routeFor(state.active);
+    const active = displayRouteForState(state);
     const point = screenPointToWorld(event, state, shipHeading(state, active));
     if (!point) return;
     const x = point.x;
@@ -3319,11 +3398,17 @@
         : inspectFormalRouteMotion(active)
       : { valid: false, reason: "no_active_route" };
     if (formalMotionStatusEl) {
+      const sampleCount = formalInspection.samples?.length || 0;
+      const qualification = formalInspection.record?.qualification;
+      const avoidanceQualified = qualification?.risk_rechecked === true &&
+        qualification?.hard_mask_rechecked === true &&
+        qualification?.corridor_checked === true;
       formalMotionStatusEl.textContent = formalInspection.valid
         ? runtimeRouteLocked
           ? `运行路线 ${objectiveLabel(active.objective)} · C motion_samples · ` +
             `${formalInspection.record?.mode === "CURVE" ? "受约束局部三次 B 样条" : "RAW_PASSTHROUGH 降级"}`
-          : "正式曲线运动已启用 · C producer motion_samples · 船位/航向/航迹同源"
+          : `正式避障曲线已启用 · ${sampleCount} 个 C motion_samples · ` +
+            `${avoidanceQualified ? "风险/硬约束/连续走廊复核通过" : "按正式制品门禁状态显示"}`
         : formalInspection.bound && formalInspection.mode === "RAW_PASSTHROUGH"
           ? `正式运动已绑定 · B 样条安全门拒绝，使用权威折线路线 · ` +
             `${formalInspection.reason}`
@@ -3333,16 +3418,22 @@
   }
 
   function updateModeUi() {
-    presentationMode = viewMode !== "engineering";
     const researchAvailable = Boolean(candidateInspection?.valid);
     const researchOption = viewModeSel.querySelector('option[value="research"]');
     if (researchOption) researchOption.disabled = !researchAvailable;
     if (viewMode === "research" && !researchAvailable) viewMode = "presentation";
+    presentationMode = viewMode !== "engineering";
     if (viewMode !== "engineering") {
       layers.routePolyline = false;
       layerRoutePolyline.checked = false;
     }
-    viewModeSel.value = viewMode;
+    const engineeringMode = viewMode === "engineering";
+    viewModeSel.disabled = engineeringMode;
+    viewModeSel.value = engineeringMode ? previousNonEngineeringMode : viewMode;
+    viewModeSel.setAttribute(
+      "aria-label",
+      engineeringMode ? "当前为工程调试，请使用工程调试按钮返回" : "选择用户视图",
+    );
     routeLayerSel.disabled = !researchAvailable;
     researchPanel.hidden = viewMode !== "research";
     debugPanel.hidden = viewMode !== "engineering";
@@ -3445,7 +3536,7 @@
     }
     updateResearchRouteSmoothingUi();
     const initialState = stateAt(simMs);
-    updateMapUi(shipHeading(initialState, routeFor(initialState.active)), initialState);
+    updateMapUi(shipHeading(initialState, displayRouteForState(initialState)), initialState);
     window.__ARCTIC_VIEWER__ = {
       stateAt: () => stateAt(simMs),
       riskAt: () => riskAt(simMs),
@@ -3563,6 +3654,24 @@
       setRuntimeRouteCandidate: (candidateId) => setRuntimeRouteCandidate(candidateId),
       resetRuntimeRouteSelection: () => resetRuntimeRouteSelection(),
       identitySafety: () => ({ ...combinedIdentityInspection }),
+      selectionRationale: () => {
+        const artifact = selectionRationaleArtifact();
+        const inspection = inspectSelectionRationale(artifact);
+        return {
+          valid: Boolean(inspection.valid),
+          mode: artifact ? (inspection.valid ? "published" : "invalid") : "missing",
+          reason: inspection.reason || null,
+          summary: inspection.valid ? inspection.value.summary_text : null,
+          tradeoffs: inspection.valid ? { ...inspection.value.tradeoffs } : null,
+        };
+      },
+      inspectSelectionRationale: (value) => inspectSelectionRationale(value),
+      setSelectionRationaleSidecar: (value) => {
+        window.SELECTION_RATIONALE_SIDECAR = value;
+        lastSelectionRationaleKey = null;
+        updateSelectionRationale();
+        return window.__ARCTIC_VIEWER__.selectionRationale();
+      },
       riskExplanation: () => ({
         valid: Boolean(riskExplanationInspection?.valid),
         mode: riskExplanationInspection?.mode || "missing",

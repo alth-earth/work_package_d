@@ -235,6 +235,60 @@
       Math.abs(parsed - (baseMs + offsetMs)) < 1;
   }
 
+  function inspectRouteBinding(route, record, samples, timeOffsetMs) {
+    const waypoints = route?.waypoints;
+    const anchors = record?.waypoint_anchors;
+    if (!Array.isArray(waypoints) || waypoints.length < 2 ||
+        !Array.isArray(anchors) || anchors.length !== waypoints.length) {
+      return invalid("route_waypoints_missing");
+    }
+    const coordinates = waypoints.map(coordinate);
+    if (coordinates.some((point) => point === null) ||
+        (route.layer && route.layer !== record.planning_layer)) {
+      return invalid("formal_motion_route_or_adoption_mismatch");
+    }
+    const first = coordinates[0];
+    const last = coordinates[coordinates.length - 1];
+    if (first.lon !== samples[0].lon || first.lat !== samples[0].lat ||
+        last.lon !== samples[samples.length - 1].lon ||
+        last.lat !== samples[samples.length - 1].lat ||
+        !sameShiftedInstant(route.effective_adoption_time, samples[0].eta, timeOffsetMs)) {
+      return invalid("formal_motion_route_or_adoption_mismatch");
+    }
+    for (let index = 0; index < waypoints.length; index += 1) {
+      const anchor = anchors[index];
+      const sample = samples[anchor.motion_sample_index];
+      if (!sample || !sameShiftedInstant(waypoints[index].eta, sample.eta, timeOffsetMs)) {
+        return invalid("formal_motion_route_or_adoption_mismatch");
+      }
+    }
+
+    const speedPresence = waypoints.map((waypoint) =>
+      finite(waypoint.recommended_speed_mps));
+    if (speedPresence.some(Boolean) && !speedPresence.every(Boolean)) {
+      return invalid("formal_motion_route_speed_projection_incomplete");
+    }
+    if (speedPresence.every(Boolean)) {
+      const rawWaypointPayload = waypoints.map((waypoint, waypointIndex) => ({
+        longitude: coordinates[waypointIndex].lon,
+        latitude: coordinates[waypointIndex].lat,
+        eta: samples[anchors[waypointIndex].motion_sample_index].etaText,
+        recommended_speed_mps: waypoint.recommended_speed_mps,
+      }));
+      if (canonicalDigest(rawWaypointPayload) !== record.raw_route_digest) {
+        return invalid("formal_motion_route_or_adoption_mismatch");
+      }
+      return {valid: true, mode: "canonical_route_digest"};
+    }
+
+    // presentation.viewer-bundle.v1 historically projects route waypoints as
+    // lon/lat/ETA only. In that exact all-speeds-omitted shape, retain the
+    // content-addressed plan ID plus every waypoint ETA anchor, endpoint,
+    // layer, scenario, run, RiskWindow and motion-set digest checks performed
+    // by inspect(). A partially stripped or altered route still fails closed.
+    return {valid: true, mode: "identity_bound_presentation_projection"};
+  }
+
   function inspectRecord(record) {
     const fields = [
       "planning_layer", "plan_id", "raw_route_digest", "mode", "fallback_reason",
@@ -651,42 +705,17 @@
         motion_set_id: set.motion_set_id,
         record,
       });
-      const waypoints = route?.waypoints;
       const samples = recordInspection.samples;
       const timeOffsetSeconds = Number(route?.motion_time_offset_seconds ?? 0);
       if (!finite(timeOffsetSeconds) || timeOffsetSeconds < 0) {
         return invalid("formal_motion_time_offset_invalid");
       }
       const timeOffsetMs = timeOffsetSeconds * 1000;
-      if (!Array.isArray(waypoints) || waypoints.length < 2) return invalid("route_waypoints_missing");
-      const first = coordinate(waypoints[0]);
-      const last = coordinate(waypoints[waypoints.length - 1]);
-      const rawWaypointPayload = waypoints.map((waypoint, waypointIndex) => ({
-        longitude: coordinate(waypoint)?.lon,
-        latitude: coordinate(waypoint)?.lat,
-        eta: samples[record.waypoint_anchors[waypointIndex]?.motion_sample_index]?.etaText,
-        recommended_speed_mps: waypoint.recommended_speed_mps,
-      }));
-      if (!first || !last || first.lon !== samples[0].lon || first.lat !== samples[0].lat ||
-          last.lon !== samples[samples.length - 1].lon ||
-          last.lat !== samples[samples.length - 1].lat ||
-          !sameShiftedInstant(waypoints[0].eta, samples[0].eta, timeOffsetMs) ||
-          !sameShiftedInstant(
-            waypoints[waypoints.length - 1].eta,
-            samples[samples.length - 1].eta,
-            timeOffsetMs
-          ) ||
-          !sameShiftedInstant(
-            route.effective_adoption_time, samples[0].eta, timeOffsetMs
-          ) ||
-          rawWaypointPayload.some((waypoint) => !finite(waypoint.longitude) ||
-            !finite(waypoint.latitude) || !finite(waypoint.recommended_speed_mps)) ||
-          canonicalDigest(rawWaypointPayload) !== record.raw_route_digest) {
-        return invalid("formal_motion_route_or_adoption_mismatch");
-      }
+      const routeBinding = inspectRouteBinding(route, record, samples, timeOffsetMs);
+      if (!routeBinding.valid) return routeBinding;
       return {valid: true, usable: true, reason: null, schema_version: SCHEMA_VERSION,
         source: SCHEMA_VERSION, motion_set_id: set.motion_set_id, record, samples,
-        timeOffsetSeconds};
+        timeOffsetSeconds, routeBindingMode: routeBinding.mode};
     }
     return invalid(rejectionReason);
   }

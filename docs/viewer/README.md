@@ -135,7 +135,21 @@ cd ${ARCTIC_ROUTE_ROOT}/work_package_d
 
 打开 `http://127.0.0.1:8131/`（Run/Pause、Voyage Progress、1x/2x/4x/8x、Now/
 +6h/+12h/+24h horizon、layer toggles、Research Validation / Navigation Simulation /
-Engineering Debug mode）。
+Engineering Debug 由“工程调试”按钮进入）。下拉框只保留 Research Validation /
+Navigation Simulation 两种用户视图。
+
+## A→D 跨包状态摘要（2026-09-02）
+
+默认侧栏新增 `A→D 跨包状态`，把当前 Viewer 正在消费的四类发布制品放在同一处：
+
+- A：DatasetBundle 身份；
+- B：RiskFrame 帧数、网格、时域与 provenance；
+- C：四层×三目标候选集、当前路线与运行锁定状态；
+- D：formal motion / raw fallback、revision 与 adoption 摘要。
+
+该摘要只读取 `bundle.json` 已发布字段，不重算风险、路线、ETA 或运动学。C 的
+`selection-rationale.v1` 仍是可选 sidecar：存在且通过 scenario/run identity 校验时显示
+推荐路线相对最快基线的距离、ETA 与风险权衡；缺失或无效时只在该卡片内降级，不阻塞路线消费。
 
 ## Navigation Decision Simulation Phase 2（2026-08-23 18:11 +08:00）
 
@@ -222,9 +236,9 @@ smoother，也不会重算 ETA、风险、hard mask、corridor 或运动学。�
 `real_vessel_calibrated=false`，不表示实船校准、导航认证或 UKC。
 
 “当前路段”是独立 operational overlay，不受原始折线图层开关影响；有正式
-`motion_samples` 时按当前 segment 的 ETA 窗口截取曲线，否则回退当前 raw segment。曲线
-面板提供局部放大、最小曲率半径和相对权威航点的最大真实偏离，均为 presentation
-diagnostics，不改变正式 geometry、安全门禁或平滑幅度。Risk Forecast Timeline 保留完整
+`motion_samples` 时按当前 segment 的 ETA 窗口截取曲线，否则回退当前 raw segment。常规
+图层区不再显示低辨识度的局部放大面板；最小曲率半径和相对权威航点的最大真实偏离仍
+保留在正式 motion 诊断数据中，不改变正式 geometry、安全门禁或平滑幅度。Risk Forecast Timeline 保留完整
 小时帧；窄侧栏通过横向滚动和最小 tick/bar 宽度保证绿色/黄色柱可见，`make
 browser-regression` 覆盖 344px 与 528px。
 
@@ -301,7 +315,7 @@ scripts/replay_viewer_serve.py  D 静态 server + /api/state
 - D 拥有：HTML/JS/CSS、Simulation Clock UI、ship/route/track/pending 渲染、
   GEBCO basemap 展示、静态 server、proof 渲染。
 - 已完成：Current/+6h/+12h/+24h horizon selection、fail-closed unavailable
-  semantics、Hard Reason overlay、superseded route 绘制、三种展示模式、专业
+  semantics、Hard Reason overlay、superseded route 绘制、两种用户展示模式与工程调试按钮、专业
   navigation aids，以及真实 Winter 12-route sidecar 的 Phase 1 candidate compare。
 - 已完成：Orchestrator 发布同一 Winter identity 的 combined risk/route/ETA-simulation
   package，Winter Research Firefox E2E PASS。

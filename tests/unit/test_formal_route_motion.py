@@ -203,6 +203,22 @@ route2.waypoints = route2.waypoints.map((point) => ({
 if (!reader.inspect(revisionBundle, route2).valid ||
     reader.buildPath(revisionBundle, route2, Date.parse(waypoints[0].eta)).timesMs[0] !==
       3600000) process.exit(15);
+const presentationRoute = clone(route);
+presentationRoute.waypoints = presentationRoute.waypoints.map((waypoint) => ({
+  lon: waypoint.lon,
+  lat: waypoint.lat,
+  eta: waypoint.eta,
+}));
+const presentationInspection = reader.inspect(bundle, presentationRoute);
+if (!presentationInspection.valid ||
+    presentationInspection.routeBindingMode !== "identity_bound_presentation_projection" ||
+    !reader.buildPath(bundle, presentationRoute, Date.parse(waypoints[0].eta))) process.exit(18);
+const partiallyProjectedRoute = clone(route);
+delete partiallyProjectedRoute.waypoints[0].recommended_speed_mps;
+if (reader.inspect(bundle, partiallyProjectedRoute).valid) process.exit(19);
+const presentationEtaDrift = clone(presentationRoute);
+presentationEtaDrift.waypoints[1].eta = "2026-01-01T01:00:01Z";
+if (reader.inspect(bundle, presentationEtaDrift).valid) process.exit(20);
 const microsecondRoute = clone(route2);
 microsecondRoute.motion_time_offset_seconds = 3600.000213;
 microsecondRoute.effective_adoption_time =
