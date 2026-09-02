@@ -286,6 +286,14 @@ clean. Browser layout regression passes at 344px and 528px.
 - synthetic bulk-carrier profile 与声明 raster-model corridor 只构成工程仿真资格，不表示
   实船、导航或 UKC 认证。完整边界见 [Viewer 技术说明](viewer/README.md)。
 
+2026-09-02 起，C producer 还可在 motion JSON 同目录提供
+`c.route-motion-qualification-evidence.v1`。Orchestrator 负责校验其 artifact/plan/
+RiskWindow/producer identity、记录 cardinality 与 `details_digest`；旧的
+`cd.route-motion-set.v1` 目录没有该 sidecar 时仍保持向后可读。D 不读取 sidecar 来重算
+风险或曲线，也不运行 any-angle/joint smoother；D 只消费经验证的 `motion_samples`，
+无效或缺失时回退 authoritative raw waypoint/timeline。该证据和曲线仍仅代表工程仿真，
+不构成实船校准、navigation grade、bathymetry 或 UKC 证明。
+
 ## Route display smoothing（2026-08-31，历史实现与当前边界）
 
 - 历史版本曾在 Viewer 侧启用 display-only 局部三次 B 样条；当前默认 Viewer 已切换为
