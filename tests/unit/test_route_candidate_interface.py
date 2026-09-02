@@ -122,6 +122,10 @@ def test_research_mode_requires_atomic_four_by_three_publication() -> None:
     assert 'id="route-layer"' in html
     assert 'id="experiment-metadata"' in html
     assert 'id="route-candidates"' in html
+    assert 'id="route-objective-filters"' in html
+    assert html.count("data-route-objective=") == 3
+    assert "visibleCandidateObjectives" in script
+    assert "setCandidateObjectiveVisible" in script
     assert 'value="full_voyage"' in html
     assert 'value="main_corridor_24_72h"' in html
     assert 'value="rolling_0_24h"' in html

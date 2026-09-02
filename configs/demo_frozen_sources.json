@@ -17,7 +17,9 @@
     "rc1_golden_run_report": "${ARCTIC_ROUTE_ROOT}/work_package_a/data/output/golden/mur-v3-smoke-20260816-r6/output/run-report.json",
     "notes": [
       "RC2-frozen worker rerun of RC1 scenario; business-identical to RC1 golden r6/r7.",
-      "Used for demo because it carries coverage preflight + hard_reason provenance."
+      "Used for demo because it carries coverage preflight + hard_reason provenance.",
+      "Formal viewer package (research-validation-system): work_package_d/output/formal-motion-murmansk-viewer-package-v1/ (bundle.json assembly winter-viewer-sha256-5602d5e8a3451cbdd1901c0de9ebede3558cd221ec4eb2612f415c3f68b05703; formal route motion set route-motion-set-sha256-1234ec4e1b085ced77b89592a7b5f5875e3ac0894c3ecdecafba0d6aa489c56b; replanning UNAVAILABLE_IDENTITY_BOUND_CAUSAL_REPLAY_REQUIRED).",
+      "Derived D-side sidecars (no B/C re-run): work_package_a/data/output/rc2-smoke/presentation-mur-opt/{frame-index,route-candidates,route-integrity}.json; C motion output: motion-mur-opt/initial|replanned/."
     ]
   },
   "scenario_b": {

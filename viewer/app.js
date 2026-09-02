@@ -46,6 +46,7 @@
   const currentStrategyEl = document.getElementById("current-strategy");
   const experimentMetadataEl = document.getElementById("experiment-metadata");
   const routeLayerSel = document.getElementById("route-layer");
+  const routeObjectiveFiltersEl = document.getElementById("route-objective-filters");
   const routeCandidateNoteEl = document.getElementById("route-candidate-note");
   const routeCandidatesEl = document.getElementById("route-candidates");
   const routeHighlightNoteEl = document.getElementById("route-highlight-note");
@@ -103,7 +104,10 @@
   let presentationMode = true;
   let selectedRouteLayer = "full_voyage";
   let highlightedCandidateId = null;
+  const visibleCandidateObjectives = new Set(["fastest", "low_risk", "recommended"]);
   let candidateInspection = null;
+  let activeCandidateRevision = null;
+  let activeCandidatePackage = null;
   let combinedIdentityInspection = null;
   let riskExplanationInspection = null;
   let riskExplanationRevision = 0;
@@ -121,6 +125,7 @@
   let lastResearchPanelKey = null;
   let lastRiskExplanationKey = null;
   let lastCurveDiagnosticsKey = null;
+  let lastFormalMotionStatusKey = null;
   const SINGLE_ROUTE_FALLBACK = "SINGLE_ROUTE_FALLBACK";
   const EXISTING_AUTHORITATIVE_REPLAY_ACTIVE = "Existing authoritative replay remains active";
   const DISPLAY_ONLY_COMPARISON_SELECTION = "display-only comparison selection";
@@ -138,7 +143,7 @@
   const MIN_MAP_ZOOM = 0.75;
   const MAX_MAP_ZOOM = 4.5;
   const FOLLOW_MAP_ZOOM = 2.15;
-  const ROUTE_CURVE_COLOR = "#49a9ed";
+  const ROUTE_CURVE_COLOR = "#38a9ff";
   const ROUTE_POLYLINE_COLOR = "rgba(245, 248, 251, 0.78)";
   const CURVE_HEADING_LOOKAHEAD_MS = 60 * 1000;
   const MAX_CURVE_MOTION_GAP_KM = 25;
@@ -160,6 +165,7 @@
   const HARD_COLORS = {
     LAND: "#304858",
     DATA_UNAVAILABLE: "#8a63d2",
+    HARD_MASK_REASON_UNAVAILABLE: "#697682",
     OTHER: "#b54f70",
   };
   const candidateTools = window.ArcticRouteCandidates;
@@ -170,8 +176,8 @@
   if (!formalMotionTools) throw new Error("formal route motion reader is not loaded");
   const { ROUTE_LAYERS } = candidateTools;
   const CANDIDATE_STYLES = {
-    fastest: { color: "#f0b35b", dash: [9, 5], width: 2.4 },
-    low_risk: { color: "#62d6a7", dash: [3, 5], width: 2.6 },
+    fastest: { color: "#ff8a3d", dash: [9, 5], width: 2.4 },
+    low_risk: { color: "#e66bff", dash: [3, 5], width: 2.6 },
     recommended: { color: ROUTE_CURVE_COLOR, dash: [], width: 3.1 },
   };
 
@@ -515,13 +521,57 @@
     return candidateInspection?.valid ? candidateInspection.candidates : [];
   }
 
+  function candidatePackageForRevision(revision) {
+    const entry = (bundle?.route_candidate_sets || []).find(
+      (item) => item?.revision === revision
+    );
+    return entry?.route_candidates || (revision === 1 ? bundle?.route_candidates : null);
+  }
+
+  function activateCandidateRevision(revision) {
+    if (revision === activeCandidateRevision && activeCandidatePackage) return;
+    const packageValue = candidatePackageForRevision(revision);
+    let inspection = candidateTools.inspect(
+      packageValue,
+      bundle?.replay?.scenario_id || null
+    );
+    const bindings = bundle?.combined_presentation?.route_candidate_set_bindings;
+    if (inspection.valid && Array.isArray(bundle?.route_candidate_sets)) {
+      const binding = Array.isArray(bindings)
+        ? bindings.find((item) => item?.revision === revision)
+        : null;
+      const activeRoute = routeFor(revision);
+      if (!binding || binding.layer_set_id !== packageValue?.layer_set_id ||
+          binding.candidate_set_id !== packageValue?.candidate_set_id ||
+          binding.selected_candidate_id !== packageValue?.selected_candidate_id ||
+          (activeRoute && activeRoute.route_id !== packageValue?.selected_candidate_id)) {
+        inspection = Object.freeze({
+          valid: false,
+          reason: "route revision candidate identity mismatch",
+          candidates: Object.freeze([]),
+        });
+      }
+    }
+    activeCandidateRevision = revision;
+    activeCandidatePackage = packageValue;
+    candidateInspection = combinedIdentityInspection?.valid === false
+      ? Object.freeze({
+        valid: false,
+        reason: combinedIdentityInspection.reason,
+        candidates: Object.freeze([]),
+      })
+      : inspection;
+    highlightedCandidateId = defaultCandidateForLayer(selectedRouteLayer)?.candidate_id || null;
+    lastResearchPanelKey = null;
+  }
+
   function candidatesForLayer(layer = selectedRouteLayer) {
     return routeCandidates().filter((candidate) => candidate.layer === layer);
   }
 
   function defaultCandidateForLayer(layer) {
     const candidates = candidatesForLayer(layer);
-    const canonicalId = bundle?.route_candidates?.selected_candidate_id;
+    const canonicalId = activeCandidatePackage?.selected_candidate_id;
     return candidates.find((candidate) => candidate.candidate_id === canonicalId) ||
       candidates.find((candidate) => candidate.objective === "recommended") ||
       candidates[0] || null;
@@ -534,7 +584,7 @@
   }
 
   function canonicalSelectedCandidate() {
-    const canonicalId = bundle?.route_candidates?.selected_candidate_id;
+    const canonicalId = activeCandidatePackage?.selected_candidate_id;
     return routeCandidates().find((candidate) => candidate.candidate_id === canonicalId) || null;
   }
 
@@ -773,6 +823,9 @@
     const unavailableCount = Number.isFinite(Number(summary.data_unavailable_count))
       ? Number(summary.data_unavailable_count)
       : Number(hardCounts.DATA_UNAVAILABLE || 0);
+    const reasonUnavailableCount = Number(
+      hardCounts.HARD_MASK_REASON_UNAVAILABLE || 0
+    );
     const hardCellCount = Number.isFinite(Number(summary.hard_cell_count))
       ? Number(summary.hard_cell_count)
       : Object.entries(hardCounts)
@@ -781,6 +834,7 @@
     setSummaryItems(riskSummaryHazardsEl, [
       `LAND 网格 · ${landCount}`,
       `数据不可用网格 · ${unavailableCount}`,
+      `硬约束原因未随帧发布 · ${reasonUnavailableCount}`,
       `硬约束网格总数 · ${hardCellCount}`,
     ]);
     if (riskSummaryNoteEl) {
@@ -1401,7 +1455,9 @@
     const segmentEndMs = isoToMs(state.segment.end_eta) - startMs;
     if (!Number.isFinite(segmentStartMs) || !Number.isFinite(segmentEndMs) ||
         segmentEndMs <= segmentStartMs) return [];
-    const relativeMs = clamp(state.time - startMs, segmentStartMs, segmentEndMs);
+    const liveRelativeMs = state.time - startMs;
+    if (liveRelativeMs < segmentStartMs || liveRelativeMs > segmentEndMs) return [];
+    const relativeMs = liveRelativeMs;
     const path = routeMotionPathFor(route);
     if (path?.source === "cd.route-motion-set.v1" &&
         relativeMs >= path.timesMs[0] && relativeMs <= path.timesMs[path.timesMs.length - 1] &&
@@ -1426,7 +1482,26 @@
     });
     const current = {lon: state.lon, lat: state.lat, eta: new Date(state.time).toISOString()};
     const end = raw[raw.length - 1];
-    return end ? [current, end] : raw;
+    return end && Number.isFinite(current.lon) && Number.isFinite(current.lat)
+      ? [current, end]
+      : [];
+  }
+
+  function mergeCompletedTrack(rawTrack, formalTrack) {
+    if (!Array.isArray(formalTrack) || formalTrack.length < 2) return rawTrack;
+    const formalStart = isoToMs(formalTrack[0]?.eta);
+    if (!Number.isFinite(formalStart)) return rawTrack;
+    const result = rawTrack.filter((point) => {
+      const pointTime = isoToMs(point?.eta);
+      return !Number.isFinite(pointTime) || pointTime < formalStart;
+    });
+    for (const point of formalTrack) {
+      const previous = result[result.length - 1];
+      if (!previous || previous.lon !== point.lon || previous.lat !== point.lat) {
+        result.push(point);
+      }
+    }
+    return result;
   }
 
   function formatDiagnosticDistance(value) {
@@ -1748,7 +1823,7 @@
       decisionTime: a.dt,
       effectiveAdoption: a.eat,
       segment: a.seg,
-      track: formalTrack || rawTrack.slice(0, a.ctl),
+      track: mergeCompletedTrack(rawTrack.slice(0, a.ctl), formalTrack),
       pendingRoute: pending,
       supersededRoute: superseded,
       trail: vesselTrailAt(ms),
@@ -1920,7 +1995,7 @@
       ["scenario", research.scenario_label || first?.provenance?.scenario_id ||
         bundle?.replay?.scenario_id || "not published"],
       ["scenario id", bundle?.replay?.scenario_id || "not published"],
-      ["run", bundle?.route_candidates?.provenance?.source_run_id || first?.provenance?.run_id || "not published"],
+      ["run", activeCandidatePackage?.provenance?.source_run_id || first?.provenance?.run_id || "not published"],
       ["RunContext", research.run_context_id || combined.run_context_id || "not published"],
       ["DatasetBundle", research.dataset_bundle_id || bundle?.replay?.dataset_bundle_id ||
         "not published in Viewer artifact"],
@@ -1929,7 +2004,7 @@
       ["grid", grid ? `${grid.rows} × ${grid.cols}` : "not published"],
       ["frames", String(bundle?.risk?.frames?.length ?? research.risk_frame_count ?? "not published")],
       ["routes", String(candidates.length)],
-      ["candidate set", bundle?.route_candidates?.candidate_set_id || "not published"],
+      ["candidate set", activeCandidatePackage?.candidate_set_id || "not published"],
       ["assembly", combined.assembly_id || "legacy Viewer bundle"],
     ];
   }
@@ -1937,10 +2012,13 @@
   function updateResearchPanel() {
     if (!researchPanel) return;
     const panelKey = [
+      activeCandidateRevision,
       candidateInspection?.valid,
       candidateInspection?.reason,
       selectedRouteLayer,
       highlightedCandidateId,
+      ["fastest", "low_risk", "recommended"]
+        .filter((objective) => visibleCandidateObjectives.has(objective)).join(","),
     ].join("|");
     if (panelKey === lastResearchPanelKey) return;
     lastResearchPanelKey = panelKey;
@@ -1969,7 +2047,8 @@
 
     researchStatusEl.classList.remove("unavailable");
     researchStatusEl.textContent =
-      `已发布 · 4 个路线层 × 3 个目标 · ${candidates.length} 条制品路线`;
+      `R${activeCandidateRevision} 已发布 · 4 个路线层 × 3 个目标 · ` +
+      `${candidates.length} 条制品路线`;
     const canonicalCandidate = canonicalSelectedCandidate();
     if (currentStrategyEl) {
       currentStrategyEl.classList.remove("fallback");
@@ -1981,11 +2060,13 @@
     const layerCandidates = candidatesForLayer();
     if (routeCandidateNoteEl) {
       routeCandidateNoteEl.textContent =
-        `${selectedRouteLayer} · ${layerCandidates.length} 条路线，按源发布顺序排列`;
+        `${selectedRouteLayer} · 已显示 ${layerCandidates.filter((candidate) =>
+          visibleCandidateObjectives.has(candidate.objective)).length}/${layerCandidates.length} 条路线；` +
+        "勾选控制显隐，点击卡片只改变高亮";
     }
     if (!routeCandidatesEl) return;
     routeCandidatesEl.replaceChildren();
-    const canonicalId = bundle.route_candidates.selected_candidate_id;
+    const canonicalId = activeCandidatePackage.selected_candidate_id;
     const highlight = highlightedCandidate();
     highlightedCandidateId = highlight?.candidate_id || null;
     for (const candidate of layerCandidates) {
@@ -1995,6 +2076,7 @@
       card.dataset.candidateId = candidate.candidate_id;
       card.dataset.highlighted = candidate.candidate_id === highlightedCandidateId ? "true" : "false";
       card.dataset.canonical = candidate.candidate_id === canonicalId ? "true" : "false";
+      card.dataset.visible = visibleCandidateObjectives.has(candidate.objective) ? "true" : "false";
 
       const heading = document.createElement("strong");
       heading.textContent = objectiveLabel(candidate.objective);
@@ -2047,44 +2129,53 @@
       (basemap.bbox.max_lat - basemap.bbox.min_lat) / rows;
     const presentationRiskPaths = {};
     ctx.save();
+    const bounds = basemap.bbox;
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
         const index = row * cols + col;
         const reason = frame.hard_reasons[index] || "DATA_UNAVAILABLE";
         const level = Number(frame.risk_levels[index] || 0);
-        const nw = project(lons[col] - lonStep / 2, lats[row] + latStep / 2);
-        const se = project(lons[col] + lonStep / 2, lats[row] - latStep / 2);
+        const west = Math.max(bounds.min_lon, lons[col] - lonStep / 2);
+        const east = Math.min(bounds.max_lon, lons[col] + lonStep / 2);
+        const south = Math.max(bounds.min_lat, lats[row] - latStep / 2);
+        const north = Math.min(bounds.max_lat, lats[row] + latStep / 2);
+        if (west >= east || south >= north) continue;
+        const nw = project(west, north);
+        const se = project(east, south);
         // Pixel-align presentation fills so adjacent translucent cells do not
         // leave anti-aliased seams. The geographic cell identity is unchanged.
         const x = Math.floor(Math.min(nw.x, se.x));
         const y = Math.floor(Math.min(nw.y, se.y));
         const right = Math.ceil(Math.max(nw.x, se.x));
         const bottom = Math.ceil(Math.max(nw.y, se.y));
-        const width = right - x + 1;
-        const height = bottom - y + 1;
+        const width = Math.min(canvas.width, right + 1) - Math.max(0, x);
+        const height = Math.min(canvas.height, bottom + 1) - Math.max(0, y);
+        const clippedX = Math.max(0, x);
+        const clippedY = Math.max(0, y);
+        if (width <= 0 || height <= 0) continue;
         if (reason === "NONE" && layers.risk && RISK_COLORS[level]) {
           if (presentationMode) {
             if (!presentationRiskPaths[level]) presentationRiskPaths[level] = new Path2D();
-            presentationRiskPaths[level].rect(x, y, width, height);
+            presentationRiskPaths[level].rect(clippedX, clippedY, width, height);
           } else {
             ctx.fillStyle = RISK_COLORS[level];
             ctx.globalAlpha = 0.34;
-            ctx.fillRect(x, y, width, height);
+            ctx.fillRect(clippedX, clippedY, width, height);
             ctx.globalAlpha = 0.25;
             ctx.strokeStyle = "#d8efff";
             ctx.lineWidth = 0.6;
-            ctx.strokeRect(x, y, width, height);
+            ctx.strokeRect(clippedX, clippedY, width, height);
           }
         } else if (reason !== "NONE" && layers.hard) {
           const color = HARD_COLORS[reason] || HARD_COLORS.OTHER;
           ctx.fillStyle = color;
           ctx.globalAlpha = presentationMode ? 0.34 : 0.45;
-          ctx.fillRect(x, y, width, height);
+          ctx.fillRect(clippedX, clippedY, width, height);
           ctx.globalAlpha = presentationMode ? 0.62 : 0.72;
           ctx.strokeStyle = color;
           ctx.lineWidth = presentationMode ? 1.2 : 1;
           ctx.setLineDash(presentationMode ? [5, 4] : [3, 3]);
-          ctx.strokeRect(x, y, width, height);
+          ctx.strokeRect(clippedX, clippedY, width, height);
           ctx.setLineDash([]);
         }
       }
@@ -2139,12 +2230,13 @@
     const highlight = highlightedCandidate();
     const active = routeFor(activeRevisionAt(simMs));
     const formalActive = Boolean(buildFormalRouteMotionPath(active));
-    const canonicalId = bundle?.route_candidates?.selected_candidate_id;
+    const canonicalId = activeCandidatePackage?.selected_candidate_id;
     for (const candidate of candidatesForLayer()) {
       // The canonical candidate is represented by the formal producer motion
       // path whenever one is bound.  Keep the other candidates available for
       // the explicit research comparison view, but never smooth them locally.
       if (formalActive && candidate.candidate_id === canonicalId) continue;
+      if (!visibleCandidateObjectives.has(candidate.objective)) continue;
       const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
       const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
       const geometry = candidateGeometryPoints(candidate);
@@ -2261,6 +2353,7 @@
 
   function draw() {
     const s = stateAt(simMs);
+    activateCandidateRevision(s.active);
     const active = routeFor(s.active);
     const heading = shipHeading(s, active);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2367,6 +2460,7 @@
     ctx.restore();
     updateMapUi(heading, s);
     updateDebug(s, heading);
+    updateResearchRouteSmoothingUi();
     updateCurveDiagnostics(s);
     drawMiniMap(s, heading);
   }
@@ -2564,6 +2658,17 @@
     draw();
   });
 
+  routeObjectiveFiltersEl?.addEventListener("change", (event) => {
+    const control = event.target.closest("[data-route-objective]");
+    if (!control) return;
+    const objective = control.dataset.routeObjective;
+    if (control.checked) visibleCandidateObjectives.add(objective);
+    else visibleCandidateObjectives.delete(objective);
+    lastResearchPanelKey = null;
+    updateResearchPanel();
+    draw();
+  });
+
   eventTimelineEl.addEventListener("click", (event) => {
     const jump = event.target.closest(".event-jump");
     if (!jump) return;
@@ -2679,13 +2784,19 @@
 
   function updateResearchRouteSmoothingUi() {
     const active = bundle ? routeFor(activeRevisionAt(simMs)) : null;
+    const statusKey = active?.route_id || "no_active_route";
+    if (statusKey === lastFormalMotionStatusKey) return;
+    lastFormalMotionStatusKey = statusKey;
     const formalInspection = active
       ? inspectFormalRouteMotion(active)
       : { valid: false, reason: "no_active_route" };
     if (formalMotionStatusEl) {
       formalMotionStatusEl.textContent = formalInspection.valid
         ? "正式曲线运动已启用 · C producer motion_samples · 船位/航向/航迹同源"
-        : `正式曲线不可用 · 已回退权威 raw timeline · ${formalInspection.reason}`;
+        : formalInspection.bound && formalInspection.mode === "RAW_PASSTHROUGH"
+          ? `正式运动已绑定 · B 样条安全门拒绝，使用权威折线路线 · ` +
+            `${formalInspection.reason}`
+          : `正式曲线不可用 · 已回退权威 raw timeline · ${formalInspection.reason}`;
       formalMotionStatusEl.classList.toggle("unavailable", !formalInspection.valid);
     }
   }
@@ -2696,6 +2807,10 @@
     const researchOption = viewModeSel.querySelector('option[value="research"]');
     if (researchOption) researchOption.disabled = !researchAvailable;
     if (viewMode === "research" && !researchAvailable) viewMode = "presentation";
+    if (viewMode !== "engineering") {
+      layers.routePolyline = false;
+      layerRoutePolyline.checked = false;
+    }
     viewModeSel.value = viewMode;
     routeLayerSel.disabled = !researchAvailable;
     researchPanel.hidden = viewMode !== "research";
@@ -2744,6 +2859,8 @@
         reason: combinedIdentityInspection.reason,
         candidates: Object.freeze([]),
       });
+    activeCandidateRevision = 1;
+    activeCandidatePackage = bundle.route_candidates;
     // Candidate comparison remains an explicit research view.  The default
     // runtime is the operational presentation so candidate geometries cannot
     // visually overlap the formal motion route on first load.
@@ -2863,7 +2980,8 @@
         },
         selected_layer: selectedRouteLayer,
         highlighted_candidate_id: highlightedCandidateId,
-        canonical_selected_candidate_id: bundle?.route_candidates?.selected_candidate_id || null,
+        visible_objectives: [...visibleCandidateObjectives],
+        canonical_selected_candidate_id: activeCandidatePackage?.selected_candidate_id || null,
         candidates: candidatesForLayer(),
         metadata: Object.fromEntries(experimentMetadataRows()),
       }),
@@ -2920,6 +3038,19 @@
         highlightedCandidateId = candidate.candidate_id;
         updateResearchPanel();
         draw();
+      },
+      setCandidateObjectiveVisible: (objective, visible) => {
+        if (!Object.hasOwn(CANDIDATE_STYLES, objective)) return false;
+        if (visible) visibleCandidateObjectives.add(objective);
+        else visibleCandidateObjectives.delete(objective);
+        const control = routeObjectiveFiltersEl?.querySelector(
+          `[data-route-objective="${objective}"]`
+        );
+        if (control) control.checked = Boolean(visible);
+        lastResearchPanelKey = null;
+        updateResearchPanel();
+        draw();
+        return true;
       },
       routeEvolution: () => (bundle.events || [])
         .filter((event) => ["REPLAN_DECIDED", "REPLAN_ADOPTED"].includes(event.type))

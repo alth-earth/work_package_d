@@ -34,6 +34,13 @@ command -v npx >/dev/null 2>&1 || {
   exit 2
 }
 
+# Chrome refuses its kernel sandbox when the regression is executed as root
+# in the CI/container workspace.  Playwright's own browser isolation remains;
+# this only selects its documented no-sandbox launch mode for that case.
+if [[ "$(id -u)" -eq 0 ]]; then
+  export PLAYWRIGHT_MCP_SANDBOX="${PLAYWRIGHT_MCP_SANDBOX:-false}"
+fi
+
 "${PYTHON_BIN}" "${SCRIPT_DIR}/replay_viewer_serve.py" \
   --host 127.0.0.1 --port "${PORT}" --root "${VIEWER_DIR}" \
   >"${SERVER_LOG}" 2>&1 &
@@ -47,7 +54,7 @@ done
 curl -fsS "http://127.0.0.1:${PORT}/index.html" >/dev/null
 
 "${PWCLI}" --session "${SESSION}" open \
-  "http://127.0.0.1:${PORT}/index.html" --browser firefox >/dev/null
+  "http://127.0.0.1:${PORT}/index.html" --browser chrome >/dev/null
 
 for WIDTH in 344 528; do
   "${PWCLI}" --session "${SESSION}" eval \

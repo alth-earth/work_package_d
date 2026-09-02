@@ -8,8 +8,12 @@
   --muted: #8fa8b8;
   --accent: #5bd5f3;
   --accent-deep: #1977a7;
-  --track: #65d99b;
-  --pending: #f3bd68;
+  --track: #58d68d;
+  --pending: #ffd54a;
+  --route-active: #38a9ff;
+  --route-fastest: #ff8a3d;
+  --route-low-risk: #e66bff;
+  --route-recommended: #38a9ff;
   --data: #66d9e5;
   --risk: #f1bd6b;
   --planning: #95e0ae;
@@ -873,6 +877,33 @@ select {
   font-size: 12px;
 }
 
+.route-objective-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 8px 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.route-objective-filters legend {
+  padding: 0 5px;
+  color: var(--muted);
+}
+
+.route-objective-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.route-objective-filters .objective-fastest { color: var(--route-fastest); }
+.route-objective-filters .objective-low-risk { color: var(--route-low-risk); }
+.route-objective-filters .objective-recommended { color: var(--route-recommended); }
+
 .route-comparison {
   display: grid;
   gap: 8px;
@@ -893,15 +924,15 @@ select {
 }
 
 .route-card-fastest {
-  border-left-color: #f0b35b;
+  border-left-color: var(--route-fastest);
 }
 
 .route-card-low_risk {
-  border-left-color: #62d6a7;
+  border-left-color: var(--route-low-risk);
 }
 
 .route-card-recommended {
-  border-left-color: #f5f8fb;
+  border-left-color: var(--route-recommended);
 }
 
 .route-card[data-highlighted="true"] {
@@ -946,6 +977,10 @@ select {
 }
 
 body:not([data-mode="research"]) .research-only {
+  display: none;
+}
+
+body:not([data-mode="engineering"]) .engineering-only {
   display: none;
 }
 
@@ -1051,7 +1086,7 @@ body:not([data-mode="research"]) .research-only {
 }
 
 .sw-active {
-  background: #49a9ed;
+  background: var(--route-active);
 }
 
 .sw-route-polyline {
@@ -1059,15 +1094,15 @@ body:not([data-mode="research"]) .research-only {
 }
 
 .sw-candidate-fastest {
-  background: repeating-linear-gradient(90deg, #f0b35b 0 8px, transparent 8px 12px);
+  background: repeating-linear-gradient(90deg, var(--route-fastest) 0 8px, transparent 8px 12px);
 }
 
 .sw-candidate-low-risk {
-  background: repeating-linear-gradient(90deg, #62d6a7 0 3px, transparent 3px 7px);
+  background: repeating-linear-gradient(90deg, var(--route-low-risk) 0 3px, transparent 3px 7px);
 }
 
 .sw-candidate-recommended {
-  background: #49a9ed;
+  background: var(--route-recommended);
 }
 
 .sw-pending {
@@ -1108,6 +1143,12 @@ body:not([data-mode="research"]) .research-only {
   height: 8px;
   background: #8a63d2;
   border: 1px dashed #e4d8ff;
+}
+
+.sw-hard-reason-unavailable {
+  height: 8px;
+  background: #697682;
+  border: 1px dashed #c8d0d7;
 }
 
 .sw-hard-other {

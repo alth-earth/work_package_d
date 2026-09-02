@@ -8,7 +8,7 @@ Applicability: CURRENT
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: research-validation-system
-Last Verified: 2026-09-01
+Last Verified: 2026-09-02 02:40 +08:00
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -21,7 +21,62 @@ Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_R
 
 面向演示人员的使用说明：[USER_GUIDE.zh-CN.md](USER_GUIDE.zh-CN.md)
 
+## 双航线正式 Viewer 包（2026-09-02 01:35 +08:00）
+
+两条演示航线现已拥有等齐的正式 viewer 包（`research-validation-system` 基线）：
+
+| 航线 | 正式 viewer 包 | scenario | corridor |
+|---|---|---|---|
+| A：Murmansk → Dikson | `output/formal-motion-murmansk-viewer-package-v1/` | `murmansk_dikson_august_2026_demo_v1` | `offshore_murmansk_to_offshore_dikson` v2.2.0 |
+| B：Tromsø → Isfjorden | `viewer/`（Winter）与 `output/formal-motion-original-dynamic-viewer-package-v1/` | `tromso_isfjorden_february_2026_research_v1` | `tromso_to_isfjorden_outer` v1.2.0 |
+
+A 航线包是从 rc1/rc2 冻结执行制品（A 数据层可信）**重导出**的正式制品，未重跑 B/C 的
+A\* 规划：C `arctic-route-motion` 仅从冻结 plan-set v3 + risk-store（145 帧）生成
+`cd.route-motion-set.v1`（initial），Orchestrator `replay_viewer_export.py` 导出完整
+viewer 包（bundle/plan-set/motion transport/basemap/preflight/checksums/manifest）。
+
+- identity：bundle `a-bundle-32cafad4ee280f286d8eb049`、run `run-...0b0005`、
+  layer-set `layer-set-sha256-3f9a8f7b...`、candidate-set `route-candidates-sha256-347b41bc...`、
+  assembly `winter-viewer-sha256-5602d5e8a3451cbdd1901c0de9ebede3558cd221ec4eb2612f415c3f68b05703`
+- formal motion：`route-motion-set-sha256-1234ec4e1b085ced77b89592a7b5f5875e3ac0894c3ecdecafba0d6aa489c56b`
+  （覆盖四层，`formal_motion_policy.provided=true`）
+- 145 风险帧、12 候选、route-integrity 12/12 PASS、`replay-viewer-preflight` 全 PASS
+- `replanning_status = UNAVAILABLE_IDENTITY_BOUND_CAUSAL_REPLAY_REQUIRED`：A 航线冻结执行
+  制品不含 causal replay manifest；B 默认包已另行接入真实 retrospective replay。A 时间线为
+  C route ETA 的 presentation projection，不伪造 replan event
+
+派生 sidecar（不触碰 A/B/C 源文件，输出不可变目录）：
+- `work_package_a/data/output/rc2-smoke/presentation-mur-opt/`（frame-index / route-candidates / route-integrity）
+- `work_package_a/data/output/rc2-smoke/motion-mur-opt/initial|replanned/`（C motion 产物，checksums 绑定）
+- 派生脚本：`arctic_route_orchestrator/scripts/derive_murmansk_sidecars.py`
+
+A 航线 replanned motion（`motion-mur-opt/replanned/`）已生成但未并入主 viewer 包——当前
+导出流程 `plan_sets_by_revision` 仅绑定单一 plan-set 层（无 causal replay manifest 时无法
+合并多 revision）；如需双 revision 展示需先补齐 A 航线 causal replay 制品。
+
+## 当前 Winter 动态 Viewer（2026-09-02 02:40 +08:00）
+
+默认 `viewer/` 已恢复原始冻结身份并切换到真实 `retrospective_dynamic_replay` 到达态组合
+制品：145 个风险帧、8,641 个仿真时刻、25 个 snapshot、9 个 revision，每个 revision
+四层×三目标共 12 条候选。119 个事件包含 8 组
+`REPLAN_DECIDED/REPLAN_ADOPTED/ROUTE_CHANGED`；最终 revision 为 R9、航行状态
+`ARRIVED`、无 pending。这是真实数据的事后动态投影，保留 `issue_time`，不冒充 causal
+replay；Summer frozen fallback 仍保留。assembly 为
+`winter-viewer-sha256-a375b431ed7c431487300988a7dc6c298cbecaf3a8e77ec4bc1371cf6be894e7`。
+
+风险时域在 344px 与 528px 侧栏都保持 145 ticks、横向滚动、最小柱宽，绿色均值与黄色最大
+值来自真实 risk summary。当前原始冻结身份没有可诚实绑定的 B sidecar：精确 A source
+record 已在历史 detided-retirement 中退役，不能从最终 RiskFrame 重建 component trace；
+Viewer 因而显示 `Explanation unavailable`，但不改变 RiskFrame、路线或仿真。路线优先消费
+C 正式 `motion_samples`：R1–R4 为通过全部门禁的 `CURVE`；R5–R7 因
+`integrated_risk_increased`、R8–R9 因几何条件回退 raw。正式 waypoint、ETA、风险、adoption
+与 motion gate 不变。
+JavaScript 对 adoption offset 的比较仅容忍其 `Date` 必然丢失的亚毫秒精度，2 ms 偏差仍
+失败关闭。
+
 ## Risk Explanation optional consumer（2026-08-23 21:51 +08:00）
+
+> 本节保留消费者首次验收快照；当前默认原始冻结身份没有 sidecar，现行状态以上方章节为准。
 
 D 已实现可选 `risk-explanation.v1` consumer。Winter Viewer 点击 risk cell 后，Risk Level、
 Risk Score 与 Confidence 始终读取当前显示的 `bc.risk-frame.v2`；只有 sidecar 通过
@@ -35,12 +90,10 @@ sidecar 可由 presentation package 的可选 `risk_explanation` 字段传入；
 无效或 identity mismatch 的 sidecar 仅在 explanation gate 内失败关闭，基础 RiskFrame
 继续显示。
 
-验证：D `114 passed / 3 causal-replay-only skipped`；Firefox 对真实 Winter bundle 的 missing /
-invalid fallback 以及 synthetic B fixture 的 PARTIAL / COMPLETE rendering E2E 通过，8 个静态
-资源 HTTP 200，console errors/warnings 为 0。B producer 已发布 content-addressed sidecar/
-manifest，Orchestrator 已完成 digest/schema/identity 复核与传输；sidecar 仍标记
-`demo_unvalidated` / `research_unvalidated`，因此不能声称科学标定或真实导航资格。未传入真实
-sidecar 时，Viewer 继续显示 `Explanation unavailable`。
+当前验证：D unit `107 passed`；浏览器对 missing/invalid fallback 与 synthetic B fixture 的
+PARTIAL/COMPLETE consumer 行为保持覆盖；当前默认包按真实缺失显示 unavailable。静态资源
+HTTP 200，console errors 为 0。其他身份曾发布过 content-addressed sidecar/manifest，不能
+因此跨身份复用；sidecar 的存在也不能声称科学标定或真实导航资格。
 
 ## Winter Combined Research Viewer（2026-08-23 20:14 +08:00）
 
@@ -390,6 +443,6 @@ Frozen loader 同时从发布制品读取 `scenario_mode`（RunContext）与
 
 ## 相关文档
 
-- [C→D 合同](../work_package_c/docs/CD_CONTRACT.md)
-- [D 展示层选型评估](../arctic_route_governance/reports/decisions/D_SELECTION_EVALUATION_v2_vs_v3.md)
-- [顶层系统权威](../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md)
+- [C→D 合同](../../work_package_c/docs/CD_CONTRACT.md)
+- [D 展示层选型评估](../../arctic_route_governance/reports/decisions/D_SELECTION_EVALUATION_v2_vs_v3.md)
+- [顶层系统权威](../../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md)

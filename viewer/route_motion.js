@@ -226,6 +226,15 @@
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  // ISO artifacts retain microseconds, while JavaScript Date retains only
+  // milliseconds.  Offset comparisons therefore need to admit only the
+  // sub-millisecond precision that Date.parse necessarily discards.
+  function sameShiftedInstant(value, baseMs, offsetMs) {
+    const parsed = eta(value);
+    return parsed !== null && finite(baseMs) && finite(offsetMs) &&
+      Math.abs(parsed - (baseMs + offsetMs)) < 1;
+  }
+
   function inspectRecord(record) {
     const fields = [
       "planning_layer", "plan_id", "raw_route_digest", "mode", "fallback_reason",
@@ -448,32 +457,48 @@
       const record = set.records[index];
       const recordInspection = setInspection.records[index];
       if (!recordInspection.usable) return invalid(recordInspection.reason, {
-        schema_version: SCHEMA_VERSION, motion_set_id: set.motion_set_id,
+        bound: true,
+        mode: record.mode,
+        schema_version: SCHEMA_VERSION,
+        motion_set_id: set.motion_set_id,
+        record,
       });
       const waypoints = route?.waypoints;
       const samples = recordInspection.samples;
+      const timeOffsetSeconds = Number(route?.motion_time_offset_seconds ?? 0);
+      if (!finite(timeOffsetSeconds) || timeOffsetSeconds < 0) {
+        return invalid("formal_motion_time_offset_invalid");
+      }
+      const timeOffsetMs = timeOffsetSeconds * 1000;
       if (!Array.isArray(waypoints) || waypoints.length < 2) return invalid("route_waypoints_missing");
       const first = coordinate(waypoints[0]);
       const last = coordinate(waypoints[waypoints.length - 1]);
-      const rawWaypointPayload = waypoints.map((waypoint) => ({
+      const rawWaypointPayload = waypoints.map((waypoint, waypointIndex) => ({
         longitude: coordinate(waypoint)?.lon,
         latitude: coordinate(waypoint)?.lat,
-        eta: waypoint.eta,
+        eta: samples[record.waypoint_anchors[waypointIndex]?.motion_sample_index]?.etaText,
         recommended_speed_mps: waypoint.recommended_speed_mps,
       }));
       if (!first || !last || first.lon !== samples[0].lon || first.lat !== samples[0].lat ||
           last.lon !== samples[samples.length - 1].lon ||
           last.lat !== samples[samples.length - 1].lat ||
-          waypoints[0].eta !== samples[0].etaText ||
-          waypoints[waypoints.length - 1].eta !== samples[samples.length - 1].etaText ||
-          route.effective_adoption_time !== samples[0].etaText ||
+          !sameShiftedInstant(waypoints[0].eta, samples[0].eta, timeOffsetMs) ||
+          !sameShiftedInstant(
+            waypoints[waypoints.length - 1].eta,
+            samples[samples.length - 1].eta,
+            timeOffsetMs
+          ) ||
+          !sameShiftedInstant(
+            route.effective_adoption_time, samples[0].eta, timeOffsetMs
+          ) ||
           rawWaypointPayload.some((waypoint) => !finite(waypoint.longitude) ||
             !finite(waypoint.latitude) || !finite(waypoint.recommended_speed_mps)) ||
           canonicalDigest(rawWaypointPayload) !== record.raw_route_digest) {
         return invalid("formal_motion_route_or_adoption_mismatch");
       }
       return {valid: true, usable: true, reason: null, schema_version: SCHEMA_VERSION,
-        source: SCHEMA_VERSION, motion_set_id: set.motion_set_id, record, samples};
+        source: SCHEMA_VERSION, motion_set_id: set.motion_set_id, record, samples,
+        timeOffsetSeconds};
     }
     return invalid(rejectionReason);
   }
@@ -481,8 +506,15 @@
   function buildPath(bundle, route, startMs) {
     const inspection = inspect(bundle, route);
     if (!inspection.valid) return null;
-    const points = inspection.samples.map(({lon, lat}) => ({lon, lat}));
-    const timesMs = inspection.samples.map((sample) => sample.eta - startMs);
+    const timeOffsetMs = inspection.timeOffsetSeconds * 1000;
+    const points = inspection.samples.map(({lon, lat, eta}) => ({
+      lon,
+      lat,
+      eta: new Date(eta + timeOffsetMs).toISOString(),
+    }));
+    const timesMs = inspection.samples.map(
+      (sample) => sample.eta + timeOffsetMs - startMs
+    );
     const distancesKm = [0];
     for (let index = 1; index < points.length; index += 1) {
       const distance = haversineKm(points[index - 1], points[index]);

@@ -171,7 +171,8 @@ passthroughBundle.combined_presentation.route_motion_set_ids = [passthrough.moti
 passthroughBundle.combined_presentation.route_motion_set_bindings[0].motion_set_id =
   passthrough.motion_set_id;
 const fallback = reader.inspect(passthroughBundle, route);
-if (fallback.valid || fallback.reason !== "continuous_corridor_unknown") process.exit(8);
+if (fallback.valid || !fallback.bound || fallback.mode !== "RAW_PASSTHROUGH" ||
+    fallback.reason !== "continuous_corridor_unknown") process.exit(8);
 
 const revision2 = clone(document);
 revision2.layer_set_id = `layer-set-sha256-${"c".repeat(64)}`;
@@ -194,6 +195,26 @@ revisionBundle.combined_presentation.route_motion_set_bindings.push({
 if (!reader.inspect(revisionBundle, route2).valid) process.exit(9);
 route2.effective_adoption_time = waypoints[1].eta;
 if (reader.inspect(revisionBundle, route2).valid) process.exit(10);
+route2.motion_time_offset_seconds = 3600;
+route2.waypoints = route2.waypoints.map((point) => ({
+  ...point,
+  eta: new Date(Date.parse(point.eta) + 3600000).toISOString(),
+}));
+if (!reader.inspect(revisionBundle, route2).valid ||
+    reader.buildPath(revisionBundle, route2, Date.parse(waypoints[0].eta)).timesMs[0] !==
+      3600000) process.exit(15);
+const microsecondRoute = clone(route2);
+microsecondRoute.motion_time_offset_seconds = 3600.000213;
+microsecondRoute.effective_adoption_time =
+  microsecondRoute.effective_adoption_time.replace(".000Z", ".000213Z");
+microsecondRoute.waypoints = microsecondRoute.waypoints.map((point) => ({
+  ...point,
+  eta: point.eta.replace(".000Z", ".000213Z"),
+}));
+if (!reader.inspect(revisionBundle, microsecondRoute).valid) process.exit(16);
+const millisecondMismatch = clone(microsecondRoute);
+millisecondMismatch.motion_time_offset_seconds = 3600.002;
+if (reader.inspect(revisionBundle, millisecondMismatch).valid) process.exit(17);
 (async () => {
   const asyncBundle = clone(bundle);
   const results = await reader.prevalidate(asyncBundle);

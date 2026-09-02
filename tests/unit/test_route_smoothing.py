@@ -205,12 +205,13 @@ def test_formal_curve_is_primary_when_valid_and_raw_polyline_remains_available()
     app = (VIEWER / "app.js").read_text(encoding="utf-8")
 
     assert 'id="layer-route-polyline" type="checkbox" />' in html
-    assert "原始权威路径（默认隐藏）" in html
+    assert "权威 RoutePlan 折线（校验/回退）" in html
     assert "routePolyline: false" in app
-    assert "ROUTE_CURVE_COLOR = \"#49a9ed\"" in app
+    assert 'body:not([data-mode="engineering"]) .engineering-only' in stylesheet
+    assert "ROUTE_CURVE_COLOR = \"#38a9ff\"" in app
     assert "ROUTE_POLYLINE_COLOR" in app
     assert ".sw-active" in stylesheet
-    assert "background: #49a9ed" in stylesheet
+    assert "background: var(--route-active)" in stylesheet
     assert ".sw-route-polyline" in stylesheet
     assert "drawRoutePolyline" in app
 

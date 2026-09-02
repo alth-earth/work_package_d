@@ -7,7 +7,7 @@ Document Role: CANONICAL
 Applicability: CURRENT
 Scope: work_package_d viewer implementation and runtime
 Branch: research-validation-system
-Last Verified: 2026-09-01
+Last Verified: 2026-09-02 02:40 +08:00
 ---
 
 > **路径约定（2026-08-24）**：本文件中 `${ARCTIC_ROUTE_ROOT}` 为工作区根占位符，
@@ -27,10 +27,15 @@ Viewer 不重新解释、不猜航速、不修改 route geometry。
 
 ## Optional Risk Explanation（2026-08-23 21:51 +08:00）
 
+> 本节保留消费者契约的历史起点；当前默认原始冻结身份没有 B sidecar，缺失/错配仍保持
+> 同一 fail-closed 语义。
+
 Viewer 接受 presentation package 顶层可选 `risk_explanation`，其 schema 为
 `risk-explanation.v1`；自包含测试/交付也可在启动前设置
-`window.RISK_EXPLANATION_SIDECAR`。未提供 sidecar 时不发起额外网络请求，点击格点仍显示
-RiskFrame 的 Risk Level、Risk Score、Confidence，并明确显示 `Explanation unavailable`。
+`window.RISK_EXPLANATION_SIDECAR`。当前默认 Winter 包未嵌入 sidecar：精确 A source trace
+已经退役，不能从 RiskFrame 反推，也不能复用其他 holdout 的制品。未提供 sidecar、身份
+校验失败或选中格点没有任何有限 component 时，不发起额外网络请求并明确显示
+`Explanation unavailable`。
 
 `risk_explanation.js` 在启用解释前检查 schema、RiskWindow、run/scenario、RiskFrame id/time、
 grid rows/columns/CRS、逐格坐标以及 RiskFrame 风险镜像。任一 mismatch 会拒绝整个 sidecar，
@@ -39,9 +44,26 @@ grid rows/columns/CRS、逐格坐标以及 RiskFrame 风险镜像。任一 misma
 提供的 contributors/contribution/reason/uncertainty。面板从 RiskFrame 读取 risk level/score/
 confidence，绝不使用 sidecar 覆盖。
 
-当前 Firefox E2E 的 explanation 内容仍来自明确标记为 `synthetic/design_example` 的 B 测试
-fixture；真实 B producer 与 Orchestrator transport 已具备 manifest/digest/identity 链，
-但 sidecar 仍标记 `demo_unvalidated` / `research_unvalidated`，不能当作科学标定。
+consumer 测试继续覆盖明确标记为 `synthetic/design_example` 的 B fixture；producer 与
+Orchestrator transport 的 manifest/digest/identity 门禁不变，但当前默认包按真实缺失降级，
+不能把其他身份的工程链当作本包已可解释，更不能当作科学标定。
+
+## 双航线正式 Viewer 包并存（2026-09-02 01:35 +08:00）
+
+`viewer/` 目录目前装载 B 航线（Tromsø→Isfjorden）Winter 制品；A 航线
+（Murmansk→Dikson）正式 viewer 包独立存放于 `output/formal-motion-murmansk-viewer-package-v1/`，
+两者是等齐的双航线正式交付（同一 `replay.viewer-bundle.v1` / `presentation.winter-combined-viewer.v1`
+schema），互不覆盖：
+
+| 航线 | viewer 包路径 | scenario | formal motion |
+|---|---|---|---|
+| A | `output/formal-motion-murmansk-viewer-package-v1/` | `murmansk_dikson_august_2026_demo_v1` | provided（四层 `cd.route-motion-set.v1`） |
+| B（默认） | `viewer/` | `tromso_isfjorden_february_2026_research_v1` | provided（R1–R4 CURVE；R5–R9 fail-closed raw） |
+
+切换展示时以 `--output-dir` 指向对应目录即可。A 航线包仍保留
+`UNAVAILABLE_IDENTITY_BOUND_CAUSAL_REPLAY_REQUIRED`；B 默认包则消费真实、同身份的
+`retrospective_dynamic_replay`，展示 9 个 revision 和 8 次真实采用，但明确不冒充 strict
+causal replay。A 航线包详细身份与派生链路见 `../README.md`「双航线正式 Viewer 包」章节。
 
 ## Winter Combined Package（2026-08-23 20:14 +08:00）
 
@@ -126,7 +148,7 @@ Research Validation 下的 Navigation Decision panel 继续直接展示
 `NOT_PUBLISHED`，因此真实 Firefox 回归仍诚实显示 `SINGLE_ROUTE_FALLBACK`。
 
 本轮完整证据见
-[D_NAVIGATION_SIMULATION_PHASE2_REPORT.md](D_NAVIGATION_SIMULATION_PHASE2_REPORT.md)。
+[D_NAVIGATION_SIMULATION_PHASE2_REPORT.md](../archive/performance/D_NAVIGATION_SIMULATION_PHASE2_REPORT.md)。
 
 ## Research Presentation Mode（2026-08-23 16:59 +08:00）
 
@@ -275,5 +297,6 @@ scripts/replay_viewer_serve.py  D 静态 server + /api/state
   navigation aids，以及真实 Winter 12-route sidecar 的 Phase 1 candidate compare。
 - 已完成：Orchestrator 发布同一 Winter identity 的 combined risk/route/ETA-simulation
   package，Winter Research Firefox E2E PASS。
-- NEXT：如需 Winter dynamic replanning，必须由正式 Winter causal replay/snapshots 发布；
+- 已完成：真实 Winter retrospective dynamic replay 已由 Orchestrator 发布并通过 Viewer E2E；
+  若要升级为 strict causal，仍必须取得 issue-time 可追溯的 Winter causal replay/snapshots。
   环境 contributor 图层仍需正式 presentation contract，D 不读取 A/B/C 私有数据补齐。

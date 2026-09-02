@@ -6,10 +6,27 @@ Content Status:
 Document Role: SUPPORTING
 Scope: work package D handoff
 Branch: research-validation-system
-Last Verified: 2026-08-31 00:19 +08:00
+Last Verified: 2026-09-02 02:40 +08:00
 ---
 
 # 工作包 D 交接说明
+
+## 2026-09-02 当前动态重规划制品
+
+默认 `viewer/` 已恢复 2026-08-31 的原始冻结 Winter 身份，并消费 Orchestrator 的真实
+`retrospective_dynamic_replay` 到达态组合包：145 个风险帧、8,641 个时间线采样、25 个
+snapshot、9 个 revision，每个 revision 4 层×3 目标共 12 条候选。119 个真实事件和不可变
+index 驱动 8 轮待采用/采用/替代，终态 `ARRIVED` 且无 pending；D 不自行生成事件、重算风险
+或排名路线。assembly 为
+`winter-viewer-sha256-a375b431ed7c431487300988a7dc6c298cbecaf3a8e77ec4bc1371cf6be894e7`。
+该包保留 issue time 并明确是事后动态投影，不能当作 strict causal replay 或导航资格。
+
+当前包没有 explanation sidecar：该原始 RiskWindow 的精确 A source record 已被历史清理退役，
+不能从最终 RiskFrame 反推 B component trace，也不能错配后续 holdout 的 sidecar。因此
+`Explanation unavailable` 是诚实的可选能力降级，不影响基础 RiskFrame/路线/仿真。风险时域
+344px/528px 布局回归已通过。浏览器逐 revision 验证 R1–R4 正式曲线有效；R5–R7 因
+`integrated_risk_increased`、R8–R9 因几何条件诚实回退 raw。已完成航迹在到达后保留，
+当前路段仅在到达后清空。
 
 > Status: CURRENT — Formal engineering route motion consumer（2026-08-31）
 > 更新：2026-08-31。D 现为 **Viewer 唯一实现 owner**（HTML/JS/CSS、

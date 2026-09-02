@@ -210,6 +210,18 @@
               <option value="executable_0_6h">可执行窗口 · 0–6 小时</option>
             </select>
           </div>
+          <fieldset id="route-objective-filters" class="route-objective-filters">
+            <legend>地图同时显示</legend>
+            <label class="objective-fastest">
+              <input type="checkbox" data-route-objective="fastest" checked /> 最快
+            </label>
+            <label class="objective-low-risk">
+              <input type="checkbox" data-route-objective="low_risk" checked /> 低风险
+            </label>
+            <label class="objective-recommended">
+              <input type="checkbox" data-route-objective="recommended" checked /> 综合推荐
+            </label>
+          </fieldset>
           <div id="route-candidate-note" class="status summary-note"></div>
           <div id="route-candidates" class="route-comparison" hidden></div>
           <div id="route-highlight-note" class="status summary-note"></div>
@@ -270,11 +282,12 @@
             <li><i class="sw sw-risk-5"></i>风险等级 5 · 高</li>
             <li><i class="sw sw-hard-land"></i>LAND · 硬约束不可用</li>
             <li><i class="sw sw-hard-unknown"></i>DATA_UNAVAILABLE · 数据不可用</li>
+            <li><i class="sw sw-hard-reason-unavailable"></i>硬约束 · 原因未随帧发布</li>
             <li><i class="sw sw-hard-other"></i>OTHER · 硬约束不可用</li>
             <li><i class="sw sw-trail"></i>近期船舶轨迹 · 展示</li>
             <li><i class="sw sw-track"></i>已完成航迹</li>
             <li><i class="sw sw-active"></i>正式曲线路径 · 蓝色</li>
-            <li><i class="sw sw-route-polyline"></i>原始折线路径 · 默认隐藏</li>
+            <li class="engineering-only"><i class="sw sw-route-polyline"></i>权威 RoutePlan 折线 · 校验/回退</li>
             <li class="research-only"><i class="sw sw-candidate-fastest"></i>候选路线 · 最快</li>
             <li class="research-only"><i class="sw sw-candidate-low-risk"></i>候选路线 · 低风险</li>
             <li class="research-only"><i class="sw sw-candidate-recommended"></i>候选路线 · 推荐</li>
@@ -290,7 +303,8 @@
           <label><input id="layer-risk" type="checkbox" checked /> 风险</label>
           <label><input id="layer-hard" type="checkbox" checked /> 硬约束 / 可用性</label>
           <label><input id="layer-routes" type="checkbox" checked /> 路线</label>
-          <label><input id="layer-route-polyline" type="checkbox" /> 原始权威路径（默认隐藏）</label>
+          <label class="engineering-only"><input id="layer-route-polyline" type="checkbox" />
+            权威 RoutePlan 折线（校验/回退）</label>
           <div id="formal-motion-status" class="status summary-note">
             正在校验正式曲线运动制品
           </div>
