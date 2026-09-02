@@ -146,6 +146,9 @@
           <h2>航行仿真</h2>
           <div class="sim">
             <button id="play" type="button" class="btn">运行</button>
+            <button id="reset-route-selection" type="button" class="btn small">
+              重新选择路线
+            </button>
             <div class="simulation-time">
               <span>仿真时间</span>
               <time id="clock" class="clock">--</time>
@@ -181,6 +184,9 @@
             <button id="toggle-debug" type="button" class="btn small">工程调试</button>
           </div>
           <div id="route-status" class="status route-status">正在加载当前路线</div>
+          <div id="runtime-route-status" class="status runtime-route-status">
+            正在加载运行路线
+          </div>
           <div class="horizon-row">
             <label for="risk-horizon">风险预测时域</label>
             <select id="risk-horizon">
@@ -335,6 +341,7 @@
     <script src="research_candidates.js"></script>
     <script src="risk_explanation.js"></script>
     <script src="route_motion.js"></script>
+    <script src="runtime_route_candidates.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

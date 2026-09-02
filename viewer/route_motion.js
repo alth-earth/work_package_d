@@ -415,6 +415,194 @@
     return Promise.all(sets.map(inspectSetAsync));
   }
 
+  function inspectCandidateSet(value) {
+    const fields = [
+      "schema_version", "motion_candidate_set_id", "layer_set_id", "run_id",
+      "scenario_id", "corridor_id", "generation_id", "input_revision",
+      "risk_window_id", "risk_window_digest", "vessel_profile_id",
+      "vessel_profile_version", "vessel_profile_digest", "motion_profile_id",
+      "motion_profile_digest", "config_digest", "model_config_digest",
+      "planner_config_digest", "producer_digest", "generated_at", "records",
+    ];
+    if (!exactFields(value, fields) ||
+        value.schema_version !== "cd.route-motion-candidate-set.v1" ||
+        !/^route-motion-candidate-set-sha256-[0-9a-f]{64}$/.test(value.motion_candidate_set_id) ||
+        !Array.isArray(value.records) || value.records.length !== 3) {
+      return invalid("motion_candidate_set_shape_invalid");
+    }
+    const identityStrings = [
+      "layer_set_id", "run_id", "scenario_id", "corridor_id", "risk_window_id",
+      "vessel_profile_id", "vessel_profile_version", "motion_profile_id",
+    ];
+    const identityDigests = [
+      "risk_window_digest", "vessel_profile_digest", "motion_profile_digest",
+      "config_digest", "model_config_digest", "planner_config_digest", "producer_digest",
+    ];
+    if (identityStrings.some((name) => typeof value[name] !== "string" || !value[name]) ||
+        identityDigests.some((name) => !digest(value[name])) ||
+        !Number.isInteger(value.generation_id) || value.generation_id < 0 ||
+        !Number.isInteger(value.input_revision) || value.input_revision < 0 ||
+        eta(value.generated_at) === null) {
+      return invalid("motion_candidate_set_identity_invalid");
+    }
+    const expectedObjectives = ["fastest", "low_risk", "recommended"];
+    const inspections = [];
+    for (let index = 0; index < value.records.length; index += 1) {
+      const item = value.records[index];
+      if (!exactFields(item, ["objective_mode", "record"]) ||
+          item.objective_mode !== expectedObjectives[index]) {
+        return invalid("motion_candidate_set_objective_order_invalid");
+      }
+      const inspection = inspectRecord(item.record);
+      if (!inspection.valid || item.record.planning_layer !== "full_voyage") {
+        return invalid("motion_candidate_set_record_invalid", {records: inspections});
+      }
+      inspections.push({objective_mode: item.objective_mode, ...inspection});
+    }
+    if (new Set(value.records.map((item) => item.record.plan_id)).size !== 3) {
+      return invalid("motion_candidate_set_plan_identity_invalid", {records: inspections});
+    }
+    const payload = {...value};
+    delete payload.motion_candidate_set_id;
+    if (canonicalDigest(payload) !== value.motion_candidate_set_id.slice(
+      "route-motion-candidate-set-sha256-".length
+    )) {
+      return invalid("motion_candidate_set_digest_invalid", {records: inspections});
+    }
+    return {
+      valid: true,
+      usable: inspections.some((record) => record.usable),
+      reason: null,
+      records: inspections,
+    };
+  }
+
+  async function inspectCandidateSetAsync(value) {
+    return inspectCandidateSet(value);
+  }
+
+  async function prevalidateCandidateSets(bundle) {
+    const sets = bundle?.route_motion_candidate_sets;
+    if (!Array.isArray(sets)) return [];
+    return Promise.all(sets.map(inspectCandidateSetAsync));
+  }
+
+  function inspectCandidate(bundle, candidate, layerSetId = null) {
+    const sets = bundle?.route_motion_candidate_sets;
+    if (!Array.isArray(sets) || sets.length === 0) {
+      return invalid("missing_formal_motion_candidate_set");
+    }
+    const presentation = bundle?.combined_presentation || {};
+    const authorizedIds = presentation.route_motion_candidate_set_ids;
+    const bindings = presentation.route_motion_candidate_set_bindings;
+    if (!Array.isArray(authorizedIds) || !Array.isArray(bindings) ||
+        authorizedIds.length !== sets.length || bindings.length !== sets.length) {
+      return invalid("formal_motion_candidate_presentation_identity_mismatch");
+    }
+    const candidateSet = sets.find((set) =>
+      set.layer_set_id === layerSetId || set.layer_set_id === candidate?.layer_set_id
+    );
+    if (!candidateSet) return invalid("formal_motion_candidate_layer_set_missing");
+    if (!authorizedIds.includes(candidateSet.motion_candidate_set_id)) {
+      return invalid("formal_motion_candidate_presentation_identity_mismatch");
+    }
+    const binding = bindings.find((item) =>
+      item?.motion_candidate_set_id === candidateSet.motion_candidate_set_id
+    );
+    if (!binding || binding.layer_set_id !== candidateSet.layer_set_id ||
+        binding.risk_window_id !== candidateSet.risk_window_id ||
+        binding.risk_window_digest !== candidateSet.risk_window_digest) {
+      return invalid("formal_motion_candidate_presentation_identity_mismatch");
+    }
+    const setInspection = inspectCandidateSet(candidateSet);
+    if (!setInspection.valid) return setInspection;
+    const index = candidateSet.records.findIndex((item) =>
+      item.objective_mode === candidate?.objective &&
+      item.record.plan_id === candidate?.candidate_id
+    );
+    if (index < 0) return invalid("formal_motion_candidate_plan_id_missing");
+    const recordInspection = setInspection.records[index];
+    // A C-produced RAW_PASSTHROUGH record is still a runnable, bound motion
+    // source.  It is not curve-qualified, but D must consume its authoritative
+    // samples instead of silently rebuilding a timeline from waypoints.
+    const record = candidateSet.records[index].record;
+    const rawFallback = !recordInspection.usable && record.mode === "RAW_PASSTHROUGH";
+    if (!recordInspection.usable && !rawFallback) {
+      return invalid(recordInspection.reason, {
+        bound: true,
+        mode: record.mode,
+        schema_version: "cd.route-motion-candidate-set.v1",
+        motion_candidate_set_id: candidateSet.motion_candidate_set_id,
+        record,
+      });
+    }
+    const waypoints = candidate?.waypoints;
+    const samples = recordInspection.samples;
+    if (!Array.isArray(waypoints) || waypoints.length < 2) {
+      return invalid("runtime_candidate_waypoints_missing");
+    }
+    const payload = waypoints.map((waypoint) => ({
+      longitude: Number(waypoint.longitude),
+      latitude: Number(waypoint.latitude),
+      eta: waypoint.eta,
+      recommended_speed_mps: Number(waypoint.recommended_speed_mps),
+    }));
+    if (canonicalDigest(payload) !== record.raw_route_digest ||
+        record.plan_id !== candidate.candidate_id) {
+      return invalid("formal_motion_candidate_route_mismatch");
+    }
+    const first = coordinate(waypoints[0]);
+    const last = coordinate(waypoints[waypoints.length - 1]);
+    if (!first || !last || first.lon !== samples[0].lon || first.lat !== samples[0].lat ||
+        last.lon !== samples[samples.length - 1].lon ||
+        last.lat !== samples[samples.length - 1].lat) {
+      return invalid("formal_motion_candidate_endpoint_mismatch");
+    }
+    return {
+      valid: true,
+      usable: !rawFallback,
+      reason: rawFallback ? recordInspection.reason : null,
+      bound: rawFallback,
+      source: "cd.route-motion-candidate-set.v1",
+      motionCandidateSetId: candidateSet.motion_candidate_set_id,
+      record,
+      samples,
+      timeOffsetSeconds: 0,
+    };
+  }
+
+  function buildCandidatePath(bundle, candidate, startMs, layerSetId = null) {
+    const inspection = inspectCandidate(bundle, candidate, layerSetId);
+    if (!inspection.valid) return null;
+    const points = inspection.samples.map(({lon, lat, eta}) => ({
+      lon, lat, eta: new Date(eta).toISOString(),
+    }));
+    const timesMs = inspection.samples.map((sample) => sample.eta - startMs);
+    const distancesKm = [0];
+    for (let index = 1; index < points.length; index += 1) {
+      const distance = haversineKm(points[index - 1], points[index]);
+      if (!finite(distance) || distance <= 1e-9) return null;
+      distancesKm.push(distancesKm[index - 1] + distance);
+    }
+    const diagnostics = motionDiagnostics(candidate, points);
+    return Object.freeze({
+      points,
+      timesMs,
+      distancesKm,
+      anchorDistancesKm: distancesKm,
+      courseDegrees: inspection.samples.map((sample) => sample.course_degrees),
+      speedKnots: inspection.samples.map((sample) => sample.speed_knots),
+      smoothingApplied: inspection.record.mode === "CURVE",
+      minimumRadiusM: diagnostics.minimumRadiusM,
+      maximumDeviationM: diagnostics.maximumDeviationM,
+      curvatureSampleCount: diagnostics.curvatureSampleCount,
+      diagnosticsSource: "formal_motion_candidate_samples_vs_authoritative_waypoints",
+      source: inspection.source,
+      motionCandidateSetId: inspection.motionCandidateSetId,
+      planId: inspection.record.plan_id,
+    });
+  }
+
   function deepFreeze(value) {
     if (!objectLike(value) && !Array.isArray(value)) return value;
     for (const item of Object.values(value)) deepFreeze(item);
@@ -623,6 +811,18 @@
   }
 
   window.ArcticRouteMotion = Object.freeze({
-    SCHEMA_VERSION, inspectSet, inspectSetAsync, prevalidate, inspect, buildPath,
+    SCHEMA_VERSION,
+    inspectSet,
+    inspectSetAsync,
+    prevalidate,
+    inspect,
+    buildPath,
+    inspectCandidateSet,
+    inspectCandidateSetAsync,
+    prevalidateCandidateSets,
+    inspectCandidate,
+    buildCandidatePath,
+    canonicalDigest,
+    canonicalDigestAsync,
   });
 })();

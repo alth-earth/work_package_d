@@ -82,4 +82,103 @@ for WIDTH in 344 528; do
   grep -q '"ok": true' <<<"${RESULT}"
 done
 
+"${PWCLI}" --session "${SESSION}" eval \
+  "(() => { const control = document.querySelector('#view-mode'); control.value = 'research'; control.dispatchEvent(new Event('change', {bubbles: true})); return control.value; })()" >/dev/null
+for WIDTH in 344 528; do
+  "${PWCLI}" --session "${SESSION}" eval \
+    "document.querySelector('#viewer-sidebar').style.width = '${WIDTH}px'" >/dev/null
+  RESULT=$(${PWCLI} --session "${SESSION}" eval '(() => {
+    const panel = document.querySelector("#viewer-sidebar");
+    const cards = [...document.querySelectorAll(".route-card")];
+    const candidateList = document.querySelector("#route-candidates");
+    const panelRect = panel.getBoundingClientRect();
+    const overflow = cards.some((card) => {
+      const rect = card.getBoundingClientRect();
+      return rect.left < panelRect.left || rect.right > panelRect.right + 0.5;
+    });
+    const values = [...document.querySelectorAll(".route-card-metrics dd")];
+    const valuesVisible = values.every((value) => {
+      const rect = value.getBoundingClientRect();
+      return rect.right <= panelRect.right + 0.5 && rect.left >= panelRect.left - 0.5;
+    });
+    return {ok: cards.length === 3 && !overflow && valuesVisible &&
+      candidateList.scrollWidth <= candidateList.clientWidth + 1,
+      cardCount: cards.length, panelWidth: panel.offsetWidth,
+      candidateScrollWidth: candidateList.scrollWidth,
+      candidateClientWidth: candidateList.clientWidth, overflow, valuesVisible};
+  })()')
+  echo "route-cards sidebar=${WIDTH} ${RESULT}"
+  grep -q '"ok": true' <<<"${RESULT}"
+done
+
+RUNTIME_RESULT=$(${PWCLI} --session "${SESSION}" eval '(() => {
+  const api = window.__ARCTIC_VIEWER__;
+  const candidates = api.runtimeRouteCandidates();
+  const before = api.runtimeRouteSelection();
+  const objectives = ["fastest", "low_risk", "recommended"];
+  const objectiveRuns = [];
+  for (const objective of objectives) {
+    api.resetRuntimeRouteSelection();
+    const candidate = candidates.find((item) =>
+      item.layer === "full_voyage" && item.objective === objective
+    );
+    const selected = Boolean(candidate) && api.setRuntimeRouteCandidate(candidate.candidate_id);
+    document.querySelector("#play").click();
+    const locked = api.runtimeRouteSelection();
+    api.setSimulationMs(18 * 60 * 60 * 1000);
+    const motion = api.routeMotion();
+    objectiveRuns.push({candidate, selected, locked, motion});
+    api.resetRuntimeRouteSelection();
+  }
+  api.resetRuntimeRouteSelection();
+  const fastestCandidate = candidates.find((item) =>
+    item.layer === "full_voyage" && item.objective === "fastest"
+  );
+  const selected = Boolean(fastestCandidate) &&
+    api.setRuntimeRouteCandidate(fastestCandidate.candidate_id);
+  const chosen = api.runtimeRouteSelection();
+  document.querySelector("#play").click();
+  const locked = api.runtimeRouteSelection();
+  const blocked = api.setRuntimeRouteCandidate(before.runtime_selected_candidate_id);
+  const lockedMotion = api.routeMotion();
+  api.setSimulationMs(10 * 60 * 60 * 1000);
+  const afterReplan = api.routeDecision();
+  const afterReplanMotion = api.routeMotion();
+  document.querySelector("#reset-route-selection").click();
+  const reset = api.runtimeRouteSelection();
+  const objectiveIds = objectiveRuns.map((item) => item.candidate?.candidate_id);
+  const objectiveEtas = objectiveRuns.map((item) => item.candidate?.arrival_eta);
+  const objectivePositions = objectiveRuns.map((item) => {
+    const point = item.motion?.curved_position;
+    return point ? `${point.lon.toFixed(6)}|${point.lat.toFixed(6)}` : null;
+  });
+  const objectiveMotionPlans = objectiveRuns.map((item) =>
+    item.motion?.formal_motion_inspection?.record?.plan_id
+  );
+  const objectiveDisplayCounts = objectiveRuns.map((item) => item.motion?.display_point_count);
+  return {ok: objectiveRuns.length === 3 && objectiveRuns.every((item) =>
+      item.candidate && item.selected && item.locked.runtime_route_locked === true &&
+      item.locked.runtime_selected_candidate_id === item.candidate.candidate_id &&
+      item.motion.motion_source === "formal_route_motion") &&
+    new Set(objectiveIds).size === 3 && new Set(objectiveEtas).size === 3 &&
+    new Set(objectiveMotionPlans).size === 3 && new Set(objectiveDisplayCounts).size === 3 &&
+    objectivePositions.every(Boolean) && Boolean(fastestCandidate) && selected &&
+    chosen.runtime_route_locked === false &&
+    chosen.runtime_selected_candidate_id === fastestCandidate.candidate_id &&
+    locked.runtime_route_locked === true &&
+    locked.runtime_selected_candidate_id === fastestCandidate.candidate_id &&
+    blocked === false && lockedMotion.motion_source === "formal_route_motion" &&
+    lockedMotion.display_point_count > lockedMotion.raw_point_count &&
+    afterReplan.active_revision >= 2 &&
+    afterReplan.runtime_route.runtime_selected_candidate_id === fastestCandidate.candidate_id &&
+    afterReplan.runtime_route.runtime_route_locked === true &&
+    afterReplanMotion.motion_source === "formal_route_motion" &&
+    reset.runtime_route_locked === false &&
+    reset.runtime_selected_candidate_id === before.runtime_selected_candidate_id,
+    objectiveRuns, before, chosen, selected, locked, blocked, lockedMotion, afterReplan,
+    afterReplanMotion, reset};
+})()')
+echo "runtime-route ${RUNTIME_RESULT}"
+grep -q '"ok": true' <<<"${RUNTIME_RESULT}"
+
 echo "browser layout regression: PASS (344px, 528px)"

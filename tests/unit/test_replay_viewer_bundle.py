@@ -111,6 +111,28 @@ def test_bundle_gates_and_basemap(bundle: dict) -> None:
             len(item["route_candidates"]["candidates"]) == 12
             for item in candidate_sets
         )
+        runtime_candidate_sets = bundle.get("runtime_route_candidate_sets", [])
+        runtime_bindings = combined.get("runtime_route_candidate_set_bindings", [])
+        runtime_ids = combined.get("runtime_route_candidate_set_ids", [])
+        assert runtime_candidate_sets
+        assert len(runtime_candidate_sets) == len(runtime_bindings) == len(runtime_ids)
+        assert len(set(runtime_ids)) == len(runtime_ids)
+        assert {
+            item["runtime_route_candidates"]["runtime_candidate_set_id"]
+            for item in runtime_candidate_sets
+        } == set(runtime_ids)
+        if _is_dynamic_replay(bundle):
+            event_types = [event.get("type") for event in bundle["events"]]
+            assert "REPLAN_DECIDED" in event_types
+            assert "REPLAN_ADOPTED" in event_types
+            assert sum(event_type == "REPLAN_DECIDED" for event_type in event_types) == sum(
+                event_type == "REPLAN_ADOPTED" for event_type in event_types
+            )
+            assert combined.get("risk_explanation_manifest") is None
+            assert bundle["risk"]["status"] == "PASS"
+            assert bundle["route_motion_sets"]
+            assert bundle["timeline"]
+            assert bundle["timeline"][-1]["v"]["status"] == "ARRIVED"
     else:
         assert bundle["route_candidates"]["status"] == "NOT_PUBLISHED"
         assert bundle["route_candidates"]["candidates"] == []
@@ -151,7 +173,9 @@ def test_timeline_moves_and_track_never_rewinds(bundle: dict) -> None:
 
 def test_deferred_revision_visible_in_timeline(bundle: dict) -> None:
     if not (_is_causal_replay(bundle) or _is_dynamic_replay(bundle)):
-        pytest.skip("Winter combined navigation simulation has no replay replanning events")
+        pytest.skip(
+            "historical fixture has no causal/dynamic replay events; skip is intentional"
+        )
     timeline = bundle["timeline"]
     if _is_dynamic_replay(bundle):
         decided_at_1300 = _at_or_after(bundle, 6)
@@ -308,7 +332,10 @@ def test_risk_horizon_selection_is_explicit_and_fail_closed(bundle: dict) -> Non
 
 def test_pending_and_superseded_routes_are_temporally_distinct(bundle: dict) -> None:
     if not (_is_causal_replay(bundle) or _is_dynamic_replay(bundle)):
-        pytest.skip("Winter combined navigation simulation publishes one initial route revision")
+        pytest.skip(
+            "historical fixture publishes one route revision without replay events; "
+            "skip is intentional"
+        )
     timeline = bundle["timeline"]
     if _is_dynamic_replay(bundle):
         pending_at_1330 = max(

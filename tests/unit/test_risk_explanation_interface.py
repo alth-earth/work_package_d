@@ -182,7 +182,9 @@ process.stdout.write(JSON.stringify(api.inspect(input.sidecar, input.bundle)));
 
 
 def test_missing_sidecar_keeps_explanation_unavailable() -> None:
-    result = _inspect(None)
+    bundle = _bundle()
+    before = copy.deepcopy(bundle)
+    result = _inspect(None, bundle)
 
     assert result == {
         "valid": False,
@@ -191,6 +193,7 @@ def test_missing_sidecar_keeps_explanation_unavailable() -> None:
         "publication_status": "UNAVAILABLE",
         "cells": {},
     }
+    assert bundle == before
 
 
 @pytest.mark.parametrize(

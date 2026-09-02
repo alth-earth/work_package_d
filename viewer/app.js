@@ -7,6 +7,8 @@
   const miniMapCanvas = document.getElementById("mini-map");
   const miniCtx = miniMapCanvas?.getContext("2d") || null;
   const playBtn = document.getElementById("play");
+  const resetRouteBtn = document.getElementById("reset-route-selection");
+  const runtimeRouteStatusEl = document.getElementById("runtime-route-status");
   const scrub = document.getElementById("scrub");
   const speedSel = document.getElementById("speed");
   const clockEl = document.getElementById("clock");
@@ -106,6 +108,11 @@
   let highlightedCandidateId = null;
   const visibleCandidateObjectives = new Set(["fastest", "low_risk", "recommended"]);
   let candidateInspection = null;
+  let runtimeCandidateInspection = null;
+  let runtimeSelectedCandidateId = null;
+  let runtimeRouteLocked = false;
+  let runtimeRouteSource = "c_selected_default";
+  let runtimeRouteMotionMode = "RAW_PASSTHROUGH";
   let activeCandidateRevision = null;
   let activeCandidatePackage = null;
   let combinedIdentityInspection = null;
@@ -120,6 +127,8 @@
   let mapWasDragged = false;
   let voyageProgress = null;
   let formalRouteMotionCache = new WeakMap();
+  let runtimeRoutePathCache = new Map();
+  let runtimeCandidateMotionInspectionCache = new Map();
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
@@ -174,6 +183,8 @@
   if (!riskExplanationTools) throw new Error("risk explanation validator is not loaded");
   const formalMotionTools = window.ArcticRouteMotion;
   if (!formalMotionTools) throw new Error("formal route motion reader is not loaded");
+  const runtimeCandidateTools = window.ArcticRuntimeRouteCandidates;
+  if (!runtimeCandidateTools) throw new Error("runtime route candidate reader is not loaded");
   const { ROUTE_LAYERS } = candidateTools;
   const CANDIDATE_STYLES = {
     fastest: { color: "#ff8a3d", dash: [9, 5], width: 2.4 },
@@ -590,6 +601,163 @@
 
   function candidateGeometryPoints(candidate) {
     return (candidate?.geometry?.coordinates || []).map(([lon, lat]) => ({ lon, lat }));
+  }
+
+  function runtimeCandidates() {
+    return runtimeCandidateInspection?.initial?.candidates || [];
+  }
+
+  function runtimeCandidateById(candidateId) {
+    return runtimeCandidates().find((candidate) => candidate.candidate_id === candidateId) || null;
+  }
+
+  function runtimeCandidateRoute(candidate) {
+    if (!candidate) return null;
+    const packageValue = runtimeCandidateInspection?.initial?.package;
+    return {
+      revision: 1,
+      route_id: candidate.candidate_id,
+      plan_id: candidate.candidate_id,
+      layer: candidate.layer,
+      objective: candidate.objective,
+      decision_time: packageValue?.decision_time || candidate.waypoints[0]?.eta,
+      effective_adoption_time: packageValue?.decision_time || candidate.waypoints[0]?.eta,
+      adoption_mode: "RUNTIME_SELECTED",
+      motion_time_offset_seconds: 0,
+      distance_km: candidate.distance_km,
+      arrival_eta: candidate.arrival_eta,
+      metrics: {
+        distance_km: candidate.distance_km,
+        travel_hours: candidate.travel_hours,
+        average_risk: candidate.risk_metrics.average_risk,
+        maximum_risk: candidate.risk_metrics.maximum_risk,
+        integrated_risk_hours: candidate.risk_metrics.integrated_risk_hours,
+        minimum_confidence: candidate.risk_metrics.minimum_confidence,
+      },
+      waypoints: candidate.waypoints.map((waypoint) => ({
+        lon: waypoint.longitude,
+        lat: waypoint.latitude,
+        eta: waypoint.eta,
+        recommended_speed_mps: waypoint.recommended_speed_mps,
+      })),
+      runtime_candidate: candidate,
+      runtime_layer_set_id: packageValue?.layer_set_id || null,
+    };
+  }
+
+  function runtimeSelectedCandidate() {
+    return runtimeCandidateById(runtimeSelectedCandidateId) ||
+      runtimeCandidateInspection?.initial?.candidates?.find((candidate) =>
+        candidate.candidate_id === runtimeCandidateInspection.initial.package.selected_candidate_id
+      ) || null;
+  }
+
+  function runtimeRouteObject() {
+    return runtimeCandidateRoute(runtimeSelectedCandidate());
+  }
+
+  function runtimeMotionInspection(candidate) {
+    if (!candidate || !runtimeCandidateInspection?.initial?.package) {
+      return {valid: false, reason: "runtime_candidate_unavailable"};
+    }
+    // Route cards are rendered from the compact presentation candidates,
+    // while motion validation must always receive the C runtime projection
+    // carrying authoritative waypoints and ETA.  Resolve by identity before
+    // caching so a compact card cannot poison the inspection for its runnable
+    // runtime counterpart.
+    const runtimeCandidate = Array.isArray(candidate.waypoints)
+      ? candidate
+      : runtimeCandidateById(candidate.candidate_id) || candidate;
+    const key = `${runtimeCandidateInspection.initial.package.layer_set_id}|${runtimeCandidate.candidate_id}`;
+    if (runtimeCandidateMotionInspectionCache.has(key)) {
+      return runtimeCandidateMotionInspectionCache.get(key);
+    }
+    const inspection = formalMotionTools.inspectCandidate(
+      bundle,
+      runtimeCandidate,
+      runtimeCandidateInspection.initial.package.layer_set_id,
+    );
+    runtimeCandidateMotionInspectionCache.set(key, inspection);
+    return inspection;
+  }
+
+  function runtimeCandidateRunnable(candidate) {
+    const inspection = runtimeMotionInspection(candidate);
+    return Boolean(
+      inspection.valid &&
+      (inspection.record?.mode === "CURVE" || inspection.record?.mode === "RAW_PASSTHROUGH") &&
+      Array.isArray(inspection.samples) && inspection.samples.length >= 2,
+    );
+  }
+
+  function runtimeMotionPathFor(candidate) {
+    if (!candidate) return null;
+    const key = candidate.candidate_id;
+    if (runtimeRoutePathCache.has(key)) return runtimeRoutePathCache.get(key);
+    const path = formalMotionTools.buildCandidatePath(
+      bundle,
+      candidate,
+      startMs,
+      runtimeCandidateInspection?.initial?.package?.layer_set_id || null,
+    );
+    runtimeRoutePathCache.set(key, path);
+    return path;
+  }
+
+  function runtimeMotionModeFor(candidate) {
+    const inspection = runtimeMotionInspection(candidate);
+    if (inspection.valid && inspection.record?.mode === "CURVE") return "CURVE";
+    if (inspection.valid && inspection.record?.mode === "RAW_PASSTHROUGH") {
+      return "RAW_PASSTHROUGH";
+    }
+    return "UNAVAILABLE";
+  }
+
+  function runtimePointAt(candidate, relativeMs) {
+    if (!candidate?.waypoints?.length) return null;
+    const waypoints = candidate.waypoints;
+    const target = startMs + Math.max(0, relativeMs);
+    const first = isoToMs(waypoints[0].eta);
+    const last = isoToMs(waypoints[waypoints.length - 1].eta);
+    if (!Number.isFinite(first) || !Number.isFinite(last)) return null;
+    if (target <= first) return {lon: waypoints[0].longitude, lat: waypoints[0].latitude};
+    if (target >= last) {
+      const end = waypoints[waypoints.length - 1];
+      return {lon: end.longitude, lat: end.latitude};
+    }
+    let index = 0;
+    while (index < waypoints.length - 1 && isoToMs(waypoints[index + 1].eta) < target) {
+      index += 1;
+    }
+    const start = waypoints[index];
+    const end = waypoints[index + 1];
+    const span = isoToMs(end.eta) - isoToMs(start.eta);
+    const fraction = span > 0 ? (target - isoToMs(start.eta)) / span : 0;
+    return {
+      lon: start.longitude + (end.longitude - start.longitude) * fraction,
+      lat: start.latitude + (end.latitude - start.latitude) * fraction,
+    };
+  }
+
+  function runtimeSegmentFor(candidate, absoluteMs) {
+    if (!candidate?.waypoints || candidate.waypoints.length < 2) return null;
+    const first = isoToMs(candidate.waypoints[0].eta);
+    const target = Math.max(first, absoluteMs);
+    let index = 0;
+    for (let cursor = 0; cursor < candidate.waypoints.length - 1; cursor += 1) {
+      if (target <= isoToMs(candidate.waypoints[cursor + 1].eta)) {
+        index = cursor;
+        break;
+      }
+      index = cursor;
+    }
+    const start = candidate.waypoints[index];
+    const end = candidate.waypoints[Math.min(index + 1, candidate.waypoints.length - 1)];
+    return {
+      index,
+      start_eta: start.eta,
+      end_eta: end.eta,
+    };
   }
 
   function routeArrivalEta(route) {
@@ -1349,12 +1517,13 @@
   }
 
   function routeMotionPathFor(route) {
+    if (route?.runtime_candidate) return runtimeMotionPathFor(route.runtime_candidate);
     return buildFormalRouteMotionPath(route);
   }
 
   function routePaintPointsFor(route) {
     if (!route?.waypoints || route.waypoints.length < 2) return [];
-    const formal = buildFormalRouteMotionPath(route);
+    const formal = routeMotionPathFor(route);
     return formal?.points || route.waypoints;
   }
 
@@ -1459,7 +1628,8 @@
     if (liveRelativeMs < segmentStartMs || liveRelativeMs > segmentEndMs) return [];
     const relativeMs = liveRelativeMs;
     const path = routeMotionPathFor(route);
-    if (path?.source === "cd.route-motion-set.v1" &&
+    if ((path?.source === "cd.route-motion-set.v1" ||
+        path?.source === "cd.route-motion-candidate-set.v1") &&
         relativeMs >= path.timesMs[0] && relativeMs <= path.timesMs[path.timesMs.length - 1] &&
         segmentEndMs >= path.timesMs[0] && segmentStartMs <= path.timesMs[path.timesMs.length - 1]) {
       const startPoint = routeMotionPointAt(route, relativeMs);
@@ -1562,13 +1732,13 @@
 
   function updateCurveDiagnostics(state) {
     if (!curveDiagnosticsStatusEl) return;
-    const active = state ? routeFor(state.active) : null;
+    const active = runtimeRouteLocked ? runtimeRouteObject() : state ? routeFor(state.active) : null;
     const path = active ? routeMotionPathFor(active) : null;
     const key = [state?.active, state?.segment?.index, state?.time,
       path?.minimumRadiusM, path?.maximumDeviationM, path?.source].join("|");
     if (key === lastCurveDiagnosticsKey) return;
     lastCurveDiagnosticsKey = key;
-    if (!path || path.source !== "cd.route-motion-set.v1") {
+    if (!path || !path.source?.startsWith("cd.route-motion")) {
       curveDiagnosticsStatusEl.classList.add("unavailable");
       curveDiagnosticsStatusEl.textContent =
         `曲线诊断不可用 · ${path ? "未采用正式 motion_samples" : "formal_motion_unavailable"}`;
@@ -1610,7 +1780,8 @@
       motionPath?.courseDegrees,
       true,
     );
-    if (motionPath?.source === "cd.route-motion-set.v1" &&
+    if ((motionPath?.source === "cd.route-motion-set.v1" ||
+        motionPath?.source === "cd.route-motion-candidate-set.v1") &&
         Number.isFinite(producerCourse)) return producerCourse;
     if (motionPath && relativeMs >= motionPath.timesMs[0] &&
         relativeMs <= motionPath.timesMs[motionPath.timesMs.length - 1]) {
@@ -1679,6 +1850,19 @@
   // part of this runtime path.
   function vesselPointAt(ms) {
     const timelineMs = Math.max(0, Math.min(totalMs, ms));
+    if (runtimeRouteLocked && runtimeSelectedCandidate()) {
+      const candidate = runtimeSelectedCandidate();
+      const route = runtimeCandidateRoute(candidate);
+      const path = runtimeMotionPathFor(candidate);
+      if (path && timelineMs >= path.timesMs[0] &&
+          timelineMs <= path.timesMs[path.timesMs.length - 1]) {
+        const curved = routeMotionPointAt(route, timelineMs);
+        if (curved && Number.isFinite(curved.lon) && Number.isFinite(curved.lat)) {
+          return curved;
+        }
+      }
+      return runtimePointAt(candidate, timelineMs) || linearVesselPointAt(timelineMs);
+    }
     const linear = linearVesselPointAt(timelineMs);
     const active = routeFor(activeRevisionAt(timelineMs));
     const motionPath = routeMotionPathFor(active);
@@ -1688,7 +1872,8 @@
     }
     const curved = routeMotionPointAt(active, timelineMs);
     if (!curved || !Number.isFinite(curved.lon) || !Number.isFinite(curved.lat)) return linear;
-    if (motionPath.source === "cd.route-motion-set.v1") return curved;
+    if (motionPath.source === "cd.route-motion-set.v1" ||
+        motionPath.source === "cd.route-motion-candidate-set.v1") return curved;
     const gapKm = haversineKm(linear.lon, linear.lat, curved.lon, curved.lat);
     return Number.isFinite(gapKm) && gapKm <= MAX_CURVE_MOTION_GAP_KM ? curved : linear;
   }
@@ -1790,6 +1975,37 @@
     return frameForRiskSelection(riskSelectionAt(ms));
   }
 
+  function runtimeCompletedTrackAt(candidate, relativeMs) {
+    if (!candidate?.waypoints?.length) return [];
+    const route = runtimeCandidateRoute(candidate);
+    const path = runtimeMotionPathFor(candidate);
+    if (path) return routeMotionCompletedPointsAt(route, relativeMs) || [];
+    const target = startMs + Math.max(0, relativeMs);
+    const points = candidate.waypoints
+      .filter((waypoint) => isoToMs(waypoint.eta) <= target)
+      .map((waypoint) => ({
+        lon: waypoint.longitude,
+        lat: waypoint.latitude,
+        eta: waypoint.eta,
+      }));
+    const current = runtimePointAt(candidate, relativeMs);
+    const last = points[points.length - 1];
+    if (current && (!last || last.lon !== current.lon || last.lat !== current.lat)) {
+      points.push({...current, eta: formatAbsolute(startMs + relativeMs)});
+    }
+    return points;
+  }
+
+  function runtimeSpeedAt(candidate, relativeMs) {
+    if (!candidate?.waypoints?.length) return null;
+    const target = startMs + Math.max(0, relativeMs);
+    if (target >= isoToMs(candidate.waypoints[candidate.waypoints.length - 1].eta)) return 0;
+    let index = 0;
+    while (index < candidate.waypoints.length - 1 &&
+        isoToMs(candidate.waypoints[index + 1].eta) <= target) index += 1;
+    return Number(candidate.waypoints[index].recommended_speed_mps) * 1.9438444924406;
+  }
+
   function stateAt(ms) {
     const tl = bundle.timeline;
     const i = timelineIndex(ms);
@@ -1804,26 +2020,52 @@
     const riskSelection = riskSelectionAt(ms);
     const vessel = vesselPointAt(ms);
     const activeRoute = routeFor(activeRevisionAt(ms));
-    const formalPath = buildFormalRouteMotionPath(activeRoute);
+    const selectedRuntimeCandidate = runtimeRouteLocked ? runtimeSelectedCandidate() : null;
+    const motionRoute = selectedRuntimeCandidate
+      ? runtimeCandidateRoute(selectedRuntimeCandidate)
+      : activeRoute;
+    const formalPath = selectedRuntimeCandidate
+      ? routeMotionPathFor(motionRoute)
+      : buildFormalRouteMotionPath(activeRoute);
     const formalSpeed = pathValueAtTime(formalPath, ms, formalPath?.speedKnots);
     const formalTrack = formalPath
-      ? routeMotionCompletedPointsAt(activeRoute, ms)
+      ? routeMotionCompletedPointsAt(motionRoute, ms)
       : null;
+    const runtimeSegment = selectedRuntimeCandidate
+      ? runtimeSegmentFor(selectedRuntimeCandidate, startMs + ms)
+      : null;
+    const runtimeArrivalMs = selectedRuntimeCandidate
+      ? isoToMs(selectedRuntimeCandidate.arrival_eta) - startMs
+      : null;
+    const runtimeArrived = selectedRuntimeCandidate && Number.isFinite(runtimeArrivalMs) &&
+      ms >= runtimeArrivalMs;
+    const runtimeTrack = selectedRuntimeCandidate
+      ? (formalTrack || runtimeCompletedTrackAt(selectedRuntimeCandidate, ms))
+      : null;
+    const runtimeSpeed = selectedRuntimeCandidate ? runtimeSpeedAt(selectedRuntimeCandidate, ms) : null;
+    const runtimeEdge = runtimeSegment
+      ? clamp((ms - (isoToMs(runtimeSegment.start_eta) - startMs)) /
+          Math.max(1, isoToMs(runtimeSegment.end_eta) - isoToMs(runtimeSegment.start_eta)), 0, 1)
+      : 0;
     return {
       time: startMs + ms,
       lon: vessel.lon,
       lat: vessel.lat,
-      kn: Number.isFinite(formalSpeed) ? formalSpeed : lerp(a.v.kn ?? 0, b.v.kn ?? 0),
-      status: a.v.status,
-      edge: lerp(a.v.ep ?? 0, b.v.ep ?? 0),
-      edgeIndex: a.v.eidx,
+      kn: Number.isFinite(formalSpeed)
+        ? formalSpeed
+        : Number.isFinite(runtimeSpeed) ? runtimeSpeed : lerp(a.v.kn ?? 0, b.v.kn ?? 0),
+      status: runtimeArrived ? "ARRIVED" : a.v.status,
+      edge: selectedRuntimeCandidate ? runtimeEdge : lerp(a.v.ep ?? 0, b.v.ep ?? 0),
+      edgeIndex: selectedRuntimeCandidate ? runtimeSegment?.index ?? 0 : a.v.eidx,
       active: a.arv,
       pendingRevision: a.prv,
       pendingStatus: a.prs,
       decisionTime: a.dt,
       effectiveAdoption: a.eat,
-      segment: a.seg,
-      track: mergeCompletedTrack(rawTrack.slice(0, a.ctl), formalTrack),
+      segment: selectedRuntimeCandidate ? (runtimeArrived ? null : runtimeSegment) : a.seg,
+      track: selectedRuntimeCandidate
+        ? runtimeTrack
+        : mergeCompletedTrack(rawTrack.slice(0, a.ctl), formalTrack),
       pendingRoute: pending,
       supersededRoute: superseded,
       trail: vesselTrailAt(ms),
@@ -1915,6 +2157,9 @@
       s.pendingStatus,
       adopted?.t,
       decided?.t,
+      runtimeSelectedCandidateId,
+      runtimeRouteLocked,
+      runtimeRouteMotionMode,
     ].join("|");
     if (key === lastRouteDecisionKey) return;
     lastRouteDecisionKey = key;
@@ -1956,6 +2201,15 @@
       ["平均风险", formatMetric(activeMetrics.average_risk ?? active.average_risk)],
       ["最大风险", formatMetric(activeMetrics.maximum_risk ?? active.maximum_risk)],
     ];
+    const runtimeCandidate = runtimeSelectedCandidate();
+    if (runtimeCandidate) {
+      rows.push(
+        ["仿真运行路线", `${objectiveLabel(runtimeCandidate.objective)} · ${
+          runtimeRouteLocked ? "已锁定" : "待运行"}`],
+        ["运行路线 ID", runtimeCandidate.candidate_id],
+        ["运行路线来源", runtimeRouteSource],
+      );
+    }
     if (pending) {
       rows.push(
         ["待采用版本", `R${pending.revision}`],
@@ -2009,6 +2263,86 @@
     ];
   }
 
+  function updateRuntimeRouteUi() {
+    const candidate = runtimeSelectedCandidate();
+    const available = Boolean(
+      runtimeCandidateInspection?.valid && candidate && runtimeCandidateRunnable(candidate),
+    );
+    if (runtimeRouteStatusEl) {
+      runtimeRouteStatusEl.classList.toggle("unavailable", !available);
+      if (!available) {
+        runtimeRouteStatusEl.textContent = "运行路线不可用 · C runtime candidates 未发布";
+      } else {
+        runtimeRouteStatusEl.textContent = runtimeRouteLocked
+          ? `仿真运行路线：${objectiveLabel(candidate.objective)} · 已锁定 · ${runtimeRouteMotionMode}`
+          : `待运行路线：${objectiveLabel(candidate.objective)} · 点击运行后锁定`;
+      }
+    }
+    if (resetRouteBtn) {
+      resetRouteBtn.disabled = !available;
+      resetRouteBtn.textContent = runtimeRouteLocked ? "重新选择路线" : "清除运行锁定";
+      resetRouteBtn.title = runtimeRouteLocked
+        ? "暂停、回到出发时刻并重新选择运行路线"
+        : "清除运行锁定并回到出发时刻";
+    }
+    if (routeLayerSel) routeLayerSel.disabled = !candidateInspection?.valid || runtimeRouteLocked;
+    if (routeObjectiveFiltersEl) routeObjectiveFiltersEl.disabled = runtimeRouteLocked;
+  }
+
+  function setRuntimeRouteCandidate(candidateId) {
+    if (runtimeRouteLocked || !runtimeCandidateInspection?.valid) return false;
+    const candidate = runtimeCandidateById(candidateId);
+    if (!candidate || candidate.layer !== "full_voyage" || !runtimeCandidateRunnable(candidate)) {
+      return false;
+    }
+    runtimeSelectedCandidateId = candidate.candidate_id;
+    runtimeRouteSource = candidate.candidate_id ===
+      runtimeCandidateInspection.initial.package.selected_candidate_id
+      ? "c_selected_default" : "manual_pre_run";
+    runtimeRouteMotionMode = runtimeMotionModeFor(candidate);
+    selectedRouteLayer = "full_voyage";
+    routeLayerSel.value = selectedRouteLayer;
+    highlightedCandidateId = candidate.candidate_id;
+    lastResearchPanelKey = null;
+    updateRuntimeRouteUi();
+    updateResearchPanel();
+    draw();
+    return true;
+  }
+
+  function resetRuntimeRouteSelection() {
+    playing = false;
+    lastTs = null;
+    simMs = 0;
+    runtimeRouteLocked = false;
+    const defaultId = runtimeCandidateInspection?.initial?.package?.selected_candidate_id;
+    runtimeSelectedCandidateId = defaultId || null;
+    runtimeRouteSource = "c_selected_default";
+    runtimeRouteMotionMode = runtimeMotionModeFor(runtimeSelectedCandidate());
+    lastResearchPanelKey = null;
+    setRunButtonState();
+    updateRuntimeRouteUi();
+    syncScrubToSimulation();
+    draw();
+    return runtimeRouteDescriptor();
+  }
+
+  function runtimeRouteDescriptor() {
+    const candidate = runtimeSelectedCandidate();
+    return {
+      runtime_selected_candidate_id: candidate?.candidate_id || null,
+      runtime_route_locked: runtimeRouteLocked,
+      runtime_route_source: runtimeRouteSource,
+      runtime_route_motion_mode: runtimeRouteMotionMode,
+      objective: candidate?.objective || null,
+      layer: candidate?.layer || null,
+      arrival_eta: candidate?.arrival_eta || null,
+      available: Boolean(
+        runtimeCandidateInspection?.valid && candidate && runtimeCandidateRunnable(candidate),
+      ),
+    };
+  }
+
   function updateResearchPanel() {
     if (!researchPanel) return;
     const panelKey = [
@@ -2017,6 +2351,10 @@
       candidateInspection?.reason,
       selectedRouteLayer,
       highlightedCandidateId,
+      runtimeSelectedCandidateId,
+      runtimeRouteLocked,
+      runtimeRouteSource,
+      runtimeRouteMotionMode,
       ["fastest", "low_risk", "recommended"]
         .filter((objective) => visibleCandidateObjectives.has(objective)).join(","),
     ].join("|");
@@ -2042,6 +2380,7 @@
         currentStrategyEl.textContent =
           "当前策略 · 权威单路线执行（候选路线比较未发布）";
       }
+      updateRuntimeRouteUi();
       return;
     }
 
@@ -2052,8 +2391,10 @@
     const canonicalCandidate = canonicalSelectedCandidate();
     if (currentStrategyEl) {
       currentStrategyEl.classList.remove("fallback");
+      const runtimeCandidate = runtimeSelectedCandidate();
       currentStrategyEl.textContent = canonicalCandidate
-        ? `当前策略 · ${objectiveLabel(canonicalCandidate.objective)} · C 已选路线`
+        ? `${runtimeRouteLocked ? "仿真运行路线" : "当前策略"} · ${objectiveLabel(runtimeCandidate?.objective || canonicalCandidate.objective)} · ` +
+          `${runtimeRouteLocked ? "已锁定" : runtimeRouteSource === "manual_pre_run" ? "待运行" : "C selected"}`
         : "当前策略 · 未发布";
     }
     setDefinitionRows(experimentMetadataEl, experimentMetadataRows());
@@ -2062,7 +2403,7 @@
       routeCandidateNoteEl.textContent =
         `${selectedRouteLayer} · 已显示 ${layerCandidates.filter((candidate) =>
           visibleCandidateObjectives.has(candidate.objective)).length}/${layerCandidates.length} 条路线；` +
-        "勾选控制显隐，点击卡片只改变高亮";
+        "勾选控制显隐，点击卡片只改变高亮；full_voyage 可设为运行路线";
     }
     if (!routeCandidatesEl) return;
     routeCandidatesEl.replaceChildren();
@@ -2070,13 +2411,28 @@
     const highlight = highlightedCandidate();
     highlightedCandidateId = highlight?.candidate_id || null;
     for (const candidate of layerCandidates) {
-      const card = document.createElement("button");
-      card.type = "button";
+      const card = document.createElement("div");
       card.className = `route-card route-card-${candidate.objective}`;
+      card.setAttribute("role", "button");
+      card.tabIndex = 0;
       card.dataset.candidateId = candidate.candidate_id;
       card.dataset.highlighted = candidate.candidate_id === highlightedCandidateId ? "true" : "false";
       card.dataset.canonical = candidate.candidate_id === canonicalId ? "true" : "false";
       card.dataset.visible = visibleCandidateObjectives.has(candidate.objective) ? "true" : "false";
+
+      const runButton = document.createElement("button");
+      runButton.type = "button";
+      runButton.className = "route-run-select";
+      runButton.dataset.runtimeCandidateId = candidate.candidate_id;
+      const runnable = candidate.layer === "full_voyage" &&
+        runtimeCandidateInspection?.valid && runtimeCandidateRunnable(candidate);
+      runButton.disabled = !runnable || runtimeRouteLocked;
+      runButton.textContent = runtimeSelectedCandidateId === candidate.candidate_id
+        ? runtimeRouteLocked ? "运行中已锁定" : "待运行"
+        : runnable ? "设为运行路线" : "仅展示比较";
+      runButton.title = runnable
+        ? (runtimeRouteLocked ? "运行路线已锁定，请先重新选择路线" : "选择该路线作为仿真运行路线")
+        : "非完整航程候选不能直接运行";
 
       const heading = document.createElement("strong");
       heading.textContent = objectiveLabel(candidate.objective);
@@ -2101,7 +2457,9 @@
         detail.textContent = value;
         list.append(term, detail);
       }
-      card.append(heading, identity, list);
+      identity.title = candidate.candidate_id;
+      for (const detail of list.querySelectorAll("dd")) detail.title = detail.textContent;
+      card.append(heading, runButton, identity, list);
       routeCandidatesEl.append(card);
     }
     routeCandidatesEl.hidden = false;
@@ -2115,6 +2473,7 @@
           `${canonical ? " · C 已选路线" : " · 仅用于展示比较"}`
         : "未高亮路线";
     }
+    updateRuntimeRouteUi();
   }
 
   function drawRiskFrame(frame) {
@@ -2231,11 +2590,13 @@
     const active = routeFor(activeRevisionAt(simMs));
     const formalActive = Boolean(buildFormalRouteMotionPath(active));
     const canonicalId = activeCandidatePackage?.selected_candidate_id;
+    const runtimeId = runtimeRouteLocked ? runtimeSelectedCandidateId : null;
     for (const candidate of candidatesForLayer()) {
       // The canonical candidate is represented by the formal producer motion
       // path whenever one is bound.  Keep the other candidates available for
       // the explicit research comparison view, but never smooth them locally.
       if (formalActive && candidate.candidate_id === canonicalId) continue;
+      if (candidate.candidate_id === runtimeId) continue;
       if (!visibleCandidateObjectives.has(candidate.objective)) continue;
       const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
       const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
@@ -2300,7 +2661,7 @@
       miniCtx.restore();
     }
 
-    const active = routeFor(state.active);
+    const active = runtimeRouteLocked ? runtimeRouteObject() : routeFor(state.active);
     if (active?.waypoints?.length > 1) {
       const activePaintPoints = routePaintPointsFor(active);
       if (layers.routePolyline) {
@@ -2354,7 +2715,8 @@
   function draw() {
     const s = stateAt(simMs);
     activateCandidateRevision(s.active);
-    const active = routeFor(s.active);
+    const authoritativeActive = routeFor(s.active);
+    const active = runtimeRouteLocked ? runtimeRouteObject() : authoritativeActive;
     const heading = shipHeading(s, active);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
@@ -2386,7 +2748,7 @@
       );
       if (future.length) {
         const pulse = adoptionPulse(s);
-        const rawVessel = linearVesselPointAt(simMs);
+        const rawVessel = {lon: s.lon, lat: s.lat};
         drawRoutePolyline(
           [{ lon: rawVessel.lon, lat: rawVessel.lat, eta: formatAbsolute(s.time) }, ...future],
           1.35,
@@ -2600,9 +2962,26 @@
 
   playBtn.addEventListener("click", () => {
     if (!playing && simMs >= totalMs) simMs = 0;
+    if (!playing && runtimeCandidateInspection?.valid) {
+      const candidate = runtimeSelectedCandidate();
+      if (candidate && runtimeCandidateRunnable(candidate)) {
+        runtimeRouteLocked = true;
+        runtimeRouteSource = runtimeRouteSource === "manual_pre_run"
+          ? "manual_pre_run_locked" : "c_selected_default_locked";
+        runtimeRouteMotionMode = runtimeMotionModeFor(candidate);
+        lastResearchPanelKey = null;
+        updateRuntimeRouteUi();
+      }
+    }
     playing = !playing;
     setRunButtonState();
     lastTs = null;
+    updateResearchPanel();
+    draw();
+  });
+
+  resetRouteBtn?.addEventListener("click", () => {
+    resetRuntimeRouteSelection();
   });
 
   scrub.addEventListener("input", () => {
@@ -2640,6 +3019,10 @@
   });
 
   routeLayerSel.addEventListener("change", () => {
+    if (runtimeRouteLocked) {
+      routeLayerSel.value = selectedRouteLayer;
+      return;
+    }
     selectedRouteLayer = routeLayerSel.value;
     highlightedCandidateId = defaultCandidateForLayer(selectedRouteLayer)?.candidate_id || null;
     updateResearchPanel();
@@ -2647,6 +3030,12 @@
   });
 
   routeCandidatesEl.addEventListener("click", (event) => {
+    const runButton = event.target.closest(".route-run-select");
+    if (runButton) {
+      event.stopPropagation();
+      setRuntimeRouteCandidate(runButton.dataset.runtimeCandidateId);
+      return;
+    }
     const card = event.target.closest("[data-candidate-id]");
     if (!card || !candidateInspection?.valid) return;
     const candidate = candidatesForLayer().find(
@@ -2658,7 +3047,22 @@
     draw();
   });
 
+  routeCandidatesEl.addEventListener("keydown", (event) => {
+    const card = event.target.closest(".route-card");
+    if (!card || event.target.closest(".route-run-select")) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    const candidate = candidatesForLayer().find(
+      (item) => item.candidate_id === card.dataset.candidateId
+    );
+    if (!candidate) return;
+    highlightedCandidateId = candidate.candidate_id;
+    updateResearchPanel();
+    draw();
+  });
+
   routeObjectiveFiltersEl?.addEventListener("change", (event) => {
+    if (runtimeRouteLocked) return;
     const control = event.target.closest("[data-route-objective]");
     if (!control) return;
     const objective = control.dataset.routeObjective;
@@ -2783,16 +3187,23 @@
   });
 
   function updateResearchRouteSmoothingUi() {
-    const active = bundle ? routeFor(activeRevisionAt(simMs)) : null;
-    const statusKey = active?.route_id || "no_active_route";
+    const active = runtimeRouteLocked
+      ? runtimeRouteObject()
+      : bundle ? routeFor(activeRevisionAt(simMs)) : null;
+    const statusKey = `${active?.route_id || "no_active_route"}|${runtimeRouteLocked}|${runtimeRouteMotionMode}`;
     if (statusKey === lastFormalMotionStatusKey) return;
     lastFormalMotionStatusKey = statusKey;
     const formalInspection = active
-      ? inspectFormalRouteMotion(active)
+      ? runtimeRouteLocked
+        ? runtimeMotionInspection(active.runtime_candidate)
+        : inspectFormalRouteMotion(active)
       : { valid: false, reason: "no_active_route" };
     if (formalMotionStatusEl) {
       formalMotionStatusEl.textContent = formalInspection.valid
-        ? "正式曲线运动已启用 · C producer motion_samples · 船位/航向/航迹同源"
+        ? runtimeRouteLocked
+          ? `运行路线 ${objectiveLabel(active.objective)} · C motion_samples · ` +
+            `${formalInspection.record?.mode === "CURVE" ? "受约束局部三次 B 样条" : "RAW_PASSTHROUGH 降级"}`
+          : "正式曲线运动已启用 · C producer motion_samples · 船位/航向/航迹同源"
         : formalInspection.bound && formalInspection.mode === "RAW_PASSTHROUGH"
           ? `正式运动已绑定 · B 样条安全门拒绝，使用权威折线路线 · ` +
             `${formalInspection.reason}`
@@ -2825,6 +3236,7 @@
         : viewMode === "research" ? "研究验证" : "航行仿真";
     }
     document.body.dataset.mode = viewMode;
+    updateRuntimeRouteUi();
   }
 
   [[layerRisk, "risk"], [layerHard, "hard"], [layerRoutes, "routes"],
@@ -2842,7 +3254,9 @@
     initializeSidebarToggle();
     bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
     await formalMotionTools.prevalidate(bundle);
+    await formalMotionTools.prevalidateCandidateSets(bundle);
     formalRouteMotionCache = new WeakMap();
+    runtimeRoutePathCache = new Map();
     renderPipelineOverview(bundle);
     const sidecar = window.RISK_EXPLANATION_SIDECAR ?? bundle.risk_explanation ?? null;
     riskExplanationInspection = riskExplanationTools.inspect(sidecar, bundle);
@@ -2859,6 +3273,16 @@
         reason: combinedIdentityInspection.reason,
         candidates: Object.freeze([]),
       });
+    runtimeCandidateInspection = runtimeCandidateTools.inspect(
+      bundle,
+      bundle?.replay?.scenario_id || null,
+    );
+    runtimeCandidateMotionInspectionCache = new Map();
+    runtimeSelectedCandidateId = runtimeCandidateInspection.valid
+      ? runtimeCandidateInspection.initial.package.selected_candidate_id : null;
+    runtimeRouteLocked = false;
+    runtimeRouteSource = "c_selected_default";
+    runtimeRouteMotionMode = runtimeMotionModeFor(runtimeSelectedCandidate());
     activeCandidateRevision = 1;
     activeCandidatePackage = bundle.route_candidates;
     // Candidate comparison remains an explicit research view.  The default
@@ -2913,13 +3337,18 @@
           draw();
         }
       },
-      shipHeading: () => shipHeading(stateAt(simMs), routeFor(stateAt(simMs).active)),
+      shipHeading: () => {
+        const current = stateAt(simMs);
+        return shipHeading(current, runtimeRouteLocked ? runtimeRouteObject() : routeFor(current.active));
+      },
       trailAt: () => stateAt(simMs).trail,
       routeMotion: () => {
         const current = stateAt(simMs);
-        const active = routeFor(current.active);
+        const active = runtimeRouteLocked ? runtimeRouteObject() : routeFor(current.active);
         const path = routeMotionPathFor(active);
-        const linear = linearVesselPointAt(simMs);
+        const linear = runtimeRouteLocked
+          ? (runtimePointAt(runtimeSelectedCandidate(), simMs) || linearVesselPointAt(simMs))
+          : linearVesselPointAt(simMs);
         const curved = path ? routeMotionPointAt(active, simMs) : null;
         const gapKm = curved
           ? haversineKm(linear.lon, linear.lat, curved.lon, curved.lat)
@@ -2939,10 +3368,13 @@
           linear_position: linear,
           curved_position: curved,
           gap_km: Number.isFinite(gapKm) ? gapKm : null,
-          motion_source: path?.source === "cd.route-motion-set.v1"
+          motion_source: path?.source?.startsWith("cd.route-motion")
             ? "formal_route_motion"
             : "timeline_fallback",
-          formal_motion_inspection: inspectFormalRouteMotion(active),
+          formal_motion_inspection: runtimeRouteLocked
+            ? runtimeMotionInspection(active?.runtime_candidate)
+            : inspectFormalRouteMotion(active),
+          runtime_route: runtimeRouteDescriptor(),
           research_smoothing_enabled: false,
           research_smoothing_inspection: {
             valid: false,
@@ -2967,6 +3399,7 @@
           pending_status: current.pendingStatus,
           active_route: routeFor(current.active),
           candidate_count: routeCandidates().length,
+          runtime_route: runtimeRouteDescriptor(),
         };
       },
       researchPresentation: () => ({
@@ -2982,12 +3415,33 @@
         highlighted_candidate_id: highlightedCandidateId,
         visible_objectives: [...visibleCandidateObjectives],
         canonical_selected_candidate_id: activeCandidatePackage?.selected_candidate_id || null,
+        runtime_route: runtimeRouteDescriptor(),
+        runtime_candidates: runtimeCandidates(),
         candidates: candidatesForLayer(),
         metadata: Object.fromEntries(experimentMetadataRows()),
       }),
       formalRouteMotion: () => inspectFormalRouteMotion(
         routeFor(activeRevisionAt(simMs))
       ),
+      runtimeRouteSelection: () => runtimeRouteDescriptor(),
+      runtimeRouteCandidates: () => runtimeCandidates(),
+      runtimeRouteCandidateInspection: (candidateId) => {
+        const candidate = runtimeCandidateById(candidateId);
+        const inspection = runtimeMotionInspection(candidate);
+        return {
+          valid: Boolean(inspection.valid),
+          usable: Boolean(inspection.usable),
+          bound: Boolean(inspection.bound),
+        reason: inspection.reason || null,
+        mode: inspection.record?.mode || null,
+        sample_count: inspection.samples?.length || 0,
+        candidate_fields: candidate ? Object.keys(candidate) : [],
+        waypoint_count: candidate?.waypoints?.length || 0,
+        layer_set_id: runtimeCandidateInspection?.initial?.package?.layer_set_id || null,
+      };
+      },
+      setRuntimeRouteCandidate: (candidateId) => setRuntimeRouteCandidate(candidateId),
+      resetRuntimeRouteSelection: () => resetRuntimeRouteSelection(),
       identitySafety: () => ({ ...combinedIdentityInspection }),
       riskExplanation: () => ({
         valid: Boolean(riskExplanationInspection?.valid),

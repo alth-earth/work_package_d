@@ -21,6 +21,9 @@ def main(argv: list[str] | None = None) -> int:
     research_candidates = (viewer / "research_candidates.js").read_text(encoding="utf-8")
     risk_explanation = (viewer / "risk_explanation.js").read_text(encoding="utf-8")
     route_motion = (viewer / "route_motion.js").read_text(encoding="utf-8")
+    runtime_route_candidates = (viewer / "runtime_route_candidates.js").read_text(
+        encoding="utf-8"
+    )
     app = (viewer / "app.js").read_text(encoding="utf-8")
     bundle = (viewer / "bundle.json").read_bytes()
     basemap = (viewer / "gebco_basemap.png").read_bytes()
@@ -49,6 +52,9 @@ def main(argv: list[str] | None = None) -> int:
         + route_motion
         + "\n</script>\n"
         + "<script>\n"
+        + runtime_route_candidates
+        + "\n</script>\n"
+        + "<script>\n"
         + app
         + "\n</script>\n"
     )
@@ -56,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     html = html.replace('<script src="research_candidates.js"></script>\n    ', "")
     html = html.replace('<script src="risk_explanation.js"></script>\n    ', "")
     html = html.replace('<script src="route_motion.js"></script>\n    ', "")
+    html = html.replace('<script src="runtime_route_candidates.js"></script>\n    ', "")
     html = html.replace('<script src="app.js"></script>', inline)
     output = args.output or viewer / "index_self_contained.html"
     output.write_text(html, encoding="utf-8")

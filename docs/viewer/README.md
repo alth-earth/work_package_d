@@ -48,6 +48,14 @@ consumer 测试继续覆盖明确标记为 `synthetic/design_example` 的 B fixt
 Orchestrator transport 的 manifest/digest/identity 门禁不变，但当前默认包按真实缺失降级，
 不能把其他身份的工程链当作本包已可解释，更不能当作科学标定。
 
+## Replay event fixture 诊断（2026-09-02）
+
+当前默认 Winter bundle 是真实同身份的事后动态回放，包含 119 个事件和 8 组
+`REPLAN_DECIDED`/`REPLAN_ADOPTED`。D bundle 测试在动态包中要求这两类事件；如果读取的是
+不含 causal/dynamic replay event 的历史 fixture，测试才会以明确原因 `skip`，不伪造事件，
+也不把 skip 当作运行时失败。strict causal replay 仍保持 fail-closed，不能用该历史 fixture
+冒充实时因果证据。
+
 ## 双航线正式 Viewer 包并存（2026-09-02 01:35 +08:00）
 
 `viewer/` 目录目前装载 B 航线（Tromsø→Isfjorden）Winter 制品；A 航线
