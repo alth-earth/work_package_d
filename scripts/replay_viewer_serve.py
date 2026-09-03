@@ -75,12 +75,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         root = self.server.root.resolve()
         relative = parsed.path.lstrip("/")
-        candidate = (root / relative).resolve()
-        if not str(candidate).startswith(str(root)):
+        packages_root = getattr(self.server, "packages_root", None)
+        allow_index_fallback = True
+        if packages_root is not None and (
+            relative == "packages" or relative.startswith("packages/")
+        ):
+            # Read-only mount: packages/<pkg>/... -> <packages-dir>/<pkg>/...
+            inner = relative[len("packages/"):] if relative.startswith("packages/") else ""
+            base = packages_root.resolve()
+            candidate = (base / inner).resolve()
+            allow_index_fallback = False
+        else:
+            base = root
+            candidate = (root / relative).resolve()
+        if not candidate.is_relative_to(base):
             self._json(404, {"error": "not found"})
             return
         if not candidate.is_file():
-            if relative in ("", "/") or candidate.name == "":
+            if allow_index_fallback and (relative in ("", "/") or candidate.name == ""):
                 candidate = root / "index.html"
             else:
                 self._json(404, {"error": "not found"})
@@ -111,10 +123,20 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path(__file__).resolve().parent.parent / "viewer",
     )
+    parser.add_argument(
+        "--packages-dir",
+        type=Path,
+        default=None,
+        help="optional finished-viewer-package directory (work_package_d/output) "
+        "served read-only under the packages/<pkg>/ prefix",
+    )
     args = parser.parse_args(argv)
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.root = args.root.resolve()
+    server.packages_root = (
+        args.packages_dir.resolve() if args.packages_dir is not None else None
+    )
     server.bundle = None
     bundle_path = args.root / "bundle.json"
     if bundle_path.exists():
@@ -126,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
         f"http://{args.host}:{args.port}",
         "bundle=",
         "on" if server.bundle else "off",
+        "packages=",
+        str(server.packages_root) if server.packages_root else "off",
         flush=True,
     )
     with contextlib.suppress(KeyboardInterrupt):

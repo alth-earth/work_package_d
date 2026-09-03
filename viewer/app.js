@@ -3463,7 +3463,30 @@
   async function start() {
     initializePanelControls();
     initializeSidebarToggle();
-    bundle = window.VIEWER_BUNDLE || (await (await fetch("bundle.json")).json());
+    // Package picker hook: honor ?package=<pkg> from the top-bar artifact
+    // selector.  Preflight the requested bundle and fall back to the current
+    // default on any validation failure (fail-closed, no half state).
+    const packageOverridePath =
+      window.__VIEWER_PACKAGE_PICKER_INIT__?.resolveRequestedPath?.() ?? null;
+    bundle = window.VIEWER_BUNDLE || (packageOverridePath
+      ? await (async () => {
+          try {
+            const requested = await (await fetch(packageOverridePath)).json();
+            await formalMotionTools.prevalidate(requested);
+            await formalMotionTools.prevalidateCandidateSets(requested);
+            return requested;
+          } catch (error) {
+            console.warn("[package-picker] 制品预检失败，回退默认制品", error);
+            try {
+              window.sessionStorage.setItem(
+                "viewer.package.error",
+                `制品 ${packageOverridePath} 校验未通过，已回退当前默认制品（${String((error && error.message) || error)}）`
+              );
+            } catch (_) { /* noop */ }
+            return await (await fetch("bundle.json")).json();
+          }
+        })()
+      : (await (await fetch("bundle.json")).json()));
     await formalMotionTools.prevalidate(bundle);
     await formalMotionTools.prevalidateCandidateSets(bundle);
     formalRouteMotionCache = new WeakMap();

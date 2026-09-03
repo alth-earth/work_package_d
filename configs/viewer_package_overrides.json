@@ -1,0 +1,18 @@
+{
+  "schema_version": "d.viewer-package-overrides.v1",
+  "note": "手工覆盖 build_viewer_package_index.py 生成的制品清单。每个键为 output/ 下的制品包目录名（'viewer-root' 表示当前默认 viewer/bundle.json）。display_name 缺省回退自动生成；order 越小越靠前（默认按窗口起始时间倒序）；hidden=true 不出现在下拉。",
+  "packages": {
+    "winter-rebuilt-20260215-viewer-package-v1": {
+      "display_name": "Tromsø→Isfjorden 冬季重建（可解释）",
+      "order": 1,
+      "hidden": false,
+      "note": "2026-02-15 窗口合规重建（total current + risk-explanation.v1，145 帧风险窗口覆盖至 02-21），替代旧 detided 制品"
+    },
+    "formal-viewer-legacy-raw-backup-20260831": {
+      "display_name": "Legacy Raw 备份（2026-08-31，raw）",
+      "order": 900,
+      "hidden": false,
+      "note": "旧 raw viewer 备份，无 combined_presentation 身份；仅审计/回滚用"
+    }
+  }
+}

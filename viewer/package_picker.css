@@ -1,0 +1,358 @@
+/* Package picker: artifact selector, context menu and properties modal.
+   Visual language mirrors style.css (dark chart-console, cyan accents). */
+
+/* ---- trigger in the top bar ---- */
+.pkg-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  /* The topbar applies `backdrop-filter` which creates a stacking context,
+     so without an isolated stacking context of our own the dropdown and
+     property modal are painted under sibling panels (.panel z-index: 2/4/5).
+     isolation + z-index lift this picker above those siblings. */
+  isolation: isolate;
+  z-index: 60;
+}
+
+/* Topbar is the natural chrome rail and must paint above sibling panels
+   (.panel z-index: 2/4/5). Without an explicit z-index on topbar itself the
+   backdrop-filter stacking context leaves the picker dropdown visually buried
+   beneath the side panels even though the dropdown has z-index: 120. */
+.topbar {
+  position: relative;
+  z-index: 60;
+}
+
+.pkg-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 340px;
+  min-width: 0;
+  padding: 6px 10px 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(22, 47, 66, 0.55), rgba(10, 28, 42, 0.55));
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.pkg-trigger:hover,
+.pkg-trigger:focus-visible {
+  border-color: var(--line-strong);
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(91, 213, 243, 0.28), 0 8px 22px rgba(0, 0, 0, 0.22);
+}
+
+.pkg-trigger-label {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  text-align: left;
+}
+.pkg-trigger-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.pkg-trigger-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.pkg-chevron {
+  flex: 0 0 auto;
+  color: var(--accent);
+  transition: transform 0.16s ease;
+}
+.pkg-picker[aria-expanded="true"] .pkg-chevron {
+  transform: rotate(180deg);
+}
+.pkg-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(91, 213, 243, 0.65);
+}
+.pkg-dot.is-muted {
+  background: var(--muted);
+  box-shadow: none;
+}
+
+/* ---- dropdown panel ---- */
+.pkg-menu,
+.pkg-dropdown {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 340px;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(9, 24, 36, 0.97);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(14px);
+  list-style: none;
+  margin: 0;
+  transform-origin: top right;
+  animation: pkg-pop 0.14s ease-out;
+  z-index: 120;
+}
+@keyframes pkg-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.pkg-option {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 8px 12px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+.pkg-option:hover,
+.pkg-option:focus-visible {
+  background: rgba(91, 213, 243, 0.08);
+  outline: none;
+}
+.pkg-option.is-current {
+  border-left-color: var(--accent);
+}
+.pkg-option.is-disabled,
+.pkg-option[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.pkg-option-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.pkg-option-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+}
+.pkg-option.is-current .pkg-option-title {
+  color: var(--accent);
+}
+.pkg-option-empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---- context menu ---- */
+.pkg-menu {
+  position: fixed;
+  min-width: 200px;
+}
+.pkg-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.pkg-menu-item:hover,
+.pkg-menu-item:focus-visible {
+  background: rgba(91, 213, 243, 0.1);
+  outline: none;
+  color: var(--accent);
+}
+.pkg-menu-sep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--line);
+}
+
+/* ---- toast / error strip ---- */
+.pkg-error {
+  position: fixed;
+  z-index: 80;
+  top: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  border-radius: 8px;
+  background: rgba(60, 18, 24, 0.94);
+  color: #fecaca;
+  font-size: 12px;
+  box-shadow: var(--shadow-lg);
+  animation: pkg-pop 0.16s ease-out;
+}
+.pkg-error button {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  border-radius: 5px;
+  background: transparent;
+  color: #fecaca;
+  font: inherit;
+  cursor: pointer;
+}
+.pkg-error button:hover {
+  background: rgba(248, 113, 113, 0.18);
+}
+
+/* ---- properties modal ---- */
+.pkg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 10, 16, 0.62);
+  backdrop-filter: blur(3px);
+  animation: pkg-fade 0.14s ease-out;
+}
+@keyframes pkg-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.pkg-modal {
+  width: min(560px, calc(100vw - 40px));
+  max-height: min(640px, calc(100vh - 64px));
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(15, 33, 48, 0.99), rgba(8, 20, 30, 0.99));
+  box-shadow: var(--shadow-lg);
+  animation: pkg-rise 0.15s ease-out;
+}
+@keyframes pkg-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pkg-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.pkg-modal-head strong {
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+.pkg-modal-head .pkg-tag {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  border: 1px solid var(--line-strong);
+  color: var(--accent);
+}
+.pkg-close {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pkg-close:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.pkg-modal-body {
+  padding: 8px 16px 16px;
+}
+.pkg-block {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pkg-block:last-child {
+  border-bottom: 0;
+}
+.pkg-block-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 8px;
+}
+.pkg-kv {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+}
+.pkg-kv dt {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.pkg-kv dd {
+  margin: 0;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+.pkg-mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+.pkg-copy {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10.5px;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.pkg-copy:hover {
+  color: var(--accent);
+  border-color: var(--accent-deep);
+}
+.pkg-flag-yes { color: var(--track); }
+.pkg-flag-no { color: var(--muted); }
+.pkg-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--pending);
+  line-height: 1.5;
+}
