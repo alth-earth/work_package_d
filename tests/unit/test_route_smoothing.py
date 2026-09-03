@@ -194,7 +194,12 @@ def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
     assert "drawPath(s.trail" in app
     assert 'drawPath(s.track, "#5cc47a", 3, [], null, 1)' in app
     assert 'drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94)' in app
-    assert "if (formalActive && candidate.candidate_id === canonicalId) continue;" in app
+    # The formal motion path remains the vessel/authoritative route source, but
+    # all three candidate objectives are now painted by the independent D
+    # presentation layer, including the canonical candidate.
+    assert "if (formalActive && candidate.candidate_id === canonicalId) continue;" not in app
+    assert "drawCandidateVisualPath" in app
+    assert "candidate_visual_smoothing_enabled" in app
     assert "shipHeading(s, active)" in app
     assert "vesselPointAt(ms)" in app
 

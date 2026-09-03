@@ -55,6 +55,8 @@
   const layerRisk = document.getElementById("layer-risk");
   const layerHard = document.getElementById("layer-hard");
   const layerRoutes = document.getElementById("layer-routes");
+  const layerCandidateSmoothing = document.getElementById("layer-candidate-smoothing");
+  const layerCandidatePolyline = document.getElementById("layer-candidate-polyline");
   const layerRoutePolyline = document.getElementById("layer-route-polyline");
   const formalMotionStatusEl = document.getElementById("formal-motion-status");
   const layerTrack = document.getElementById("layer-track");
@@ -151,6 +153,8 @@
     risk: true,
     hard: true,
     routes: true,
+    candidateSmoothing: true,
+    candidatePolyline: false,
     routePolyline: false,
     track: true,
     navigation: true,
@@ -194,6 +198,8 @@
   if (!formalMotionTools) throw new Error("formal route motion reader is not loaded");
   const runtimeCandidateTools = window.ArcticRuntimeRouteCandidates;
   if (!runtimeCandidateTools) throw new Error("runtime route candidate reader is not loaded");
+  const visualSmoothingTools = window.ArcticRouteVisualSmoothing;
+  if (!visualSmoothingTools) throw new Error("route visual smoothing renderer is not loaded");
   const { ROUTE_LAYERS } = candidateTools;
   const CANDIDATE_STYLES = {
     fastest: { color: "#ff8a3d", dash: [9, 5], width: 2.4 },
@@ -868,6 +874,34 @@
 
   function candidateGeometryPoints(candidate) {
     return (candidate?.geometry?.coordinates || []).map(([lon, lat]) => ({ lon, lat }));
+  }
+
+  function candidateVisualPath(candidate) {
+    const rect = canvasDisplayRect();
+    const renderedScale = rect?.width > 0 && canvas.width > 0
+      ? rect.width / canvas.width * mapZoom
+      : mapZoom;
+    const unitsPerCssPixel = renderedScale > 0 ? 1 / renderedScale : 1;
+    const projected = candidateGeometryPoints(candidate).map((point) => project(point.lon, point.lat));
+    return visualSmoothingTools.buildRoundedPath(projected, {unitsPerCssPixel});
+  }
+
+  function candidateVisualDiagnostics() {
+    return candidatesForLayer().map((candidate) => {
+      const path = candidateVisualPath(candidate);
+      return {
+        candidate_id: candidate.candidate_id,
+        objective: candidate.objective,
+        applied: Boolean(path.applied),
+        fallback_reason: path.fallback_reason,
+        source_point_count: path.source_point_count,
+        display_point_count: path.display_point_count,
+        rounded_corner_count: path.rounded_corner_count,
+        skipped_corner_count: path.skipped_corner_count,
+        collapsed_duplicate_count: path.collapsed_duplicate_count,
+        presentation_only: true,
+      };
+    });
   }
 
   function runtimeCandidates() {
@@ -2771,38 +2805,72 @@
     drawPath(points, ROUTE_POLYLINE_COLOR, width, dash, filterFutureMs, alpha);
   }
 
+  function drawCandidateVisualPath(candidate, color, width, dash, alpha) {
+    const path = candidateVisualPath(candidate);
+    if (!visualSmoothingTools.trace(ctx, path)) {
+      drawPath(candidateGeometryPoints(candidate), color, width, dash, null, alpha);
+      return path;
+    }
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.setLineDash(dash);
+    ctx.stroke();
+    ctx.restore();
+    return path;
+  }
+
+  function candidateOverlayReplacesRoute(route) {
+    if (viewMode !== "research" || !layers.routes || !layers.candidateSmoothing ||
+        !candidateInspection?.valid || !route?.route_id) return false;
+    const replacement = candidatesForLayer().find((candidate) =>
+      candidate.candidate_id === route.route_id &&
+      visibleCandidateObjectives.has(candidate.objective)
+    );
+    if (!replacement) return false;
+    // An eligible curve or its local raw fallback both replace the duplicate
+    // full-route stroke. Invalid paths with no drawable commands leave the
+    // formal route visible instead of blanking it.
+    return candidateVisualPath(replacement).commands.length >= 2;
+  }
+
   function drawResearchCandidateRoutes() {
     if (viewMode !== "research" || !layers.routes || !candidateInspection?.valid) return;
     const highlight = highlightedCandidate();
-    const active = routeFor(activeRevisionAt(simMs));
-    const formalActive = Boolean(buildFormalRouteMotionPath(active));
-    const canonicalId = activeCandidatePackage?.selected_candidate_id;
-    const runtimeId = runtimeRouteLocked ? runtimeSelectedCandidateId : null;
-    for (const candidate of candidatesForLayer()) {
-      // The canonical candidate is represented by the formal producer motion
-      // path whenever one is bound.  Keep the other candidates available for
-      // the explicit research comparison view, but never smooth them locally.
-      if (formalActive && candidate.candidate_id === canonicalId) continue;
-      if (candidate.candidate_id === runtimeId) continue;
-      if (!visibleCandidateObjectives.has(candidate.objective)) continue;
-      const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
-      const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
-      const geometry = candidateGeometryPoints(candidate);
-      drawRoutePolyline(
-        geometry,
-        Math.max(1.1, style.width * 0.58),
-        style.dash,
-        null,
-        isHighlighted ? 0.78 : 0.32,
-      );
-      drawPath(
-        geometry,
-        style.color,
-        style.width + (isHighlighted ? 1.8 : 0),
-        style.dash,
-        null,
-        isHighlighted ? 0.96 : 0.48,
-      );
+    const visibleCandidates = candidatesForLayer().filter((candidate) =>
+      visibleCandidateObjectives.has(candidate.objective)
+    );
+    if (layers.candidateSmoothing) {
+      for (const candidate of visibleCandidates) {
+        const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
+        const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
+        drawCandidateVisualPath(
+          candidate,
+          style.color,
+          style.width + (isHighlighted ? 1.8 : 0),
+          style.dash,
+          isHighlighted ? 0.96 : 0.48,
+        );
+      }
+    }
+    if (layers.candidatePolyline) {
+      // The comparison geometry is intentionally painted last so the thin raw
+      // line remains inspectable on straight spans shared with the rounded path.
+      for (const candidate of visibleCandidates) {
+        const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
+        const geometry = candidateGeometryPoints(candidate);
+        drawPath(
+          geometry,
+          "rgba(245, 248, 251, 0.72)",
+          isHighlighted ? 1.35 : 0.9,
+          [4, 5],
+          null,
+          isHighlighted ? 0.72 : 0.42,
+        );
+      }
     }
   }
 
@@ -2919,17 +2987,12 @@
       drawPath(s.trail, "#d7e6ed", 2.2, [], null, presentationMode ? 0.72 : 0.45);
     }
 
-    // Candidate geometry is consumed exactly as published.  Only the bound
-    // formal motion set may provide curve samples; candidates remain raw
-    // comparison geometry and never enter the production motion path.
-    drawResearchCandidateRoutes();
-
     if (layers.routes && s.supersededRoute && s.supersededRoute.length > 1) {
       drawRoutePolyline(s.supersededRoute, 1.2, [3, 8], simMs, 0.7);
       drawPath(s.supersededRoute, "rgba(125,137,146,0.88)", 2, [3, 8], simMs, 1);
     }
 
-    if (layers.routes && active) {
+    if (layers.routes && active && !candidateOverlayReplacesRoute(active)) {
       const future = active.waypoints.filter(
         (waypoint) => isoToMs(waypoint.eta) - startMs >= simMs
       );
@@ -2967,6 +3030,11 @@
         );
       }
     }
+
+    // Candidate comparison is a presentation-only screen-space overlay. It is
+    // painted after full route strokes so its adaptive corners remain visible,
+    // but it never supplies vessel position, ETA, risk, or route authority.
+    drawResearchCandidateRoutes();
 
     if (layers.track && s.track.length > 1) {
       // stateAt() supplies completed samples from the same formal motion
@@ -3451,6 +3519,8 @@
   }
 
   [[layerRisk, "risk"], [layerHard, "hard"], [layerRoutes, "routes"],
+    [layerCandidateSmoothing, "candidateSmoothing"],
+    [layerCandidatePolyline, "candidatePolyline"],
     [layerRoutePolyline, "routePolyline"], [layerTrack, "track"],
     [layerNavigation, "navigation"]]
     .forEach(([control, key]) => {
@@ -3645,6 +3715,15 @@
           valid: false,
           reason: "production_research_path_removed",
         },
+        candidate_visual_smoothing_enabled: layers.candidateSmoothing,
+        candidate_raw_polyline_visible: layers.candidatePolyline,
+        candidate_visual_smoothing: {
+          schema_version: visualSmoothingTools.SCHEMA_VERSION,
+          policy: visualSmoothingTools.POLICY,
+          presentation_only: true,
+          authoritative_semantics_unchanged: true,
+          routes: candidateVisualDiagnostics(),
+        },
         selected_layer: selectedRouteLayer,
         highlighted_candidate_id: highlightedCandidateId,
         visible_objectives: [...visibleCandidateObjectives],
@@ -3757,6 +3836,18 @@
         updateResearchPanel();
         draw();
         return true;
+      },
+      setCandidateVisualSmoothing: (enabled) => {
+        layers.candidateSmoothing = Boolean(enabled);
+        if (layerCandidateSmoothing) layerCandidateSmoothing.checked = layers.candidateSmoothing;
+        draw();
+        return layers.candidateSmoothing;
+      },
+      setCandidateRawPolylineVisible: (visible) => {
+        layers.candidatePolyline = Boolean(visible);
+        if (layerCandidatePolyline) layerCandidatePolyline.checked = layers.candidatePolyline;
+        draw();
+        return layers.candidatePolyline;
       },
       routeEvolution: () => (bundle.events || [])
         .filter((event) => ["REPLAN_DECIDED", "REPLAN_ADOPTED"].includes(event.type))

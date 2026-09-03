@@ -1241,6 +1241,11 @@ body:not([data-mode="engineering"]) .engineering-only {
   background: var(--route-recommended);
 }
 
+.sw-candidate-polyline {
+  background: repeating-linear-gradient(90deg, #f5f8fb 0 4px, transparent 4px 9px);
+  opacity: 0.72;
+}
+
 .sw-pending {
   background: var(--pending);
 }

@@ -182,12 +182,14 @@ package 时，Viewer 默认进入 `Research Validation`。该模式显示：
 - artifact 原样提供的 route ID、distance、travel hours、arrival ETA、average/max/
   integrated risk；
 - source run、scenario、RiskFrame schema、grid、frame count、candidate set identity；
-- candidate geometry 地图对比与 display-only highlight。
+- candidate geometry 地图对比与 display-only highlight；三条候选线均可使用 D 的
+  screen-space 自适应二次 Bezier 展示层，默认开启视觉平滑，原始候选折线对照默认关闭。
 
-Research View 不修改 `selected_candidate_id`。若 sidecar 缺失、`NOT_PUBLISHED`、不满
-4×3、scenario 不匹配、geometry/metrics 不完整或出现 hard violation，Research 选项禁用，
-Viewer 明确回退为既有 authoritative 单路线。`DATA_UNAVAILABLE` 仍由独立 hard overlay
-显示，不参与 route metric 推断。
+Research View 不修改 `selected_candidate_id`。若 candidate package 缺失、`NOT_PUBLISHED`、
+不满 4×3、scenario 不匹配、geometry/metrics 不完整或出现 hard violation，Research 选项
+禁用，Viewer 明确回退为既有 authoritative 单路线；历史 smoothing sidecar 缺失本身不再
+是当前候选展示的启用条件。`DATA_UNAVAILABLE` 仍由独立 hard overlay 显示，不参与 route
+metric 推断。
 
 研究验证分支的 `Navigation aids` 图层默认开启：经纬网格、坐标标签、按地图
 中心纬度估算的比例尺，以及 north-up EPSG:4326 的 grid-north 指示。全部复用
@@ -195,18 +197,26 @@ Viewer 明确回退为既有 authoritative 单路线。`DATA_UNAVAILABLE` 仍由
 
 Presentation Mode 仍逐 cell 消费 formal presentation bundle，但使用像素对齐
 和较柔和 alpha，避免相邻透明 cell 的抗锯齿接缝；没有空间插值。Engineering
-Debug 显示原始 cell 边界。路线绘制优先使用 C 发布且身份校验通过的
+Debug 显示原始 cell 边界。正式路线绘制优先使用 C 发布且身份校验通过的
 `cd.route-motion-set.v1` `motion_samples`，失效时回退 authoritative waypoint/timeline；
-D 不在生产路径本地重算 cubic B-spline，也不放大正式平滑幅度。Viewer 仿真船位、航向、
-近期轨迹和 completed-track 使用同一正式 motion，原始 waypoint ETA 作为时间锚点；路线
-authority、route metrics、ETA、active/pending/adopted 事件和 C→D 合同不变。图层控件默认
-显示蓝色正式曲线路径，并默认隐藏白色原始折线路径；后者可按需打开作对照。
+D 不在生产 formal-motion 路径本地重算 cubic B-spline，也不放大正式平滑幅度。Viewer
+仿真船位、航向、近期轨迹和 completed-track 使用同一正式 motion，原始 waypoint ETA 作为
+时间锚点；路线 authority、route metrics、ETA、active/pending/adopted 事件和 C→D 合同不变。
 
-Replay Viewer 和旧版 `web/demo_viewer.html` 都只改变路线线条的 paint geometry；Replay
-Viewer 额外让仿真船沿该展示曲线移动，但不把曲线写回 route artifact，也不改变原始
-waypoints、route metrics、ETA 或 active/pending/adopted 语义。该效果不构成船舶操纵性、
-安全走廊或生产资格证明。旧版 viewer 因为必须单文件离线运行，在内联脚本中保留了同一
-局部 cubic path 的紧凑实现。
+Research View 的 `fastest`、`low_risk`、`recommended` 候选路线另由
+`viewer/route_visual_smoothing.js` 在已投影 Canvas 坐标上绘制屏幕空间自适应二次 Bezier
+圆角。目标切角为 `20 CSS px`，每侧最多占相邻线段 `40%`；小于 `0.5 CSS px` 的连续
+重复点合并，小于 `3°` 的近共线转角跳过，端点保留，且按 Canvas CSS 缩放与 `mapZoom`
+换算。该层只改变候选路线的 paint geometry，不驱动船位、船头、轨迹、ETA、风险、排序、
+选中候选或正式 `routeMotion()`。候选视觉平滑图层默认开启，候选原始折线图层默认关闭；
+无效/短路线或无可平滑转角时局部回退原始候选线并保留诊断。
+
+正式路线与 Research candidate overlay 的图层、语义和控制彼此独立。旧的
+`route_smoothing.js`、历史局部 cubic/B-spline 实现及 C 的
+`c.research-route-smoothing-sidecar.v1` 不进入当前默认加载路径；不把历史 sidecar 当作
+formal motion 或候选视觉层的 fallback。旧版 `web/demo_viewer.html` 的 standalone 绘制仍是
+历史兼容路径，不代表当前 Replay Viewer；当前 `embed.py` 自包含 Viewer 内联正式
+`route_motion.js` 与 `route_visual_smoothing.js`。
 
 无 server 单文件方式：
 
@@ -230,8 +240,9 @@ curve/motion digest、ETA 单调性与 adoption 起终点。验证使用独立�
 producer course/speed、近期 trail 和 completed-track。
 
 缺失、陈旧、顺序/身份不符、digest 篡改、非单调 ETA 或 `RAW_PASSTHROUGH` 时，整条活动
-路线稳定回退原始 waypoint/timeline；界面显示具体原因。生产路径不调用 D 本地 cubic
-smoother，也不会重算 ETA、风险、hard mask、corridor 或运动学。这里的“正式”只表示工程
+路线稳定回退原始 waypoint/timeline；界面显示具体原因。生产 formal-motion 路径不调用 D
+本地 cubic smoother，也不会重算 ETA、风险、hard mask、corridor 或运动学；Research View
+的候选视觉层是独立的 paint-only overlay，不是正式 motion fallback。这里的“正式”只表示工程
 仿真 C→D 合同通过；profile 仍为 `FORMULA_DERIVED_ENGINEERING_REFERENCE`、
 `real_vessel_calibrated=false`，不表示实船校准、导航认证或 UKC。
 
@@ -244,9 +255,10 @@ browser-regression` 覆盖 344px 与 528px。
 
 ## 受约束研究曲线运动（2026-08-31，历史兼容）
 
-没有有效正式 motion 时，生产视图直接回退 raw timeline；D 本地 display-only 曲线和
-研究 sidecar 都不再接管生产路径。研究 reader 只为历史 bundle 的离线兼容和独立测试保留，
-默认 Viewer 不加载，也不提供“启用研究曲线运动”运行开关。
+没有有效正式 motion 时，生产视图直接回退 raw timeline；D 的候选视觉平滑层不会接管生产
+路线或船舶运动。C research sidecar reader 只为历史 bundle 的离线兼容和独立测试保留，
+默认 Viewer 不加载，也不提供“启用研究曲线运动”运行开关。当前 Research View 的候选
+screen-space 视觉层是单独的展示开关，不是研究曲线运动能力。
 
 sidecar 缺失、身份不匹配、状态不是 `ACCEPTED` 或样本非法时，历史 reader 回退既有
 timeline，不把 display-only 曲线当作研究曲线后备。该 sidecar 当前是 C 的
@@ -262,7 +274,8 @@ cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
   ...
 ```
 
-默认单文件离线 Viewer 只内联正式 `route_motion.js`；历史 sidecar 不进入默认内联路径。
+默认单文件离线 Viewer 内联正式 `route_motion.js` 和 Research candidate 的
+`route_visual_smoothing.js`；历史 `route_smoothing.js`/sidecar 不进入默认内联路径。
 
 ## 业务原则（不可破坏）
 
@@ -270,6 +283,7 @@ cd ${ARCTIC_ROUTE_ROOT}/arctic_route_orchestrator
 船必须动
 Simulation Clock -> vessel motion
 ship position = formal producer motion when identity-validated -> otherwise raw timeline;
+candidate visual smoothing = Research View paint-only overlay, never vessel motion or route authority;
 research sidecar is historical compatibility only and never production fallback
 snapshot cadence != render cadence
 REPLAN_DECIDED != REPLAN_ADOPTED
@@ -299,6 +313,7 @@ viewer/index.html         页面结构
 viewer/research_candidates.js  route candidate strict validation（browser + Node）
 viewer/risk_explanation.js  optional risk explanation strict validation（browser + Node）
 viewer/research_route_motion.js  C research smoothing sidecar strict reader（browser + Node）
+viewer/route_visual_smoothing.js  Research candidate screen-space visual smoothing（browser）
 viewer/app.js             渲染 + timeline（只读 bundle）
 viewer/style.css          样式
 viewer/embed.py           单文件内嵌（bundle + basemap）

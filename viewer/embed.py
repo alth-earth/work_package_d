@@ -24,6 +24,9 @@ def main(argv: list[str] | None = None) -> int:
     runtime_route_candidates = (viewer / "runtime_route_candidates.js").read_text(
         encoding="utf-8"
     )
+    route_visual_smoothing = (viewer / "route_visual_smoothing.js").read_text(
+        encoding="utf-8"
+    )
     app = (viewer / "app.js").read_text(encoding="utf-8")
     bundle = (viewer / "bundle.json").read_bytes()
     basemap = (viewer / "gebco_basemap.png").read_bytes()
@@ -55,6 +58,9 @@ def main(argv: list[str] | None = None) -> int:
         + runtime_route_candidates
         + "\n</script>\n"
         + "<script>\n"
+        + route_visual_smoothing
+        + "\n</script>\n"
+        + "<script>\n"
         + app
         + "\n</script>\n"
     )
@@ -63,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     html = html.replace('<script src="risk_explanation.js"></script>\n    ', "")
     html = html.replace('<script src="route_motion.js"></script>\n    ', "")
     html = html.replace('<script src="runtime_route_candidates.js"></script>\n    ', "")
+    html = html.replace('<script src="route_visual_smoothing.js"></script>\n    ', "")
     html = html.replace('<script src="app.js"></script>', inline)
     output = args.output or viewer / "index_self_contained.html"
     output.write_text(html, encoding="utf-8")

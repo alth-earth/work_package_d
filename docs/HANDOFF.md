@@ -46,8 +46,12 @@ D 0.1.0 的 Legacy Display 只读消费 C 顶层
 Replay bundle 可在顶层携带 `cd.route-motion-set.v1`。D 对完整 canonical identity、四层
 records、plan/full-waypoint digest、ETA 和 adoption 做严格校验；有效 artifact 默认同源驱动
 路线、船位、航向、速度、trail 和 completed-track，失败整体回退 raw waypoint/timeline。
-生产模式不再本地重算曲线；research sidecar 仍需研究视图显式启用。本路径只声明公式散货船
-工程仿真，不声明实船校准、导航级 corridor 或 UKC。
+生产 formal-motion 路径不本地重算曲线；Research View 的候选比较另由 D 的
+`route_visual_smoothing.js` 提供纯前端 screen-space 自适应二次 Bezier paint layer。该层
+只覆盖 `fastest`、`low_risk`、`recommended` 三目标，默认开启，候选原始折线默认关闭，且
+不驱动船位/航向/轨迹/ETA/风险/路线 authority。历史 `route_smoothing.js` 与 research
+sidecar 不进入当前默认加载路径。本路径只声明公式散货船工程仿真，不声明实船校准、导航级
+corridor 或 UKC。
 
 ## Viewer Product Mainline（2026-08-20 21:13 +08:00）
 
@@ -71,15 +75,21 @@ records、plan/full-waypoint digest、ETA 和 adoption 做严格校验；有效 
   Completed Track 可分别开关。
 - 10:30 +6h 的实际 frame 是 16:00（+5h30m，floor）；10:30 +12h/+24h
   因 requested valid time 超出 22:00 frame 范围而 UNAVAILABLE，不复用旧 frame。
-- Presentation polish（2026-08-21，路线平滑补充 2026-08-31 00:56）：风险填充使用
-  presentation-only 的 pixel-aligned exact cells，Debug 保留 cell grid；计划路线使用
-  可见的 display-only 局部受约束 cubic B-spline，失败回退到 collinear densification；
-  蓝色曲线默认显示，白色原始折线可选且默认隐藏；Viewer 仿真船位、航向、近期轨迹和
-  completed-track 绘制跟随曲线，原始 waypoint ETA 仍是时间锚点。
+- Presentation polish（2026-08-21；当前候选展示补充 2026-09-03）：风险填充使用
+  presentation-only 的 pixel-aligned exact cells，Debug 保留 cell grid；正式活动路线继续
+  使用经过身份校验的 C `motion_samples`，Research View 的四层候选比较使用
+  `route_visual_smoothing.js` 的屏幕空间自适应二次 Bezier paint layer，覆盖每层
+  `fastest`/`low_risk`/`recommended` 三目标。该展示层默认开启，候选原始折线对照默认隐藏；
+  无效或无可平滑转角时按候选局部回退原线并保留诊断。
+- 候选 overlay 只改变 Canvas paint geometry；Viewer 仿真船位、航向、近期轨迹和
+  completed-track 仍跟随正式 motion samples，原始 waypoint ETA 仍是时间锚点。候选
+  平滑不改变 route geometry、route metrics、ETA、风险、selected candidate、active/
+  pending/adopted 或 C→D 合同。
 - Bundle 的 `presentation.viewer-presentation.v1` 由 Orchestrator 声明绘制
   边界：risk/hard 不插值，route display smoothing 不改变 authoritative semantics，
-  Viewer ship position/heading 由曲线和原始 ETA 时间锚点驱动并在异常时回退 timeline；
-  曲线不提供安全或操纵性资格。
+  formal Viewer ship position/heading 由 C motion 和原始 ETA 时间锚点驱动并在异常时回退
+  timeline；Research candidate paint layer 不参与 vessel motion。两类曲线均不提供安全或
+  操纵性资格。
 
 真实 Firefox E2E：页面/GEBCO/路线/船/risk overlay 均可见；Play/Pause、scrub、
 1x/2x/4x/8x 已操作；10:00/10:30/11:00 船位为

@@ -173,6 +173,7 @@ data or calculate navigation decisions.
 
 The viewer lives in `viewer/`:
 - `index.html` / `style.css` / `app.js` — browser application
+- `route_visual_smoothing.js` — Research View candidate paint-only smoothing
 - `embed.py` — self-contained HTML builder
 - `pngcodec.py` — pure-Python PNG codec (no numpy dependency)
 - `render_proof.py` — offline proof image renderer
@@ -199,15 +200,21 @@ The current D mainline is the browser-verified C-published
   `REPLAN_DECIDED` leaves the active route unchanged until `REPLAN_ADOPTED`;
 - Presentation Mode and Engineering Debug Mode are separated by the toggle.
 - Presentation layers can be toggled independently: Risk, Hard/Availability,
-  Routes, original route polyline, and Completed Track. The original route
-  polyline is off by default; the blue formal producer motion route is the
-  primary route layer. Presentation Mode starts with engineering text hidden;
-  Debug Mode exposes the full timing and adoption diagnostics.
-- The formal motion samples are the single geometry source for the route,
-  vessel position, heading, speed, trail, and completed track. D does not run
-  a local display smoother. Missing, stale, tampered, or identity-inconsistent
-  formal motion falls back to the authoritative raw waypoint/timeline and
-  displays the concrete reason.
+  Routes, Research candidate visual smoothing/raw candidate polyline, the
+  Engineering Debug authoritative route polyline, and Completed Track. In
+  Research View, candidate visual smoothing is on by default and the original
+  candidate polyline is off by default; the blue formal producer motion route
+  remains the primary operational route layer. Presentation Mode starts with
+  engineering text hidden; Debug Mode exposes the full timing and adoption
+  diagnostics.
+- The formal motion samples remain the geometry source for the active route,
+  vessel position, heading, speed, trail, and completed track. D does not run a
+  local smoother over that formal motion path. Missing, stale, tampered, or
+  identity-inconsistent formal motion falls back to the authoritative raw
+  waypoint/timeline and displays the concrete reason. Separately, Research View
+  draws the `fastest`, `low_risk`, and `recommended` candidate geometries with
+  the D-owned screen-space visual layer described below; that overlay never
+  supplies vessel motion or route authority.
 - “当前路段”是独立的 operational overlay，不受原始折线图层开关影响；有正式
   `motion_samples` 时按当前 segment 的 ETA 窗口截取曲线，否则回退当前 raw segment。
 - 低辨识度的局部曲线放大面板不再占用常规图层区；最小曲率半径和相对权威航点的最大
@@ -227,8 +234,10 @@ clean. Browser layout regression passes at 344px and 528px.
 - Presentation Mode uses softer exact-cell risk rendering and pixel-aligned
   fills; Engineering Debug retains the raw cell grid and diagnostics.
 - Historical route drawing applied display-side constrained local cubic B-spline
-  geometry with linear densification as its fail-closed fallback. Those scripts
-  remain for compatibility tests but are not loaded by the default Viewer.
+  geometry with linear densification as its fail-closed fallback. The old
+  `route_smoothing.js` path remains only in historical compatibility context and
+  is not loaded by the default Viewer; current `route_visual_smoothing.js` is
+  loaded only for the Research candidate paint overlay described below.
 - The white vessel dot is now a small top-down ship icon. Its position remains
   backend ETA + Simulation Clock; its rotation is derived from the active
   authoritative route segment bearing. Pixel speed remains absent.
@@ -282,7 +291,8 @@ clean. Browser layout regression passes at 344px and 528px.
 - Viewer 新增 `cd.route-motion-set.v1` strict reader；有效 artifact 默认驱动路线、船位、
   producer course/speed、trail 和 completed-track，缺失或非法时整体回退 raw timeline；
 - D 仅验证和插值 C 发布的 motion samples，不在生产模式重算曲线、ETA、风险或运动学；
-- research sidecar 继续默认关闭且只在研究视图显式启用，不是生产 fallback；
+- 历史 research sidecar 仅为兼容/独立测试保留，不默认加载，也不是生产 fallback；当前
+  Research View 候选视觉层与该 sidecar 无关；
 - synthetic bulk-carrier profile 与声明 raster-model corridor 只构成工程仿真资格，不表示
   实船、导航或 UKC 认证。完整边界见 [Viewer 技术说明](viewer/README.md)。
 
@@ -294,34 +304,36 @@ RiskWindow/producer identity、记录 cardinality 与 `details_digest`；旧的
 无效或缺失时回退 authoritative raw waypoint/timeline。该证据和曲线仍仅代表工程仿真，
 不构成实船校准、navigation grade、bathymetry 或 UKC 证明。
 
-## Route display smoothing（2026-08-31，历史实现与当前边界）
+## Route display smoothing（2026-09-03，当前 Research View 边界）
 
-- 历史版本曾在 Viewer 侧启用 display-only 局部三次 B 样条；当前默认 Viewer 已切换为
-  C 发布的 `cd.route-motion-set.v1` `motion_samples`，D 不再本地重算或放大平滑幅度；
-- 原始 `routes.waypoints`、候选 geometry、ETA、route metrics、active/pending/adopted
-  语义和 C→D 合同均不改；曲线只存在于 Canvas paint coordinates 和 Viewer 本地仿真呈现状态；
-- Viewer 仿真中的船位、船头方向、近期轨迹和 completed-track 跟随正式 motion samples；
-  原始 waypoint ETA 仍是时间锚点，formal motion 失效时回退 timeline。原始 route waypoint、
-  active revision、route metrics、ETA、adoption 事件和 C→D 合同仍保持权威，不被回写；
-  因此该功能不是船舶操纵性、安全走廊或生产资格证明；
-- 图例和图层控件明确区分蓝色正式曲线与白色原始折线；原始折线默认隐藏，可按需打开做
-  几何对照；
-- Orchestrator 的 `presentation.viewer-presentation.v1` 明确声明该展示策略及原始折线回退。
-- C 另提供 `c.research-route-smoothing-sidecar.v1` 的 geometry-only 研究输出；只有在
-  Orchestrator 显式传入 sidecar 且操作员打开研究运动开关后，D 才读取它的曲线样本。该
-  研究路径校验 route/waypoint/ETA identity，失败时回退 timeline，默认不启用，不改变正式
-  route、风险、ETA、重规划或生产发布语义。
+- Research View 对当前选中的四个 planning layer，分别绘制 `fastest`、`low_risk`、
+  `recommended` 三条候选路线。候选展示由 D 的
+  `viewer/route_visual_smoothing.js` 提供，是纯前端、screen-space、自适应圆角的二次
+  Bezier paint layer；输入已投影的 Canvas 坐标，输出 Canvas 绘制命令，不回写候选
+  geometry。
+- 默认目标切角为 `20 CSS px`，每侧最多占相邻线段 `40%`；连续重复点小于 `0.5 CSS px`
+  时合并，小于 `3°` 的近共线转角跳过，严格保留起点和终点。Canvas CSS 缩放与
+  `mapZoom` 会换算到同一屏幕空间，因此主图、缩放和跟随模式保持相近的圆角观感。
+- 候选视觉平滑默认开启；候选原始折线对照默认关闭。平滑候选在完整路线笔画之上绘制，
+  对应的完整活动路线在该候选可见时不重复露出尖角；当前路段、船位、航向、近期轨迹、
+  completed-track 和正式 `routeMotion()` 不使用这层。
+- 无效坐标、无效配置、短路线或没有可平滑转角时，局部回退为原始候选线并公开
+  `fallback_reason`/圆角计数诊断；一个候选失败不影响其他候选。`researchPresentation()`
+  仅报告该展示层状态，明确 `presentation_only` 和 `authoritative_semantics_unchanged`。
+- 该展示层不计算或改变 route geometry、ETA、距离、risk metrics、candidate ranking、
+  `selected_candidate_id`、船位、重规划采用状态或 C→D 合同，也不构成可航性、安全走廊、
+  船舶操纵性、navigation grade、实船校准或 UKC 资格证明。
 
-### 可见曲线修正（2026-08-31 00:19 +08:00）
+### 历史兼容边界
 
-- 旧的 `2,000 m` 展示尺度在当前约 `40 km` 网格边上只有近似亚像素的拐角偏离，
-  因此 Replay Viewer 的 display-only 参数调整为 `40,000 m` nominal display scale、
-  `20,000 m` 最大显示偏离和 `0.48` 最大切角比例；这些数值只控制画面，不是船舶操纵
-  半径、航行安全限值或生产资格参数。
-- `web/demo_viewer.html` 旧版独立入口也改为局部 cubic `path` 绘制，并保留无效/短边/
-  相邻转角回退思路；其真实 waypoints、ETA、指标和路线 authority 不变。
-- 本次验证包含静态/Node/聚焦单元行为和离线 VM 运动检查；未进行浏览器截图、真实 replay
-  或船舶可执行性验证。
+- 旧的 Viewer 局部 cubic/B-spline 实现、固定米制展示尺度和 C 的
+  `c.research-route-smoothing-sidecar.v1` 不属于当前候选展示算法；历史
+  `route_smoothing.js` 不加载，也不作为 formal motion 或候选展示的 fallback。当前
+  self-contained Viewer 对路线相关脚本内联正式 `route_motion.js` 与本地
+  `route_visual_smoothing.js`（其他 Viewer 依赖仍按 embed 配置内联）。
+- `web/demo_viewer.html` 的历史 standalone cubic 绘制与 Replay Viewer 的当前 Research
+  candidate overlay 是两条独立路径；历史入口不改变真实 waypoints、ETA、指标或 authority，
+  也不代表当前 Replay Viewer 的实现。
 
 ### How to build artifacts (orchestrator side)
 
@@ -443,8 +455,9 @@ Frozen loader 同时从发布制品读取 `scenario_mode`（RunContext）与
   `scripts/temporal_semantics_audit.py`：Temporal Semantics 机器审计；
 - `web/demo_viewer.html`：本地只读 viewer（localhost，无 CDN，离线；真实经纬度
   地图、风险/数据质量图层、Compare 模式、Live 按钮与进度反馈、Route Geospatial
-  Integrity 独立 badge）；路线使用 display-only 局部 cubic path，原始 waypoints 仍是
-  authority；
+  Integrity 独立 badge）；该旧 standalone 入口使用历史 display-only 局部 cubic path，
+  原始 waypoints 仍是 authority；当前 Replay Viewer 的 Research 候选层使用
+  `viewer/route_visual_smoothing.js`；
 - `src/arctic_route_display/demo/spatial.py`：冻结风险帧 → 紧凑空间展示模型；
 - `src/arctic_route_display/demo/errors.py`：demo 层共享验证异常；
 - `configs/demo_frozen_sources.json`：frozen A/B 与 live smoke 来源配置；

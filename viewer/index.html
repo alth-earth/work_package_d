@@ -346,6 +346,7 @@
             <li class="research-only"><i class="sw sw-candidate-fastest"></i>候选路线 · 最快</li>
             <li class="research-only"><i class="sw sw-candidate-low-risk"></i>候选路线 · 低风险</li>
             <li class="research-only"><i class="sw sw-candidate-recommended"></i>候选路线 · 推荐</li>
+            <li class="research-only"><i class="sw sw-candidate-polyline"></i>候选原始折线 · 对照</li>
             <li><i class="sw sw-pending"></i>待采用路线</li>
             <li><i class="sw sw-superseded"></i>已替代路线</li>
             <li><i class="sw sw-segment"></i>当前路段</li>
@@ -358,6 +359,10 @@
           <label><input id="layer-risk" type="checkbox" checked /> 风险</label>
           <label><input id="layer-hard" type="checkbox" checked /> 硬约束 / 可用性</label>
           <label><input id="layer-routes" type="checkbox" checked /> 路线</label>
+          <label class="research-only"><input id="layer-candidate-smoothing" type="checkbox" checked />
+            候选路线视觉平滑（展示层）</label>
+          <label class="research-only"><input id="layer-candidate-polyline" type="checkbox" />
+            候选原始折线（对照）</label>
           <label class="engineering-only"><input id="layer-route-polyline" type="checkbox" />
             权威 RoutePlan 折线（校验/回退）</label>
           <div id="formal-motion-status" class="status summary-note">
@@ -383,6 +388,7 @@
     <script src="risk_explanation.js"></script>
     <script src="route_motion.js"></script>
     <script src="runtime_route_candidates.js"></script>
+    <script src="route_visual_smoothing.js"></script>
     <script src="package_picker.js"></script>
     <script src="app.js"></script>
   </body>
