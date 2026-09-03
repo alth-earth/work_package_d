@@ -99,3 +99,42 @@ def test_engineering_debug_is_reached_by_the_dedicated_button_only() -> None:
     assert 'id="toggle-debug"' in html
     assert "viewModeSel.disabled = engineeringMode" in script
     assert '["research", "presentation"].includes(requested)' in script
+
+
+def test_runtime_lock_preserves_route_identity_but_not_display_filters() -> None:
+    """Regression for the run-state UI lock coupling.
+
+    Playback must keep the selected C runtime candidate fixed, while the
+    research layer/objective controls remain display-only and usable.
+    """
+
+    script = (VIEWER / "app.js").read_text(encoding="utf-8")
+    runtime_ui_start = script.index("function updateRuntimeRouteUi()")
+    runtime_ui_end = script.index("function setRuntimeRouteCandidate", runtime_ui_start)
+    runtime_ui = script[runtime_ui_start:runtime_ui_end]
+
+    assert "const researchAvailable = Boolean(candidateInspection?.valid);" in runtime_ui
+    assert "routeLayerSel.disabled = !researchAvailable;" in runtime_ui
+    assert "routeObjectiveFiltersEl.disabled = !researchAvailable;" in runtime_ui
+    assert (
+        "routeLayerSel.disabled = !candidateInspection?.valid || runtimeRouteLocked"
+        not in script
+    )
+    assert "routeObjectiveFiltersEl.disabled = runtimeRouteLocked" not in script
+
+    layer_start = script.index('routeLayerSel.addEventListener("change"')
+    layer_end = script.index("routeCandidatesEl.addEventListener", layer_start)
+    assert "if (runtimeRouteLocked)" not in script[layer_start:layer_end]
+
+    objective_start = script.index("routeObjectiveFiltersEl?.addEventListener")
+    objective_end = script.index("eventTimelineEl.addEventListener", objective_start)
+    assert "if (runtimeRouteLocked) return" not in script[objective_start:objective_end]
+
+    play_start = script.index("playBtn.addEventListener")
+    play_end = script.index("resetRouteBtn?.addEventListener", play_start)
+    assert "runtimeRouteLocked = true" in script[play_start:play_end]
+    assert "runtimeRouteMotionMode = runtimeMotionModeFor(candidate)" in script[play_start:play_end]
+    assert "runtimeControls: () =>" in script
+    assert "runtime_route_locked: runtimeRouteLocked" in script
+    assert "runtime_candidate_selection_locked: runtimeRouteLocked" in script
+    assert "runButton.disabled = !runnable || runtimeRouteLocked" in script

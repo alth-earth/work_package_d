@@ -2506,8 +2506,13 @@
         ? "暂停、回到出发时刻并重新选择运行路线"
         : "清除运行锁定并回到出发时刻";
     }
-    if (routeLayerSel) routeLayerSel.disabled = !candidateInspection?.valid || runtimeRouteLocked;
-    if (routeObjectiveFiltersEl) routeObjectiveFiltersEl.disabled = runtimeRouteLocked;
+    // The runtime candidate identity is locked once playback starts, but the
+    // controls below are display-only research filters.  Keep them usable so
+    // an operator can inspect another layer or hide/show objectives while the
+    // vessel keeps following the already-selected runtime route.
+    const researchAvailable = Boolean(candidateInspection?.valid);
+    if (routeLayerSel) routeLayerSel.disabled = !researchAvailable;
+    if (routeObjectiveFiltersEl) routeObjectiveFiltersEl.disabled = !researchAvailable;
   }
 
   function setRuntimeRouteCandidate(candidateId) {
@@ -3286,10 +3291,6 @@
   });
 
   routeLayerSel.addEventListener("change", () => {
-    if (runtimeRouteLocked) {
-      routeLayerSel.value = selectedRouteLayer;
-      return;
-    }
     selectedRouteLayer = routeLayerSel.value;
     highlightedCandidateId = defaultCandidateForLayer(selectedRouteLayer)?.candidate_id || null;
     updateResearchPanel();
@@ -3329,7 +3330,6 @@
   });
 
   routeObjectiveFiltersEl?.addEventListener("change", (event) => {
-    if (runtimeRouteLocked) return;
     const control = event.target.closest("[data-route-objective]");
     if (!control) return;
     const objective = control.dataset.routeObjective;
@@ -3737,6 +3737,14 @@
         routeFor(activeRevisionAt(simMs))
       ),
       runtimeRouteSelection: () => runtimeRouteDescriptor(),
+      // Test/diagnostic surface: display filters stay interactive while the
+      // selected runtime candidate remains identity-bound during playback.
+      runtimeControls: () => ({
+        route_layer_disabled: Boolean(routeLayerSel?.disabled),
+        route_objective_filters_disabled: Boolean(routeObjectiveFiltersEl?.disabled),
+        runtime_route_locked: runtimeRouteLocked,
+        runtime_candidate_selection_locked: runtimeRouteLocked,
+      }),
       runtimeRouteCandidates: () => runtimeCandidates(),
       runtimeRouteCandidateInspection: (candidateId) => {
         const candidate = runtimeCandidateById(candidateId);
