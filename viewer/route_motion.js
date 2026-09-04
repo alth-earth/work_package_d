@@ -8,6 +8,11 @@
     "full_voyage", "main_corridor_24_72h", "rolling_0_24h", "executable_0_6h",
   ]);
   const SHA256 = /^[0-9a-f]{64}$/;
+  // Formal C motion may round a turn by a bounded local distance.  The
+  // producer's adaptive-trust gate is the safety authority; this consumer
+  // tolerance only rejects a motion record whose ETA anchor has drifted far
+  // enough to indicate an any-angle shortcut or a mismatched RoutePlan.
+  const WAYPOINT_BINDING_TOLERANCE_KM = 2.0;
   const verifiedSets = new WeakSet();
   const verifiedRecords = new WeakSet();
   const finite = (value) => typeof value === "number" && Number.isFinite(value);
@@ -258,7 +263,9 @@
     for (let index = 0; index < waypoints.length; index += 1) {
       const anchor = anchors[index];
       const sample = samples[anchor.motion_sample_index];
-      if (!sample || !sameShiftedInstant(waypoints[index].eta, sample.eta, timeOffsetMs)) {
+      const waypoint = coordinates[index];
+      if (!sample || !sameShiftedInstant(waypoints[index].eta, sample.eta, timeOffsetMs) ||
+          haversineKm(waypoint, sample) > WAYPOINT_BINDING_TOLERANCE_KM) {
         return invalid("formal_motion_route_or_adoption_mismatch");
       }
     }
@@ -611,6 +618,16 @@
         last.lon !== samples[samples.length - 1].lon ||
         last.lat !== samples[samples.length - 1].lat) {
       return invalid("formal_motion_candidate_endpoint_mismatch");
+    }
+    for (let index = 0; index < waypoints.length; index += 1) {
+      const anchor = record.waypoint_anchors[index];
+      const sample = anchor ? samples[anchor.motion_sample_index] : null;
+      const waypoint = coordinate(waypoints[index]);
+      if (!sample || !waypoint ||
+          haversineKm(waypoint, sample) > WAYPOINT_BINDING_TOLERANCE_KM ||
+          !sameShiftedInstant(waypoints[index].eta, sample.eta, 0)) {
+        return invalid("formal_motion_candidate_waypoint_mismatch");
+      }
     }
     return {
       valid: true,

@@ -2058,7 +2058,20 @@
   function activeRevisionAt(ms) {
     if (!bundle?.timeline?.length) return null;
     const timelineMs = Math.max(0, Math.min(totalMs, ms));
-    return bundle.timeline[timelineIndex(timelineMs)]?.arv ?? null;
+    let active = Number(bundle.timeline[timelineIndex(timelineMs)]?.arv);
+    // Timeline samples are minute-granular, while a deferred adoption may
+    // occur between two samples.  Use the producer's identity-bound adoption
+    // event at its exact timestamp so the route, vessel motion and decision
+    // panel change together instead of showing "adopted" with the old route
+    // for the remainder of the minute.
+    for (const event of bundle.events || []) {
+      if (event.type !== "REPLAN_ADOPTED") continue;
+      const eventMs = isoToMs(event.t) - startMs;
+      const revision = Number(event.rev);
+      if (!Number.isFinite(eventMs) || eventMs > timelineMs) continue;
+      if (Number.isInteger(revision)) active = Math.max(active, revision);
+    }
+    return Number.isFinite(active) ? active : null;
   }
 
   // Viewer simulation motion follows only validated producer motion samples.
@@ -2089,9 +2102,11 @@
     }
     const curved = routeMotionPointAt(active, timelineMs);
     if (!curved || !Number.isFinite(curved.lon) || !Number.isFinite(curved.lat)) return linear;
-    if (motionPath.source === "cd.route-motion-set.v1" ||
-        motionPath.source === "cd.route-motion-candidate-set.v1") return curved;
     const gapKm = haversineKm(linear.lon, linear.lat, curved.lon, curved.lat);
+    // A formal record is producer-authored, but the published timeline is
+    // still the physical continuity authority.  Do not let a mismatched or
+    // stale formal curve create a visual teleport; the motion inspector and
+    // waypoint binding checks remain the qualification gates.
     return Number.isFinite(gapKm) && gapKm <= MAX_CURVE_MOTION_GAP_KM ? curved : linear;
   }
 
@@ -2236,7 +2251,8 @@
     const superseded = previousTimelineValue(i, "superseded");
     const riskSelection = riskSelectionAt(ms);
     const vessel = vesselPointAt(ms);
-    const activeRoute = routeFor(activeRevisionAt(ms));
+    const activeRevision = activeRevisionAt(ms);
+    const activeRoute = routeFor(activeRevision);
     const selectedRuntimeCandidate = runtimeRouteLocked ? runtimeSelectedCandidate() : null;
     const motionRoute = selectedRuntimeCandidate
       ? runtimeCandidateRoute(selectedRuntimeCandidate)
@@ -2274,9 +2290,9 @@
       status: runtimeArrived ? "ARRIVED" : a.v.status,
       edge: selectedRuntimeCandidate ? runtimeEdge : lerp(a.v.ep ?? 0, b.v.ep ?? 0),
       edgeIndex: selectedRuntimeCandidate ? runtimeSegment?.index ?? 0 : a.v.eidx,
-      active: a.arv,
-      pendingRevision: a.prv,
-      pendingStatus: a.prs,
+      active: activeRevision,
+      pendingRevision: Number(a.prv) !== Number(activeRevision) ? a.prv : null,
+      pendingStatus: Number(a.prv) !== Number(activeRevision) ? a.prs : null,
       decisionTime: a.dt,
       effectiveAdoption: a.eat,
       segment: selectedRuntimeCandidate ? (runtimeArrived ? null : runtimeSegment) : a.seg,
@@ -2829,24 +2845,24 @@
   }
 
   function candidateOverlayReplacesRoute(route) {
-    if (viewMode !== "research" || !layers.routes || !layers.candidateSmoothing ||
-        !candidateInspection?.valid || !route?.route_id) return false;
-    const replacement = candidatesForLayer().find((candidate) =>
-      candidate.candidate_id === route.route_id &&
-      visibleCandidateObjectives.has(candidate.objective)
-    );
-    if (!replacement) return false;
-    // An eligible curve or its local raw fallback both replace the duplicate
-    // full-route stroke. Invalid paths with no drawable commands leave the
-    // formal route visible instead of blanking it.
-    return candidateVisualPath(replacement).commands.length >= 2;
+    // Candidate geometry is a display-only comparison.  It must never replace
+    // the active formal motion path: the vessel, completed track and active
+    // route stroke have to share one producer-authored geometry.  Returning
+    // false also keeps the authoritative route visible when research filters
+    // are enabled, including while a runtime candidate is locked.
+    return false;
   }
 
   function drawResearchCandidateRoutes() {
     if (viewMode !== "research" || !layers.routes || !candidateInspection?.valid) return;
     const highlight = highlightedCandidate();
+    const operationalRoute = runtimeRouteLocked
+      ? runtimeRouteObject()
+      : routeFor(activeRevisionAt(simMs));
+    const operationalCandidateId = operationalRoute?.route_id || null;
     const visibleCandidates = candidatesForLayer().filter((candidate) =>
-      visibleCandidateObjectives.has(candidate.objective)
+      visibleCandidateObjectives.has(candidate.objective) &&
+      candidate.candidate_id !== operationalCandidateId
     );
     if (layers.candidateSmoothing) {
       for (const candidate of visibleCandidates) {

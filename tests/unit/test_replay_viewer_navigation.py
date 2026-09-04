@@ -138,3 +138,23 @@ def test_runtime_lock_preserves_route_identity_but_not_display_filters() -> None
     assert "runtime_route_locked: runtimeRouteLocked" in script
     assert "runtime_candidate_selection_locked: runtimeRouteLocked" in script
     assert "runButton.disabled = !runnable || runtimeRouteLocked" in script
+
+
+def test_replay_adoption_uses_identity_bound_event_timestamp() -> None:
+    """Minute snapshots must not delay a published adoption event."""
+
+    script = (VIEWER / "app.js").read_text(encoding="utf-8")
+    start = script.index("function activeRevisionAt")
+    end = script.index("function vesselPointAt", start)
+    active_revision = script[start:end]
+    assert 'event.type !== "REPLAN_ADOPTED"' in active_revision
+    assert "const eventMs = isoToMs(event.t) - startMs;" in active_revision
+    assert "eventMs > timelineMs" in active_revision
+    assert "active = Math.max(active, revision);" in active_revision
+
+    state_start = script.index("function stateAt")
+    state_end = script.index("function routeFor", state_start)
+    state = script[state_start:state_end]
+    assert "const activeRevision = activeRevisionAt(ms);" in state
+    assert "active: activeRevision," in state
+    assert "Number(a.prv) !== Number(activeRevision) ? a.prv : null" in state

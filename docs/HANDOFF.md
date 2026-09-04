@@ -6,10 +6,21 @@ Content Status:
 Document Role: SUPPORTING
 Scope: work package D handoff
 Branch: research-validation-system
-Last Verified: 2026-09-02 02:40 +08:00
+Last Verified: 2026-09-04 22:17 +08:00
 ---
 
 # 工作包 D 交接说明
+
+## 当前 Winter v4 修正（2026-09-04 22:17 +08:00）
+
+v3 发现的路线/船位错乱已由 C/D 修正：C 默认不允许 AnyAngle 跳过权威航点，D 绑定全部
+formal motion anchors，并在 formal 与 timeline 偏差超过 25 km 时 fail-closed。候选比较层
+不会替换 active formal path；真实 adoption event 按事件时间切换 revision。
+
+`route_visual_smoothing.js` 不是写死航线。它读取 v4 制品中每个 candidate 的
+`geometry.coordinates`，仅生成 screen-space Canvas 绘制命令；圆角参数是通用展示策略，
+不参与船位、航向、轨迹、ETA 或运行路线。正式运行路线和船位始终来自 C 的
+`motion_samples`。当前 v4 位于外部 `artifacts/ready/`，v3 已撤回但历史证据保留。
 
 ## 2026-09-02 当前动态重规划制品
 

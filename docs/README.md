@@ -8,7 +8,7 @@ Applicability: CURRENT
 Scope: work package D README
 Canonical For: D ownership and viewer application
 Branch: research-validation-system
-Last Verified: 2026-09-02 02:40 +08:00
+Last Verified: 2026-09-04 22:17 +08:00
 Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_ROUTE_SYSTEM.md
 ---
 
@@ -18,6 +18,18 @@ Related Canonical Docs: ../arctic_route_governance/current/architecture/ARCTIC_R
 > `arctic_route_governance/README.md` 的"路径约定"章节。
 
 # Work Package D: Display / Visualization / Presentation
+
+## Current Winter v4 correction（2026-09-04 22:17 +08:00）
+
+当前外部 ready 制品为 `winter-rebuilt-20260215-viewer-package-v4`；v3 已撤回但源包、压缩包和
+审计证据保留。v3 的偏航根因是 C AnyAngle 跳过原始航点以及 formal/candidate 几何在 revision
+切换时失配，不是 D 写死 Winter 航线。C v4 默认保留全部 raw waypoint anchors，D 对 formal
+motion 执行 waypoint/continuity gate。
+
+`route_visual_smoothing.js` 读取当前制品的 `candidate.geometry.coordinates`，仅生成
+screen-space Canvas paint commands；它不含 Winter 经纬度或 route ID，也不改变 formal motion、
+船位、ETA、风险或运行路线。正式 active route 和船位使用 C `motion_samples`；历史
+`route_smoothing.js`/research sidecar 不在默认加载链。
 
 面向演示人员的使用说明：[USER_GUIDE.zh-CN.md](USER_GUIDE.zh-CN.md)
 

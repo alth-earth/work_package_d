@@ -7,7 +7,7 @@ Document Role: CANONICAL
 Applicability: CURRENT
 Scope: work_package_d viewer implementation and runtime
 Branch: research-validation-system
-Last Verified: 2026-09-02 02:40 +08:00
+Last Verified: 2026-09-04 22:17 +08:00
 ---
 
 > **路径约定（2026-08-24）**：本文件中 `${ARCTIC_ROUTE_ROOT}` 为工作区根占位符，
@@ -16,6 +16,18 @@ Last Verified: 2026-09-02 02:40 +08:00
 > `arctic_route_governance/README.md` 的"路径约定"章节。
 
 # Navigation Decision Simulation Viewer（work_package_d 所有）
+
+## 当前 Winter v4 连续性边界（2026-09-04 22:17 +08:00）
+
+当前外部 Viewer 制品为 `winter-rebuilt-20260215-viewer-package-v4`。C producer 已修正
+AnyAngle 跳点并保留完整 raw waypoint anchors；D 对 formal motion 执行 waypoint binding 和
+formal/timeline continuity gate。正式 active route、船位、航向、trail、ETA 和 completed-track
+只来自身份校验后的 `motion_samples`。
+
+Research View 的 `route_visual_smoothing.js` 是数据驱动的 display-only 屏幕空间圆角层：它
+读取当前 candidate 的 `geometry.coordinates`，不包含 Winter 经纬度或 route ID，也不改变
+geometry、metrics、risk、ETA、adoption 或运行 candidate。历史 `route_smoothing.js`、
+`research_route_motion.js` sidecar 不在默认加载链，不能作为正式运行路线来源。
 
 > Scope: work_package_d `viewer/` 实现与运行
 > Canonical For: Navigation Decision Simulation Viewer application（Simulation Clock / moving
