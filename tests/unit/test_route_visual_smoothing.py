@@ -74,6 +74,62 @@ assert(rightAngle.commands[0].x === 0 && rightAngle.commands[0].y === 0,
 const rightEnd = rightAngle.commands[rightAngle.commands.length - 1];
 assert(rightEnd.x === 100 && rightEnd.y === 100, "end endpoint preserved");
 
+// A timed paint plan is prepared from the complete route once.  Its rounded
+// commands carry ETA intervals and can be revealed incrementally without
+// rebuilding the already-painted prefix.
+const timedRight = visual.buildTimedRolePath(
+  rightAngleInput,
+  [0, 1000, 2000],
+  "completed_track_raw",
+);
+assert(timedRight.applied && timedRight.timed, "timed rounded plan applied");
+assert(timedRight.commands[1].time_end_ms === 800 &&
+  timedRight.commands[2].time_start_ms === 800 &&
+  timedRight.commands[2].time_end_ms === 1200,
+  "timed corner interval follows source ETA");
+const timedBefore = visual.clipTimedDisplayPath(timedRight, 700);
+assert(timedBefore.visible && timedBefore.commands.at(-1).kind === "lineTo" &&
+  timedBefore.commands.at(-1).y === 0, "pre-turn reveal stops on incoming edge");
+const timedDuring = visual.clipTimedDisplayPath(timedRight, 900,
+  {endpoint: {x: 100, y: 10}});
+assert(timedDuring.visible && timedDuring.clipped &&
+  timedDuring.commands.at(-2).kind === "quadraticCurveTo" &&
+  timedDuring.commands.at(-1).kind === "lineTo" &&
+  timedDuring.commands.at(-1).x === 100 && timedDuring.commands.at(-1).y === 10 &&
+  timedDuring.endpoint_exact && timedDuring.endpoint_tail_painted,
+  "turn reveal uses a stable partial curve plus an exact live endpoint tail");
+assert(!timedDuring.commands.some((item) => item.kind === "lineTo" && item.y === 100),
+  "future line remains hidden during turn");
+assert(timedDuring.commands.at(-2).x !== 100 || timedDuring.commands.at(-2).y !== 10,
+  "exact endpoint is not folded into the immutable rounded command");
+const timedNatural = visual.clipTimedDisplayPath(timedRight, 1300);
+const naturalCurve = timedDuring.commands.at(-2);
+const fullCurve = timedNatural.commands.find((item) => item.kind === "quadraticCurveTo");
+const quadraticAt = (start, curve, fraction) => {
+  const c = {x: curve.cpx, y: curve.cpy};
+  const e = {x: curve.x, y: curve.y};
+  const a = {x: start.x + (c.x - start.x) * fraction,
+    y: start.y + (c.y - start.y) * fraction};
+  const b = {x: c.x + (e.x - c.x) * fraction,
+    y: c.y + (e.y - c.y) * fraction};
+  return {x: a.x + (b.x - a.x) * fraction, y: a.y + (b.y - a.y) * fraction};
+};
+const naturalAt900 = quadraticAt(timedRight.commands[1], fullCurve, 0.25);
+assert(Math.abs(naturalCurve.x - naturalAt900.x) < 1e-9 &&
+  Math.abs(naturalCurve.y - naturalAt900.y) < 1e-9,
+  "rounded command prefix is invariant when the next command completes");
+const timedAfter = visual.clipTimedDisplayPath(timedRight, 1500);
+assert(timedAfter.commands.at(-1).kind === "lineTo" &&
+  timedAfter.commands.at(-1).y === 50, "post-turn reveal advances one segment");
+const timedInvalid = visual.buildTimedRolePath(rightAngleInput, [0, 0, 2],
+  "completed_track_raw");
+assert(!timedInvalid.applied && timedInvalid.fallback_reason === "non_monotonic_time",
+  "non-monotonic timed plan fails closed");
+const timedWrongLength = visual.buildTimedRolePath(rightAngleInput, [0, 1],
+  "completed_track_raw");
+assert(!timedWrongLength.applied && timedWrongLength.fallback_reason === "invalid_times",
+  "mismatched timed plan fails closed");
+
 // Multiple bends must all be visited; no canonical/selected candidate is
 // discarded by the display smoother itself.
 const continuous = visual.buildRoundedPath([

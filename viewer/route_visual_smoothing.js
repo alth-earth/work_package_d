@@ -67,6 +67,40 @@
     ];
   }
 
+  // The timed paint plan is deliberately separate from `clipTimedPath()`.
+  // The latter clips source waypoints for candidate visibility, whereas this
+  // plan clips already-rounded Canvas commands.  Every command carries the
+  // ETA interval over which it is allowed to become visible, so the complete
+  // rounded geometry can be prepared once and revealed monotonically.
+  function timedCommand(kind, values, startTime, endTime, sourceStart, sourceEnd) {
+    return command(kind, {
+      ...values,
+      time_start_ms: startTime,
+      time_end_ms: endTime,
+      source_start_index: sourceStart,
+      source_end_index: sourceEnd,
+    });
+  }
+
+  function timedRawCommands(points, times, sourceIndices = null) {
+    if (!points.length) return [];
+    const indices = sourceIndices || points.map((_, index) => index);
+    const commands = [timedCommand(
+      "moveTo", points[0], times[0], times[0], indices[0], indices[0],
+    )];
+    for (let index = 1; index < points.length; index += 1) {
+      commands.push(timedCommand(
+        "lineTo",
+        points[index],
+        times[index - 1],
+        times[index],
+        indices[index - 1],
+        indices[index],
+      ));
+    }
+    return commands;
+  }
+
   // Clip a producer-timed path to the current simulation instant.  This is a
   // pure presentation helper: it copies source points, never projects or
   // alters route geometry, and fails closed for malformed time/coordinate
@@ -355,6 +389,385 @@
     );
   }
 
+  // Build the same rounded geometry as buildRoundedPath(), but retain the
+  // source ETA interval for every paint command.  The geometry is generated
+  // from the complete authoritative path, never from a moving completed
+  // prefix.  This is what prevents an already-visible turn from changing as
+  // the vessel advances: callers only clip this immutable plan by time.
+  function buildTimedRoundedPath(values, times, options = {}) {
+    const sourceCount = Array.isArray(values) ? values.length : 0;
+    const invalidPoints = {sourceCount, values: [], collapsedCount: 0};
+    const config = normalizedConfig(options);
+    const extras = {command_times_ms: Object.freeze([]), timed: true};
+    if (!config) return result(invalidPoints, [], false, "invalid_config", extras);
+    if (!Array.isArray(values)) return result(invalidPoints, [], false, "invalid_points", extras);
+    if (!Array.isArray(times) || times.length !== values.length) {
+      return result(invalidPoints, [], false, "invalid_times", extras);
+    }
+    const parsedTimes = times.map((value) => Number(value));
+    if (parsedTimes.some((value) => !finite(value))) {
+      return result(invalidPoints, [], false, "invalid_time", extras);
+    }
+    for (let index = 1; index < parsedTimes.length; index += 1) {
+      if (parsedTimes[index] <= parsedTimes[index - 1]) {
+        return result(invalidPoints, [], false, "non_monotonic_time", extras);
+      }
+    }
+    const parsed = values.map(pointOf);
+    if (parsed.some((point) => point === null)) {
+      return result(invalidPoints, [], false, "invalid_point", extras);
+    }
+
+    const duplicateTolerance = config.duplicateToleranceCssPx * config.unitsPerCssPixel;
+    const collapseTolerance = Math.max(
+      duplicateTolerance,
+      config.minimumSpacingCssPx * config.unitsPerCssPixel,
+    );
+    const retained = [];
+    let collapsedCount = 0;
+    for (let index = 0; index < parsed.length; index += 1) {
+      const point = parsed[index];
+      const isEndpoint = index === 0 || index === parsed.length - 1;
+      if (retained.length && distance(retained[retained.length - 1].point, point) <= collapseTolerance) {
+        if (isEndpoint && index > 0) {
+          // Keep the exact published endpoint and its ETA.  A two-point route
+          // still retains both endpoints even when they are coincident.
+          if (retained.length > 1) {
+            retained[retained.length - 1] = {point, time: parsedTimes[index], index};
+            collapsedCount += 1;
+          } else {
+            retained.push({point, time: parsedTimes[index], index});
+          }
+        } else {
+          collapsedCount += 1;
+        }
+      } else {
+        retained.push({point, time: parsedTimes[index], index});
+      }
+    }
+    const points = retained.map((item) => item.point);
+    const pointTimes = retained.map((item) => item.time);
+    const sourceIndices = retained.map((item) => item.index);
+    const pointState = {sourceCount, values: points, collapsedCount};
+    if (points.length < 2) {
+      return result(
+        pointState,
+        timedRawCommands(points, pointTimes, sourceIndices),
+        false,
+        "insufficient_points",
+        {
+          command_times_ms: Object.freeze(pointTimes.slice()),
+          timed: true,
+          source_times_ms: Object.freeze(pointTimes.slice()),
+        },
+      );
+    }
+    if (points.length === 2) {
+      const commands = timedRawCommands(points, pointTimes, sourceIndices);
+      return result(
+        pointState,
+        commands,
+        false,
+        "no_eligible_corner",
+        {
+          command_times_ms: Object.freeze(commands.map((item) => item.time_end_ms)),
+          timed: true,
+          source_times_ms: Object.freeze(pointTimes.slice()),
+        },
+      );
+    }
+
+    const targetTrim = config.cornerRadiusCssPx * config.unitsPerCssPixel;
+    const commands = [timedCommand(
+      "moveTo", points[0], pointTimes[0], pointTimes[0], sourceIndices[0], sourceIndices[0],
+    )];
+    let roundedCornerCount = 0;
+    let skippedCornerCount = 0;
+    let cursorTime = pointTimes[0];
+    const interpolateTime = (first, second, fraction) => {
+      const value = first + (second - first) * clamp(fraction, 0, 1);
+      return finite(value) ? value : second;
+    };
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const next = points[index + 1];
+      const incoming = {x: current.x - previous.x, y: current.y - previous.y};
+      const outgoing = {x: next.x - current.x, y: next.y - current.y};
+      const incomingLength = Math.hypot(incoming.x, incoming.y);
+      const outgoingLength = Math.hypot(outgoing.x, outgoing.y);
+      const skip = () => {
+        commands.push(timedCommand(
+          "lineTo", current, cursorTime, pointTimes[index],
+          sourceIndices[index - 1], sourceIndices[index],
+        ));
+        cursorTime = pointTimes[index];
+        skippedCornerCount += 1;
+      };
+      if (incomingLength <= duplicateTolerance || outgoingLength <= duplicateTolerance) {
+        skip();
+        continue;
+      }
+
+      const incomingUnit = {x: incoming.x / incomingLength, y: incoming.y / incomingLength};
+      const outgoingUnit = {x: outgoing.x / outgoingLength, y: outgoing.y / outgoingLength};
+      const turnAngle = degrees(Math.acos(clamp(
+        incomingUnit.x * outgoingUnit.x + incomingUnit.y * outgoingUnit.y,
+        -1,
+        1,
+      )));
+      if (!finite(turnAngle) || turnAngle < config.minimumTurnAngleDeg ||
+          turnAngle > config.maximumTurnAngleDeg) {
+        skip();
+        continue;
+      }
+
+      const trim = Math.min(
+        targetTrim,
+        incomingLength * config.maxTrimFraction,
+        outgoingLength * config.maxTrimFraction,
+      );
+      if (!finite(trim) || trim <= duplicateTolerance) {
+        skip();
+        continue;
+      }
+      const entry = {
+        x: current.x - incomingUnit.x * trim,
+        y: current.y - incomingUnit.y * trim,
+      };
+      const exit = {
+        x: current.x + outgoingUnit.x * trim,
+        y: current.y + outgoingUnit.y * trim,
+      };
+      // The incoming and outgoing fractions are ETA approximations over the
+      // corresponding producer segment.  They are monotonic even when the
+      // previous corner has already consumed part of the shared edge.
+      const entryFraction = 1 - trim / incomingLength;
+      const exitFraction = trim / outgoingLength;
+      const entryTime = Math.max(
+        cursorTime,
+        interpolateTime(pointTimes[index - 1], pointTimes[index], entryFraction),
+      );
+      const exitTime = Math.max(
+        entryTime,
+        interpolateTime(pointTimes[index], pointTimes[index + 1], exitFraction),
+      );
+      commands.push(timedCommand(
+        "lineTo",
+        entry,
+        cursorTime,
+        entryTime,
+        sourceIndices[index - 1],
+        sourceIndices[index],
+      ));
+      commands.push(timedCommand(
+        "quadraticCurveTo",
+        {cpx: current.x, cpy: current.y, x: exit.x, y: exit.y},
+        entryTime,
+        exitTime,
+        sourceIndices[index],
+        sourceIndices[index + 1],
+      ));
+      cursorTime = exitTime;
+      roundedCornerCount += 1;
+    }
+    commands.push(timedCommand(
+      "lineTo",
+      points[points.length - 1],
+      cursorTime,
+      pointTimes[pointTimes.length - 1],
+      sourceIndices[sourceIndices.length - 2],
+      sourceIndices[sourceIndices.length - 1],
+    ));
+    return result(
+      pointState,
+      commands,
+      roundedCornerCount > 0,
+      roundedCornerCount > 0 ? null : "no_eligible_corner",
+      {
+        rounded_corner_count: roundedCornerCount,
+        skipped_corner_count: skippedCornerCount,
+        command_times_ms: Object.freeze(commands.map((item) => item.time_end_ms)),
+        source_times_ms: Object.freeze(pointTimes.slice()),
+        timed: true,
+      },
+    );
+  }
+
+  function lerpPoint(first, second, fraction) {
+    return {
+      x: first.x + (second.x - first.x) * fraction,
+      y: first.y + (second.y - first.y) * fraction,
+    };
+  }
+
+  function commandEndpoint(item) {
+    if (!item || typeof item !== "object") return null;
+    if (item.kind === "moveTo" || item.kind === "lineTo" ||
+        item.kind === "quadraticCurveTo" || item.kind === "bezierCurveTo") {
+      return pointOf(item);
+    }
+    return null;
+  }
+
+  // Reveal a previously generated timed paint plan only through the current
+  // instant. If `endpoint` is provided, a separate live tail reaches the
+  // authoritative vessel projection; the rounded command preceding it stays
+  // immutable so its visible prefix cannot move on the next frame.
+  function clipTimedDisplayPath(path, simulationTime, options = {}) {
+    const commands = Array.isArray(path?.commands) ? path.commands : [];
+    const target = Number(simulationTime);
+    const base = {
+      schema_version: SCHEMA_VERSION,
+      policy: POLICY,
+      valid: false,
+      visible: false,
+      hidden: true,
+      hidden_reason: null,
+      presentation_only: true,
+      authoritative_semantics_unchanged: true,
+      timed: true,
+      simulation_time_ms: finite(target) ? target : null,
+      first_visible_time_ms: null,
+      last_visible_time_ms: null,
+      arrival_time_ms: null,
+      command_count: 0,
+      clipped: false,
+      endpoint_exact: false,
+      endpoint_tail_painted: false,
+      commands: Object.freeze([]),
+    };
+    const fail = (reason, extra = {}) => Object.freeze({...base, hidden_reason: reason, ...extra});
+    if (!commands.length) return fail("invalid_commands");
+    if (!finite(target)) return fail("invalid_simulation_time");
+    const first = commands[0];
+    const firstTime = Number(first?.time_start_ms ?? first?.time_end_ms);
+    const lastTime = Number(commands[commands.length - 1]?.time_end_ms);
+    if (!finite(firstTime) || !finite(lastTime) || lastTime < firstTime) {
+      return fail("invalid_command_times");
+    }
+    if (target < firstTime) {
+      return fail("before_start", {arrival_time_ms: lastTime});
+    }
+    const endpoint = pointOf(options.endpoint);
+    const visible = [];
+    let cursor = commandEndpoint(first);
+    let cursorTime = firstTime;
+    if (!cursor) return fail("invalid_command_endpoint");
+    visible.push(first);
+    let clipped = false;
+    let endpointExact = false;
+    for (let index = 1; index < commands.length; index += 1) {
+      const item = commands[index];
+      const end = Number(item?.time_end_ms);
+      const start = Number(item?.time_start_ms ?? cursorTime);
+      if (!finite(start) || !finite(end) || end < start) return fail("invalid_command_times");
+      if (target >= end) {
+        visible.push(item);
+        cursor = commandEndpoint(item);
+        cursorTime = end;
+        if (!cursor) return fail("invalid_command_endpoint");
+        continue;
+      }
+      if (target < start) break;
+      const span = end - start;
+      const fraction = span > 0 ? clamp((target - start) / span, 0, 1) : 0;
+      const itemEnd = commandEndpoint(item);
+      if (!itemEnd) return fail("invalid_command_endpoint");
+      if (item.kind === "lineTo") {
+        const point = lerpPoint(cursor, itemEnd, fraction);
+        visible.push(command("lineTo", {
+          ...point,
+          time_start_ms: start,
+          time_end_ms: target,
+          source_start_index: item.source_start_index,
+          source_end_index: item.source_end_index,
+        }));
+        cursor = point;
+      } else if (item.kind === "quadraticCurveTo") {
+        const control = {x: Number(item.cpx), y: Number(item.cpy)};
+        if (!pointOf(control)) return fail("invalid_command_control");
+        const firstControl = lerpPoint(cursor, control, fraction);
+        const curvePoint = lerpPoint(control, itemEnd, fraction);
+        const naturalEnd = lerpPoint(firstControl, curvePoint, fraction);
+        visible.push(command("quadraticCurveTo", {
+          cpx: firstControl.x,
+          cpy: firstControl.y,
+          x: naturalEnd.x,
+          y: naturalEnd.y,
+          time_start_ms: start,
+          time_end_ms: target,
+          source_start_index: item.source_start_index,
+          source_end_index: item.source_end_index,
+        }));
+        cursor = naturalEnd;
+      } else if (item.kind === "bezierCurveTo") {
+        const control1 = pointOf({x: Number(item.cp1x), y: Number(item.cp1y)});
+        const control2 = pointOf({x: Number(item.cp2x), y: Number(item.cp2y)});
+        if (!control1 || !control2) return fail("invalid_command_control");
+        const p01 = lerpPoint(cursor, control1, fraction);
+        const p12 = lerpPoint(control1, control2, fraction);
+        const p23 = lerpPoint(control2, itemEnd, fraction);
+        const p012 = lerpPoint(p01, p12, fraction);
+        const p123 = lerpPoint(p12, p23, fraction);
+        const naturalEnd = lerpPoint(p012, p123, fraction);
+        visible.push(command("bezierCurveTo", {
+          cp1x: p01.x,
+          cp1y: p01.y,
+          cp2x: p012.x,
+          cp2y: p012.y,
+          x: naturalEnd.x,
+          y: naturalEnd.y,
+          time_start_ms: start,
+          time_end_ms: target,
+          source_start_index: item.source_start_index,
+          source_end_index: item.source_end_index,
+        }));
+        cursor = naturalEnd;
+      } else {
+        return fail("unsupported_command");
+      }
+      // The rounded command itself is immutable and therefore has a stable
+      // prefix across frames.  An exact vessel endpoint is a separate live
+      // tail: it may move while the current command is in progress, but it is
+      // never folded back into the already-prepared rounded geometry.
+      if (endpoint && fraction < 1 &&
+          Math.hypot(endpoint.x - cursor.x, endpoint.y - cursor.y) > 1e-9) {
+        visible.push(command("lineTo", {
+          x: endpoint.x,
+          y: endpoint.y,
+          time_start_ms: target,
+          time_end_ms: target,
+          source_start_index: item.source_start_index,
+          source_end_index: item.source_end_index,
+          live_tail: true,
+        }));
+        cursor = endpoint;
+      }
+      cursorTime = target;
+      clipped = true;
+      endpointExact = Boolean(endpoint);
+      break;
+    }
+    const reachedArrival = target >= lastTime;
+    return Object.freeze({
+      ...base,
+      valid: true,
+      visible: visible.length >= 2,
+      hidden: visible.length < 2,
+      hidden_reason: reachedArrival ? "arrived" : null,
+      first_visible_time_ms: firstTime,
+      last_visible_time_ms: clipped ? target : cursorTime,
+      arrival_time_ms: lastTime,
+      command_count: visible.length,
+      clipped,
+      endpoint_exact: endpointExact,
+      endpoint_tail_painted: Boolean(endpointExact &&
+        visible.some((item) => item.live_tail === true)),
+      commands: Object.freeze(visible),
+    });
+  }
+
   // Round a turn whose vertex is the final visible point.  The lookahead is
   // context only: no command ever reaches it, so the painted completed track
   // remains clipped exactly at the current vessel position.  This is used for
@@ -483,6 +896,14 @@
     return Object.freeze({...buildRoundedPath(values, options), role});
   }
 
+  function buildTimedRolePath(values, times, role, options = {}) {
+    if (!Object.hasOwn(ROLE_POLICIES, role)) {
+      const invalid = buildTimedRoundedPath([], [], options);
+      return Object.freeze({...invalid, role, fallback_reason: "unsupported_role"});
+    }
+    return Object.freeze({...buildTimedRoundedPath(values, times, options), role});
+  }
+
   function buildEndpointRolePath(values, role, lookahead, options = {}) {
     if (!Object.hasOwn(ROLE_POLICIES, role)) {
       const invalid = buildRoundedPath([], options);
@@ -522,10 +943,13 @@
     DEFAULT_CONFIG,
     ROLE_POLICIES,
     buildRoundedPath,
+    buildTimedRoundedPath,
     buildEndpointRoundedPath,
     buildRolePath,
+    buildTimedRolePath,
     buildEndpointRolePath,
     clipTimedPath,
+    clipTimedDisplayPath,
     trace,
   });
 })();

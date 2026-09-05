@@ -38,12 +38,20 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert 'drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94)' in mini_draw
     assert "authoritativeCompletedRoutePointsAt" in app
     assert "authoritative_prefix_recolored: !engineeringRaw" in policy
-    assert "authoritative_route_prefix_recolored_eta_clipped_display" in policy
-    assert "smoothing_applied: false" in policy
+    assert "authoritative_timed_rounded_prefix_eta_reveal_display" in policy
+    assert "smoothing_applied: !engineeringRaw" in policy
     assert "formal_curve_resmoothed: false" in policy
-    assert "formal_curve_display_smoothing_applied: false" in policy
+    assert "formal_curve_display_smoothing_applied: formalCurve" in policy
+    assert "paint_plan_precomputed" in policy
+    assert "paint_plan_clip_mode" in policy
+    assert "paint_plan_timeline_prefix_point_count" in policy
     assert "endpoint_turn_rounding_available" in policy
     assert "completedTrackLookaheadFor" in policy
+    assert "timelineTrackPointsForDisplay" in app
+    assert "completedTrackSourceCache" in app
+    assert "runtimeRouteObjectCache" in app
+    assert "const current = vesselPointAt(relativeMs);" in app
+    assert "const prefix = route.runtime_candidate" in app
     assert "vesselPointAt(relativeMs)" in app
     assert "eta: new Date(target).toISOString()" in app
     assert ".filter((point) => isoToMs(point?.eta) < target)" in app
@@ -54,15 +62,16 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert 'engineeringRaw = viewMode === "engineering"' in policy
     assert 'strategy: engineeringRaw' in policy
     assert 'if (viewMode === "engineering") return [{points, smooth: false}];' in segments
-    assert "same authoritative prefix" in segments
-    assert "position is included by ETA interpolation" in segments
-    assert "visible" in segments
-    assert "points: visible.length >= 2 ? visible : points" in segments
+    assert "complete timed" in segments
+    assert "display.clipped" in segments
+    assert "paintPath: display.clipped" in segments
+    assert "authoritativeCompletedRoutePointsAt" in segments
     assert "endpointLookahead: null" in segments
     assert "smooth: false" in segments
     assert "minimumSpacingCssPx: 24" in app
-    assert "cornerRadiusCssPx: 30" in app
-    assert "buildEndpointRolePath" in app
+    assert "cornerRadiusCssPx: 20" in app
+    assert "buildTimedRolePath" in app
+    assert "clipTimedDisplayPath" in app
     assert "buildProjectedVisualPath" in app
     assert "state.track" not in policy
     assert "state.track =" not in app

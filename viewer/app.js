@@ -140,7 +140,14 @@
   let mapWasDragged = false;
   let voyageProgress = null;
   let formalRouteMotionCache = new WeakMap();
+  // Each route/viewport gets one complete timed paint plan.  The plan is
+  // intentionally independent of simMs; only its clipped command prefix is
+  // painted on each frame, so rounded historical corners cannot move.
+  let completedTrackPaintPlanCache = new WeakMap();
+  let completedTrackSourceCache = new WeakMap();
+  let timelineTrackPointCache = null;
   let runtimeRoutePathCache = new Map();
+  let runtimeRouteObjectCache = new Map();
   let runtimeCandidateMotionInspectionCache = new Map();
   let candidateTimedSourceCache = new Map();
   let lastRiskSummaryKey = null;
@@ -187,7 +194,9 @@
     // spacing is still only a paint-layer decimation and never changes the
     // published motion geometry.
     minimumSpacingCssPx: 24,
-    cornerRadiusCssPx: 30,
+    // Keep the display radius modest: it matches the earlier Viewer
+    // presentation curvature while avoiding a wide detour around short turns.
+    cornerRadiusCssPx: 20,
     minimumTurnAngleDeg: 1,
   });
 
@@ -965,6 +974,193 @@
     return visualSmoothingTools.buildRolePath(projected, role, options);
   }
 
+  function timelineTrackPointsForDisplay() {
+    if (timelineTrackPointCache) return timelineTrackPointCache;
+    const byTime = new Map();
+    for (const entry of bundle?.timeline || []) {
+      if (!Array.isArray(entry?.track)) continue;
+      for (const value of entry.track) {
+        const coordinate = coordinateOf(value);
+        const lon = Number(coordinate.lon);
+        const lat = Number(coordinate.lat);
+        const timeMs = isoToMs(value?.eta) - startMs;
+        if (!Number.isFinite(lon) || !Number.isFinite(lat) || !Number.isFinite(timeMs)) continue;
+        // Timeline snapshots repeat the completed prefix.  Keying by the
+        // producer ETA leaves one immutable point per published waypoint and
+        // preserves the latest value if an adoption snapshot restates it.
+        byTime.set(String(timeMs), Object.freeze({
+          lon,
+          lat,
+          timeMs,
+          eta: value?.eta || formatAbsolute(startMs + timeMs),
+        }));
+      }
+    }
+    timelineTrackPointCache = Object.freeze([...byTime.values()].sort(
+      (first, second) => first.timeMs - second.timeMs,
+    ));
+    return timelineTrackPointCache;
+  }
+
+  function completedTrackSourceFor(route) {
+    if (!route) return null;
+    const cached = completedTrackSourceCache.get(route);
+    if (cached) return cached;
+    const inspection = formalInspectionForRoute(route);
+    const formalMode = inspection?.record?.mode || inspection?.mode || null;
+    // A runtime candidate can carry motion samples even when its formal
+    // record is RAW_PASSTHROUGH. Never grant CURVE display eligibility from
+    // the sample container alone; RAW always falls back to its own waypoints.
+    const formal = formalMode === "CURVE" ? routeMotionPathFor(route) : null;
+    const formalValid = formal && Array.isArray(formal.points) &&
+      Array.isArray(formal.timesMs) && formal.points.length >= 2 &&
+      formal.points.length === formal.timesMs.length &&
+      formal.timesMs.every((time, index) => Number.isFinite(time) &&
+        (index === 0 || time > formal.timesMs[index - 1]));
+    if (formalValid) {
+      const points = formal.points.map((point) => {
+        const value = coordinateOf(point);
+        return {lon: Number(value.lon), lat: Number(value.lat)};
+      });
+      if (points.every((point) => Number.isFinite(point.lon) && Number.isFinite(point.lat))) {
+        // The formal motion set may begin after the voyage origin (for
+        // example, after a deferred adoption).  Include the immutable raw
+        // timeline prefix in the same timed plan so old turns are rounded
+        // once as well; runtime-selected candidates intentionally own their
+        // own track and therefore do not borrow the global timeline prefix.
+        const prefix = route.runtime_candidate
+          ? []
+          : timelineTrackPointsForDisplay().filter((item) =>
+              item.timeMs < formal.timesMs[0]);
+        const source = Object.freeze({
+          sourceRef: formal,
+          source: formal.source || "formal_motion_samples",
+          formalCurve: true,
+          timelinePrefixPointCount: prefix.length,
+          points: Object.freeze([
+            ...prefix.map((item) => ({lon: item.lon, lat: item.lat})),
+            ...points,
+          ]),
+          timesMs: Object.freeze([
+            ...prefix.map((item) => item.timeMs),
+            ...formal.timesMs,
+          ]),
+        });
+        completedTrackSourceCache.set(route, source);
+        return source;
+      }
+    }
+    const waypoints = Array.isArray(route.waypoints) ? route.waypoints : [];
+    // A canonical route's raw fallback must retain the published timeline
+    // history; a runtime candidate has no authority to borrow that history.
+    const rawTimeline = route.runtime_candidate ? [] : timelineTrackPointsForDisplay();
+    const rawValues = rawTimeline.length >= 2 ? rawTimeline : waypoints;
+    if (rawValues.length < 2 || !Number.isFinite(startMs)) return null;
+    const points = rawValues.map((point) => {
+      const value = coordinateOf(point);
+      return {lon: Number(value.lon), lat: Number(value.lat)};
+    });
+    const timesMs = rawValues.map((point) => Number.isFinite(point?.timeMs)
+      ? point.timeMs
+      : isoToMs(point?.eta) - startMs);
+    if (points.some((point) => !Number.isFinite(point.lon) || !Number.isFinite(point.lat)) ||
+        timesMs.some((time, index) => !Number.isFinite(time) ||
+          (index > 0 && time <= timesMs[index - 1]))) return null;
+    const source = Object.freeze({
+      sourceRef: rawValues,
+      source: route.runtime_candidate ? "raw_passthrough" : "timeline_fallback",
+      formalCurve: false,
+      timelinePrefixPointCount: rawTimeline.length >= 2 ? rawTimeline.length : 0,
+      points: Object.freeze(points),
+      timesMs: Object.freeze(timesMs),
+    });
+    completedTrackSourceCache.set(route, source);
+    return source;
+  }
+
+  function completedTrackPaintPlanFor(route, element, projector, zoom = 1) {
+    if (!route || !element || typeof projector !== "function") return null;
+    const source = completedTrackSourceFor(route);
+    if (!source) return null;
+    const rect = element.getBoundingClientRect?.();
+    const cssWidth = Number(rect?.width);
+    const cssHeight = Number(rect?.height);
+    const units = displayUnitsPerCssPixel(element, zoom);
+    const bboxKey = JSON.stringify(basemap?.bbox || null);
+    const smoothingKey = JSON.stringify(FORMAL_COMPLETED_TRACK_SMOOTHING);
+    let entries = completedTrackPaintPlanCache.get(route);
+    if (!entries) {
+      entries = [];
+      completedTrackPaintPlanCache.set(route, entries);
+    }
+    const existing = entries.find((item) => item.sourceRef === source.sourceRef &&
+      item.element === element && item.projector === projector && item.zoom === zoom &&
+      item.width === Number(element.width) && item.height === Number(element.height) &&
+      item.cssWidth === cssWidth && item.cssHeight === cssHeight && item.units === units &&
+      item.bboxKey === bboxKey && item.smoothingKey === smoothingKey);
+    if (existing) return existing;
+    const projected = source.points.map((point) => projector(point.lon, point.lat));
+    const paintPath = visualSmoothingTools.buildTimedRolePath(
+      projected,
+      source.timesMs,
+      "completed_track_raw",
+      {
+        ...FORMAL_COMPLETED_TRACK_SMOOTHING,
+        unitsPerCssPixel: units,
+      },
+    );
+    const plan = Object.freeze({
+      source: source.source,
+      formalCurve: source.formalCurve,
+      timelinePrefixPointCount: source.timelinePrefixPointCount || 0,
+      sourceRef: source.sourceRef,
+      sourcePointCount: source.points.length,
+      sourcePoints: source.points,
+      sourceTimesMs: source.timesMs,
+      firstTimeMs: source.timesMs[0],
+      arrivalTimeMs: source.timesMs[source.timesMs.length - 1],
+      element,
+      projector,
+      zoom,
+      width: Number(element.width),
+      height: Number(element.height),
+      cssWidth,
+      cssHeight,
+      units,
+      bboxKey,
+      smoothingKey,
+      paintPath,
+    });
+    entries.push(plan);
+    return plan;
+  }
+
+  function completedTrackPaintPathAt(route, relativeMs, element, projector, zoom = 1) {
+    const plan = completedTrackPaintPlanFor(route, element, projector, zoom);
+    if (!plan) return {plan: null, clipped: null};
+    let endpoint = null;
+    if (Number.isFinite(relativeMs) && relativeMs >= plan.firstTimeMs &&
+        relativeMs < plan.arrivalTimeMs) {
+      // vesselPointAt() is the physical continuity authority and applies the
+      // formal-vs-timeline gap gate.  Never let a malformed/stale motion path
+      // bypass that gate merely because a display plan exists.
+      // The gated vessel position is the sole endpoint authority.  Falling
+      // back to the raw/formal route here would bypass the continuity gate
+      // and could paint a stale curve tail away from the ship.
+      const current = vesselPointAt(relativeMs);
+      if (current && Number.isFinite(current.lon) && Number.isFinite(current.lat)) {
+        const projected = projector(current.lon, current.lat);
+        if (Number.isFinite(projected?.x) && Number.isFinite(projected?.y)) endpoint = projected;
+      }
+    }
+    const clipped = visualSmoothingTools.clipTimedDisplayPath(
+      plan.paintPath,
+      relativeMs,
+      {endpoint},
+    );
+    return {plan, clipped};
+  }
+
   function candidateVisualPath(candidate, points = null) {
     return buildProjectedVisualPath(
       points || candidateGeometryPoints(candidate),
@@ -1192,7 +1388,10 @@
   function runtimeCandidateRoute(candidate) {
     if (!candidate) return null;
     const packageValue = runtimeCandidateInspection?.initial?.package;
-    return {
+    const cacheKey = `${packageValue?.layer_set_id || ""}:${candidate.candidate_id || ""}`;
+    const cached = runtimeRouteObjectCache.get(cacheKey);
+    if (cached?.candidate === candidate && cached.packageValue === packageValue) return cached.route;
+    const route = {
       revision: 1,
       route_id: candidate.candidate_id,
       plan_id: candidate.candidate_id,
@@ -1221,6 +1420,8 @@
       runtime_candidate: candidate,
       runtime_layer_set_id: packageValue?.layer_set_id || null,
     };
+    runtimeRouteObjectCache.set(cacheKey, {candidate, packageValue, route});
+    return route;
   }
 
   function runtimeSelectedCandidate() {
@@ -3273,7 +3474,13 @@
           return Number.isFinite(pointMs) && pointMs < formalStart;
         }).length
       : 0;
-    const rawPrefixRounded = false;
+    const mainPaint = !engineeringRaw
+      ? completedTrackPaintPathAt(route, relativeMs, canvas, project, mapZoom)
+      : {plan: null, clipped: null};
+    const paintPlan = mainPaint.plan;
+    const clipped = mainPaint.clipped;
+    const rawPrefixRounded = !engineeringRaw &&
+      Boolean(paintPlan?.timelinePrefixPointCount && paintPlan?.paintPath?.applied);
     const lookahead = !engineeringRaw && Array.isArray(points) && points.length >= 2
       ? completedTrackLookaheadFor(route, relativeMs)
       : null;
@@ -3285,17 +3492,31 @@
     return {
       source,
       formal_motion_mode: formalMode,
-      // The completed layer is a recolor of the authoritative route prefix;
-      // no second screen-space fit is applied to history or formal samples.
-      smoothing_applied: false,
+      // The complete authoritative path is rounded once in screen space and
+      // then revealed by ETA. This is paint-only; formal samples and the
+      // published track array remain untouched.
+      smoothing_applied: !engineeringRaw && Boolean(paintPlan?.paintPath?.applied),
       raw_prefix_smoothing_applied: rawPrefixRounded,
+      raw_passthrough_display_smoothing_applied: formalMode === "RAW_PASSTHROUGH" &&
+        !engineeringRaw && Boolean(paintPlan?.paintPath?.applied),
       raw_prefix_point_count: rawPrefixPointCount,
-      // CURVE samples are producer-authored and are revealed by ETA clipping;
-      // applying a second screen-space fit would make already painted history
-      // move whenever the clipped endpoint advances.
-      formal_curve_display_smoothing_applied: false,
+      // No producer motion record is rewritten. The separate display flag
+      // records the immutable Canvas rounding plan used for the formal path.
+      formal_curve_display_smoothing_applied: formalCurve &&
+        !engineeringRaw && Boolean(paintPlan?.paintPath?.applied),
       formal_curve_resmoothed: false,
       authoritative_prefix_recolored: !engineeringRaw,
+      paint_plan_precomputed: Boolean(paintPlan),
+      paint_plan_source: paintPlan?.source || null,
+      paint_plan_timeline_prefix_point_count: paintPlan?.timelinePrefixPointCount || 0,
+      paint_plan_source_point_count: paintPlan?.sourcePointCount || 0,
+      paint_plan_command_count: paintPlan?.paintPath?.commands?.length || 0,
+      paint_plan_visible_command_count: clipped?.commands?.length || 0,
+      paint_plan_first_visible_time_ms: clipped?.first_visible_time_ms ?? null,
+      paint_plan_last_visible_time_ms: clipped?.last_visible_time_ms ?? null,
+      paint_plan_arrival_time_ms: clipped?.arrival_time_ms ?? null,
+      paint_plan_clip_mode: paintPlan ? "eta_incremental_reveal" : null,
+      paint_plan_endpoint_exact: Boolean(clipped?.endpoint_exact),
       endpoint_turn_rounding_available: Boolean(lookahead),
       endpoint_turn_lookahead_used_for_paint: false,
       endpoint_turn_lookahead_source: lookahead?.source || null,
@@ -3304,7 +3525,7 @@
       engineering_raw: engineeringRaw,
       strategy: engineeringRaw
         ? "engineering_raw"
-        : "authoritative_route_prefix_recolored_eta_clipped_display",
+        : "authoritative_timed_rounded_prefix_eta_reveal_display",
       reason: inspection?.reason || null,
       route_id: route?.route_id || route?.plan_id || null,
       presentation_only: true,
@@ -3312,7 +3533,7 @@
     };
   }
 
-  function completedTrackSegments(points, route, relativeMs = simMs) {
+  function completedTrackSegments(points, route, relativeMs = simMs, renderTarget = "main") {
     if (!Array.isArray(points) || points.length < 2) return [];
     const policy = completedTrackPresentationPolicy(route, points, relativeMs);
     // Engineering diagnostics must expose the exact producer/timeline
@@ -3320,11 +3541,9 @@
     // Smoothing is a paint-only exception for research/navigation views.
     if (viewMode === "engineering") return [{points, smooth: false}];
 
-    // Reuse the same authoritative prefix that the blue future layer clips
-    // against.  This is a paint-only color change: producer CURVE samples
-    // stay producer-authored, RAW_PASSTHROUGH stays raw, and the current
-    // position is included by ETA interpolation.  Joining the prior history
-    // to this prefix avoids a gap at a deferred-adoption boundary.
+    // The authoritative source (timeline prefix plus formal/runtime samples)
+    // is prepared as one complete timed rounded plan.  Only its ETA-visible
+    // command prefix is returned below; no moving prefix is re-fit per frame.
     const path = routeMotionPathFor(route);
     const formalStart = path?.timesMs?.length
       ? startMs + path.timesMs[0]
@@ -3335,6 +3554,21 @@
           return Number.isFinite(pointMs) && pointMs < formalStart;
         })
       : points;
+    const display = renderTarget === "mini"
+      ? completedTrackPaintPathAt(route, relativeMs, miniMapCanvas, miniProject, 1)
+      : completedTrackPaintPathAt(route, relativeMs, canvas, project, mapZoom);
+    if (display.clipped?.visible && display.clipped.commands.length >= 2) {
+      return [{
+          paintPath: display.clipped,
+          smooth: true,
+          paintPlan: display.plan,
+          endpointLookahead: null,
+          smoothingOptions: FORMAL_COMPLETED_TRACK_SMOOTHING,
+        }];
+    }
+
+    // If the timed source is unavailable, preserve the old fail-closed raw
+    // prefix rather than guessing a projection or borrowing another revision.
     const authoritative = authoritativeCompletedRoutePointsAt(route, relativeMs);
     const visible = [...history];
     for (const point of authoritative) {
@@ -3343,16 +3577,11 @@
       const previousLat = Number(previous?.lat ?? previous?.latitude);
       const pointLon = Number(point?.lon ?? point?.longitude);
       const pointLat = Number(point?.lat ?? point?.latitude);
-      if (!previous || previousLon !== pointLon || previousLat !== pointLat) {
-        visible.push(point);
-      }
+      if (!previous || previousLon !== pointLon || previousLat !== pointLat) visible.push(point);
     }
-    return [{
-      points: visible.length >= 2 ? visible : points,
-      smooth: false,
-      endpointLookahead: null,
-      smoothingOptions: {},
-    }];
+    return visible.length >= 2
+      ? [{points: visible, smooth: false, endpointLookahead: null, smoothingOptions: {}}]
+      : [];
   }
 
   function strokeDisplayPath(context, path, color, width, dash, alpha) {
@@ -3372,7 +3601,9 @@
   function drawCompletedTrack(points, route, color, width, dash, alpha, relativeMs = simMs) {
     const segments = completedTrackSegments(points, route, relativeMs);
     for (const segment of segments) {
-      if (segment.smooth || segment.endpointLookahead) {
+      if (segment.paintPath) {
+        if (strokeDisplayPath(ctx, segment.paintPath, color, width, dash, alpha)) continue;
+      } else if (segment.smooth || segment.endpointLookahead) {
         const path = buildProjectedVisualPath(
           segment.points,
           project,
@@ -3390,9 +3621,11 @@
   }
 
   function drawMiniCompletedTrack(points, route, color, width, dash, alpha, relativeMs = simMs) {
-    const segments = completedTrackSegments(points, route, relativeMs);
+    const segments = completedTrackSegments(points, route, relativeMs, "mini");
     for (const segment of segments) {
-      if (segment.smooth || segment.endpointLookahead) {
+      if (segment.paintPath) {
+        if (strokeDisplayPath(miniCtx, segment.paintPath, color, width, dash, alpha)) continue;
+      } else if (segment.smooth || segment.endpointLookahead) {
         const path = buildProjectedVisualPath(
           segment.points,
           miniProject,
@@ -3528,9 +3761,9 @@
       drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88);
     }
     if (state.track?.length > 1) {
-      // The mini-map uses the same authoritative prefix recolor as the main
-      // map.  Formal CURVE samples and RAW/timeline waypoints are never fit a
-      // second time; engineering mode remains raw for side-by-side audit.
+      // The mini-map has its own viewport-specific immutable timed paint plan;
+      // it reveals the same ETA prefix as the main map without changing the
+      // formal samples. Engineering mode remains raw for side-by-side audit.
       drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94);
     }
 
@@ -4129,7 +4362,11 @@
     await formalMotionTools.prevalidate(bundle);
     await formalMotionTools.prevalidateCandidateSets(bundle);
     formalRouteMotionCache = new WeakMap();
+    completedTrackPaintPlanCache = new WeakMap();
+    completedTrackSourceCache = new WeakMap();
+    timelineTrackPointCache = null;
     runtimeRoutePathCache = new Map();
+    runtimeRouteObjectCache = new Map();
     candidateTimedSourceCache = new Map();
     renderPipelineOverview(bundle);
     const sidecar = window.RISK_EXPLANATION_SIDECAR ?? bundle.risk_explanation ?? null;
