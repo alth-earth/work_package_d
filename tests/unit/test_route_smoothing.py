@@ -195,6 +195,8 @@ def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
     # viewer intentionally paints no second white wake/trail behind the ship.
     assert "drawPath(s.trail" not in app
     assert "function vesselTrailAt" in app
+    assert "wakeLength" not in app
+    assert "wakeAlpha" not in app
     assert 'drawCompletedTrack(s.track, active, "#5cc47a", 3, [], 1)' in app
     assert 'drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94)' in app
     assert "completedTrackPresentationPolicy" in app

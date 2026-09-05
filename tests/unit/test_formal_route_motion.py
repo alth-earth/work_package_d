@@ -292,7 +292,8 @@ def test_current_segment_and_curve_diagnostics_are_independent_of_raw_polyline_l
     app = (VIEWER / "app.js").read_text(encoding="utf-8")
     stylesheet = (VIEWER / "style.css").read_text(encoding="utf-8")
     assert "currentSegmentPaintPointsAt" in app
-    assert 'drawPath(currentSegment, "#f7fbff", 3.1' in app
+    assert 'drawPath(currentSegment, "#f7fbff", 3.1' not in app
+    assert "do not paint a second white stroke" in app
     assert "const currentSegment = currentSegmentPaintPointsAt(active, s);" in app
     assert "minimum_radius_m" in app
     assert "maximum_deviation_m" in app

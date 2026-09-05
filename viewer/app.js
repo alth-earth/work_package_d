@@ -3587,13 +3587,11 @@
     }
 
     if (layers.routes && s.segment && s.segment.start_eta && s.segment.end_eta && active) {
-      // Current segment is an operational overlay, not the raw-polyline
-      // layer.  Keep it visible when the original authoritative polyline is
-      // hidden, and derive it from formal motion_samples whenever available.
+      // Keep deriving the current segment for diagnostics and layer audits,
+      // but do not paint a second white stroke beside/behind the vessel.  The
+      // authoritative blue future route above already presents this interval;
+      // drawing it again made the short line look like an unexplained wake.
       const currentSegment = currentSegmentPaintPointsAt(active, s);
-      if (currentSegment.length >= 2) {
-        drawPath(currentSegment, "#f7fbff", 3.1, [], null, 0.96);
-      }
       if (layers.routePolyline) {
         const rawSegment = active.waypoints.filter((waypoint) => {
           const pointMs = isoToMs(waypoint.eta);
