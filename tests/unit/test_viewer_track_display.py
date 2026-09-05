@@ -48,7 +48,8 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert 'engineeringRaw = viewMode === "engineering"' in policy
     assert 'strategy: engineeringRaw' in policy
     assert 'if (viewMode === "engineering") return [{points, smooth: false}];' in segments
-    assert 'points: [rawPrefix[rawPrefix.length - 1], ...formalSuffix],\n        smooth: true' in segments
+    assert "one continuous paint path" in segments
+    assert "points,\n      smooth: true" in segments
     assert "minimumSpacingCssPx: 56" in app
     assert "cornerRadiusCssPx: 30" in app
     assert "buildEndpointRolePath" in app

@@ -3274,48 +3274,18 @@
 
     // A route adopted mid-replay can leave a raw timeline prefix in
     // state.track before the producer-authored CURVE samples begin.  The
-    // producer samples remain authoritative and untouched; each visible
-    // eligible for a bounded screen-space paint smoothing pass so a clipped
-    // turn is already rounded at the vessel.  The lookahead is tangent
-    // context only and is never included in the painted points.
-    const path = routeMotionPathFor(route);
-    const formalStart = path?.timesMs?.length
-      ? startMs + path.timesMs[0]
-      : NaN;
-    if (!Number.isFinite(formalStart)) return [{
+    // producer samples remain authoritative and untouched.  Keep that raw
+    // prefix and the formal suffix in one continuous paint path so the
+    // renderer has the incoming tangent context needed to round a turn at
+    // the vessel, instead of introducing a new corner at the adoption
+    // boundary.  This is presentation-only; the lookahead is tangent
+    // context and is never included in the painted points.
+    return [{
       points,
       smooth: true,
       endpointLookahead,
       smoothingOptions: formalSmoothingOptions,
     }];
-    const rawPrefix = [];
-    const formalSuffix = [];
-    for (const point of points) {
-      const pointMs = isoToMs(point?.eta);
-      if (Number.isFinite(pointMs) && pointMs < formalStart) rawPrefix.push(point);
-      else formalSuffix.push(point);
-    }
-    if (rawPrefix.length < 2) return [{
-      points,
-      smooth: true,
-      endpointLookahead,
-      smoothingOptions: formalSmoothingOptions,
-    }];
-    if (!formalSuffix.length) return [{
-      points: rawPrefix,
-      smooth: true,
-      endpointLookahead,
-      smoothingOptions: formalSmoothingOptions,
-    }];
-    return [
-      {points: rawPrefix, smooth: true},
-      {
-        points: [rawPrefix[rawPrefix.length - 1], ...formalSuffix],
-        smooth: true,
-        endpointLookahead,
-        smoothingOptions: formalSmoothingOptions,
-      },
-    ];
   }
 
   function strokeDisplayPath(context, path, color, width, dash, alpha) {
