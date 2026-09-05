@@ -2235,10 +2235,17 @@
       return null;
     }
 
-    // If formal motion is unavailable, remain on the authoritative raw
-    // waypoint/timeline path and use the next ETA-ordered waypoint only as a
-    // tangent hint.  A malformed waypoint is fail-closed (no guessed curve).
-    if (path || !route?.waypoints?.length || !Number.isFinite(target) ||
+    // Before a formal path's first sample (for example, a raw timeline
+    // prefix before a mid-replay motion adoption), remain on the authoritative
+    // raw waypoint/timeline path and use the next ETA-ordered waypoint only as
+    // a tangent hint.  Once a valid formal path has reached its final sample,
+    // do not invent a post-arrival lookahead.  A malformed waypoint is
+    // fail-closed (no guessed curve).
+    const formalPathValid = path && Array.isArray(path.points) &&
+      Array.isArray(path.timesMs) && path.points.length >= 2 &&
+      path.points.length === path.timesMs.length;
+    if (formalPathValid && target >= path.timesMs[path.timesMs.length - 1]) return null;
+    if (!route?.waypoints?.length || !Number.isFinite(target) ||
         !Number.isFinite(startMs)) return null;
     const absoluteMs = startMs + target;
     for (let index = 0; index < route.waypoints.length; index += 1) {

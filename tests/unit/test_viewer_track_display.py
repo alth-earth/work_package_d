@@ -41,6 +41,8 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert "formal_curve_display_smoothing_applied" in policy
     assert "endpoint_turn_rounding_available" in policy
     assert "completedTrackLookaheadFor" in segments
+    assert "raw timeline prefix" in segments
+    assert "formalPathValid && target >= path.timesMs[path.timesMs.length - 1]" in app
     assert "endpointLookahead" in segments
     assert "FORMAL_COMPLETED_TRACK_SMOOTHING" in segments
     assert 'engineeringRaw = viewMode === "engineering"' in policy
