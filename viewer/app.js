@@ -2195,6 +2195,45 @@
     return points;
   }
 
+  // The completed layer is the same authoritative route geometry as the blue
+  // future layer, with only its time prefix recolored green.  Formal CURVE
+  // paths use the producer samples; RAW_PASSTHROUGH paths use their published
+  // ETA-ordered waypoints plus one exact current-position interpolation.  The
+  // helper never rounds, projects, or mutates the source route.
+  function authoritativeCompletedRoutePointsAt(route, relativeMs) {
+    if (!route || !Number.isFinite(relativeMs) || !Number.isFinite(startMs)) return [];
+    const target = startMs + relativeMs;
+    const path = routeMotionPathFor(route);
+    if (path && Array.isArray(path.points) && Array.isArray(path.timesMs) &&
+        path.points.length >= 2 && path.points.length === path.timesMs.length &&
+        relativeMs >= path.timesMs[0]) {
+      return routeMotionCompletedPointsAt(route, relativeMs) || [];
+    }
+    const waypoints = Array.isArray(route.waypoints) ? route.waypoints : [];
+    const startPointMs = isoToMs(waypoints[0]?.eta);
+    if (!Number.isFinite(startPointMs) || target < startPointMs) return [];
+    const points = waypoints
+      .filter((point) => isoToMs(point?.eta) <= target)
+      .map((point) => ({
+        lon: Number(point.lon ?? point.longitude),
+        lat: Number(point.lat ?? point.latitude),
+        eta: point.eta,
+      }))
+      .filter((point) => Number.isFinite(point.lon) && Number.isFinite(point.lat));
+    const current = vesselPointAt(relativeMs);
+    if (current && Number.isFinite(current.lon) && Number.isFinite(current.lat)) {
+      const last = points[points.length - 1];
+      if (!last || last.lon !== current.lon || last.lat !== current.lat) {
+        points.push({
+          lon: current.lon,
+          lat: current.lat,
+          eta: new Date(target).toISOString(),
+        });
+      }
+    }
+    return points;
+  }
+
   // Return one producer point after the clipped completed prefix as paint-only
   // tangent context.  The point is never appended to state.track or sent to
   // Canvas; it only lets the endpoint-turn renderer join the incoming track
@@ -3214,7 +3253,7 @@
           return Number.isFinite(pointMs) && pointMs < formalStart;
         }).length
       : 0;
-    const rawPrefixRounded = !engineeringRaw && formalCurve && rawPrefixPointCount >= 2;
+    const rawPrefixRounded = false;
     const lookahead = !engineeringRaw && Array.isArray(points) && points.length >= 2
       ? completedTrackLookaheadFor(route, relativeMs)
       : null;
@@ -3226,7 +3265,9 @@
     return {
       source,
       formal_motion_mode: formalMode,
-      smoothing_applied: !engineeringRaw && (!formalCurve || rawPrefixRounded),
+      // The completed layer is a recolor of the authoritative route prefix;
+      // no second screen-space fit is applied to history or formal samples.
+      smoothing_applied: false,
       raw_prefix_smoothing_applied: rawPrefixRounded,
       raw_prefix_point_count: rawPrefixPointCount,
       // CURVE samples are producer-authored and are revealed by ETA clipping;
@@ -3234,6 +3275,7 @@
       // move whenever the clipped endpoint advances.
       formal_curve_display_smoothing_applied: false,
       formal_curve_resmoothed: false,
+      authoritative_prefix_recolored: !engineeringRaw,
       endpoint_turn_rounding_available: Boolean(lookahead),
       endpoint_turn_lookahead_used_for_paint: false,
       endpoint_turn_lookahead_source: lookahead?.source || null,
@@ -3242,11 +3284,7 @@
       engineering_raw: engineeringRaw,
       strategy: engineeringRaw
         ? "engineering_raw"
-        : formalCurve
-          ? rawPrefixRounded
-            ? "raw_timeline_prefix_rounded_then_formal_curve_eta_clipped_display"
-            : "formal_curve_samples_eta_clipped_display"
-          : "raw_timeline_eta_clipped_and_rounded_display",
+        : "authoritative_route_prefix_recolored_eta_clipped_display",
       reason: inspection?.reason || null,
       route_id: route?.route_id || route?.plan_id || null,
       presentation_only: true,
@@ -3261,60 +3299,40 @@
     // polyline, including any raw prefix before a formal CURVE adoption.
     // Smoothing is a paint-only exception for research/navigation views.
     if (viewMode === "engineering") return [{points, smooth: false}];
-    if (policy.source !== "formal_curve_samples") {
-      return [{
-        points,
-        smooth: policy.smoothing_applied,
-        // No future tangent is fed into the completed layer.  The visible
-        // prefix is clipped at the current ETA, so an earlier paint command
-        // cannot be displaced by later samples.
-        endpointLookahead: null,
-        smoothingOptions: {},
-      }];
-    }
 
-    // A route adopted mid-replay can leave a raw timeline prefix in
-    // state.track before the producer-authored CURVE samples begin.  The
-    // producer samples remain authoritative and untouched.  Prepare the full
-    // formal path in routeMotionPathFor(), then reveal only its ETA-clipped
-    // prefix here.  The formal suffix is deliberately drawn as producer
-    // samples, never passed through a second local smoother, so historical
-    // commands remain invariant as the current endpoint advances.
+    // Reuse the same authoritative prefix that the blue future layer clips
+    // against.  This is a paint-only color change: producer CURVE samples
+    // stay producer-authored, RAW_PASSTHROUGH stays raw, and the current
+    // position is included by ETA interpolation.  Joining the prior history
+    // to this prefix avoids a gap at a deferred-adoption boundary.
     const path = routeMotionPathFor(route);
     const formalStart = path?.timesMs?.length
       ? startMs + path.timesMs[0]
-      : NaN;
-    if (!Number.isFinite(formalStart)) return [{points, smooth: false}];
-    const rawPrefix = [];
-    const formalSuffix = [];
-    for (const point of points) {
-      const pointMs = isoToMs(point?.eta);
-      if (Number.isFinite(pointMs) && pointMs < formalStart) rawPrefix.push(point);
-      else formalSuffix.push(point);
+      : isoToMs(route?.waypoints?.[0]?.eta);
+    const history = Number.isFinite(formalStart)
+      ? points.filter((point) => {
+          const pointMs = isoToMs(point?.eta);
+          return Number.isFinite(pointMs) && pointMs < formalStart;
+        })
+      : points;
+    const authoritative = authoritativeCompletedRoutePointsAt(route, relativeMs);
+    const visible = [...history];
+    for (const point of authoritative) {
+      const previous = visible[visible.length - 1];
+      const previousLon = Number(previous?.lon ?? previous?.longitude);
+      const previousLat = Number(previous?.lat ?? previous?.latitude);
+      const pointLon = Number(point?.lon ?? point?.longitude);
+      const pointLat = Number(point?.lat ?? point?.latitude);
+      if (!previous || previousLon !== pointLon || previousLat !== pointLat) {
+        visible.push(point);
+      }
     }
-    if (rawPrefix.length < 2) {
-      return [{points: formalSuffix.length ? formalSuffix : points, smooth: false}];
-    }
-    if (!formalSuffix.length) return [{
-      points: rawPrefix,
-      smooth: true,
+    return [{
+      points: visible.length >= 2 ? visible : points,
+      smooth: false,
       endpointLookahead: null,
-      smoothingOptions: FORMAL_COMPLETED_TRACK_SMOOTHING,
+      smoothingOptions: {},
     }];
-    return [
-      {
-        points: rawPrefix,
-        smooth: true,
-        endpointLookahead: null,
-        smoothingOptions: FORMAL_COMPLETED_TRACK_SMOOTHING,
-      },
-      {
-        points: [rawPrefix[rawPrefix.length - 1], ...formalSuffix],
-        smooth: false,
-        endpointLookahead: null,
-        smoothingOptions: {},
-      },
-    ];
   }
 
   function strokeDisplayPath(context, path, color, width, dash, alpha) {
@@ -3490,9 +3508,9 @@
       drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88);
     }
     if (state.track?.length > 1) {
-      // RAW/timeline and producer CURVE track corners are rounded in the
-      // paint layer only.  Formal samples remain authoritative; engineering
-      // mode stays raw for side-by-side audit.
+      // The mini-map uses the same authoritative prefix recolor as the main
+      // map.  Formal CURVE samples and RAW/timeline waypoints are never fit a
+      // second time; engineering mode remains raw for side-by-side audit.
       drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94);
     }
 

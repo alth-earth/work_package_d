@@ -36,23 +36,27 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
 
     assert 'drawCompletedTrack(s.track, active, "#5cc47a", 3, [], 1)' in main_draw
     assert 'drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94)' in mini_draw
-    assert 'policy.source !== "formal_curve_samples"' in segments
+    assert "authoritativeCompletedRoutePointsAt" in app
+    assert "authoritative_prefix_recolored: !engineeringRaw" in policy
+    assert "authoritative_route_prefix_recolored_eta_clipped_display" in policy
+    assert "smoothing_applied: false" in policy
     assert "formal_curve_resmoothed: false" in policy
     assert "formal_curve_display_smoothing_applied: false" in policy
     assert "endpoint_turn_rounding_available" in policy
     assert "completedTrackLookaheadFor" in policy
-    assert "raw timeline prefix" in segments
+    assert "vesselPointAt(relativeMs)" in app
+    assert "eta: new Date(target).toISOString()" in app
     assert "formalPathValid && target >= path.timesMs[path.timesMs.length - 1]" in app
     assert "endpointLookahead" in segments
-    assert "FORMAL_COMPLETED_TRACK_SMOOTHING" in segments
     assert 'engineeringRaw = viewMode === "engineering"' in policy
     assert 'strategy: engineeringRaw' in policy
     assert 'if (viewMode === "engineering") return [{points, smooth: false}];' in segments
-    assert "ETA-clipped" in segments
-    assert "formal suffix is deliberately drawn as producer" in segments
+    assert "same authoritative prefix" in segments
+    assert "position is included by ETA interpolation" in segments
+    assert "visible" in segments
+    assert "points: visible.length >= 2 ? visible : points" in segments
     assert "endpointLookahead: null" in segments
     assert "smooth: false" in segments
-    assert "points: rawPrefix,\n      smooth: true" in segments
     assert "minimumSpacingCssPx: 24" in app
     assert "cornerRadiusCssPx: 30" in app
     assert "buildEndpointRolePath" in app
