@@ -192,8 +192,9 @@ def test_route_smoothing_keeps_route_and_vessel_semantics_separate() -> None:
     assert "linearVesselPointAt" in app
     assert "activeRevisionAt" in app
     assert "drawPath(s.trail" in app
-    assert 'drawPath(s.track, "#5cc47a", 3, [], null, 1)' in app
-    assert 'drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94)' in app
+    assert 'drawCompletedTrack(s.track, active, "#5cc47a", 3, [], 1)' in app
+    assert 'drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94)' in app
+    assert "completedTrackPresentationPolicy" in app
     # The formal motion path remains the vessel/authoritative route source, but
     # all three candidate objectives are now painted by the independent D
     # presentation layer, including the canonical candidate.

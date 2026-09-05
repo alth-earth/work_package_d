@@ -111,8 +111,11 @@
   let lastTs = null;
   let scale = 60;
   let selectedHorizon = "current";
-  let viewMode = "presentation";
-  let previousNonEngineeringMode = "presentation";
+  // A validated candidate package opens in the research comparison view.  The
+  // static HTML mirrors this value so the first paint does not briefly claim
+  // to be the operational simulation before candidate validation completes.
+  let viewMode = "research";
+  let previousNonEngineeringMode = "research";
   let presentationMode = true;
   let selectedRouteLayer = "full_voyage";
   let highlightedCandidateId = null;
@@ -139,6 +142,7 @@
   let formalRouteMotionCache = new WeakMap();
   let runtimeRoutePathCache = new Map();
   let runtimeCandidateMotionInspectionCache = new Map();
+  let candidateTimedSourceCache = new Map();
   let lastRiskSummaryKey = null;
   let lastRouteDecisionKey = null;
   let lastResearchPanelKey = null;
@@ -845,6 +849,14 @@
         candidates: Object.freeze([]),
       })
       : inspection;
+    // A later replay revision can fail its candidate/package binding even
+    // after an initially valid package opened in research mode.  Keep the
+    // visible mode fail-closed and synchronize all mode controls immediately.
+    if (!candidateInspection.valid && viewMode === "research") {
+      viewMode = "presentation";
+      previousNonEngineeringMode = "presentation";
+      updateModeUi();
+    }
     highlightedCandidateId = defaultCandidateForLayer(selectedRouteLayer)?.candidate_id || null;
     lastResearchPanelKey = null;
   }
@@ -876,29 +888,261 @@
     return (candidate?.geometry?.coordinates || []).map(([lon, lat]) => ({ lon, lat }));
   }
 
-  function candidateVisualPath(candidate) {
-    const rect = canvasDisplayRect();
-    const renderedScale = rect?.width > 0 && canvas.width > 0
-      ? rect.width / canvas.width * mapZoom
-      : mapZoom;
-    const unitsPerCssPixel = renderedScale > 0 ? 1 / renderedScale : 1;
-    const projected = candidateGeometryPoints(candidate).map((point) => project(point.lon, point.lat));
-    return visualSmoothingTools.buildRoundedPath(projected, {unitsPerCssPixel});
+  function samePublishedValue(left, right) {
+    if (left === right) return true;
+    if (Array.isArray(left) || Array.isArray(right)) {
+      return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+        left.every((value, index) => samePublishedValue(value, right[index]));
+    }
+    if (!left || !right || typeof left !== "object" || typeof right !== "object") {
+      return false;
+    }
+    const leftKeys = Object.keys(left).sort();
+    const rightKeys = Object.keys(right).sort();
+    return leftKeys.length === rightKeys.length &&
+      leftKeys.every((key, index) => key === rightKeys[index] &&
+        samePublishedValue(left[key], right[key]));
+  }
+
+  function displayUnitsPerCssPixel(element, zoom = 1) {
+    const rect = element?.getBoundingClientRect?.();
+    const width = Number(rect?.width);
+    const logicalWidth = Number(element?.width);
+    const renderedScale = width > 0 && logicalWidth > 0
+      ? width / logicalWidth * zoom
+      : Number(zoom);
+    return Number.isFinite(renderedScale) && renderedScale > 0
+      ? 1 / renderedScale
+      : 1;
+  }
+
+  function buildProjectedVisualPath(points, projector, element, zoom = 1,
+    role = "candidate_remaining") {
+    const source = Array.isArray(points) ? points : [];
+    const projected = source.map((point) => {
+      const value = coordinateOf(point);
+      const lon = Number(value.lon);
+      const lat = Number(value.lat);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return {x: NaN, y: NaN};
+      const result = projector(lon, lat);
+      return {x: Number(result?.x), y: Number(result?.y)};
+    });
+    return visualSmoothingTools.buildRolePath(projected, role, {
+      unitsPerCssPixel: displayUnitsPerCssPixel(element, zoom),
+    });
+  }
+
+  function candidateVisualPath(candidate, points = null) {
+    return buildProjectedVisualPath(
+      points || candidateGeometryPoints(candidate),
+      project,
+      canvas,
+      mapZoom,
+    );
+  }
+
+  function runtimePackageForRevision(revision, layerSetId = null) {
+    const entry = runtimeCandidateInspection?.packages?.find((item) =>
+      item?.revision === revision && item?.valid && item?.package &&
+      (!layerSetId || item.package.layer_set_id === layerSetId)
+    );
+    return entry?.package || null;
+  }
+
+  function candidateTimedUnavailable(reason, identity = {}, extra = {}) {
+    return {
+      valid: false,
+      visible: false,
+      hidden: true,
+      hidden_reason: reason,
+      source: null,
+      source_point_count: 0,
+      remaining_point_count: 0,
+      first_visible_eta: null,
+      first_visible_time_ms: null,
+      arrival_eta: null,
+      arrival_time_ms: null,
+      simulation_time_ms: Number.isFinite(startMs + simMs) ? startMs + simMs : null,
+      interpolated: false,
+      segment_index: null,
+      points: [],
+      presentation_only: true,
+      authoritative_semantics_unchanged: true,
+      active_revision: identity.revision ?? null,
+      layer_set_id: identity.layer_set_id ?? null,
+      candidate_id: identity.candidate_id ?? null,
+      objective: identity.objective ?? null,
+      ...extra,
+    };
+  }
+
+  function candidateTimedPathFor(candidate, revision = activeCandidateRevision,
+    relativeMs = simMs) {
+    const routePackage = revision === activeCandidateRevision
+      ? activeCandidatePackage
+      : candidatePackageForRevision(revision);
+    const identity = {
+      revision,
+      layer_set_id: routePackage?.layer_set_id || null,
+      candidate_id: candidate?.candidate_id || null,
+      objective: candidate?.objective || null,
+    };
+    if (!candidate || !Number.isInteger(revision) || !identity.layer_set_id ||
+        !Number.isFinite(startMs) || !Number.isFinite(relativeMs)) {
+      return candidateTimedUnavailable("candidate_identity_missing", identity);
+    }
+    if (!routePackage || routePackage.layer_set_id !== identity.layer_set_id) {
+      return candidateTimedUnavailable("candidate_revision_identity_mismatch", identity);
+    }
+    const routeBinding = bundle?.combined_presentation?.route_candidate_set_bindings?.find(
+      (item) => item?.revision === revision
+    );
+    if (!routeBinding || routeBinding.layer_set_id !== identity.layer_set_id ||
+        routeBinding.candidate_set_id !== routePackage.candidate_set_id ||
+        routeBinding.selected_candidate_id !== routePackage.selected_candidate_id) {
+      return candidateTimedUnavailable("candidate_set_digest_identity_mismatch", identity);
+    }
+    const runtimePackage = runtimePackageForRevision(revision, identity.layer_set_id);
+    if (!runtimePackage || runtimePackage.layer_set_id !== identity.layer_set_id) {
+      return candidateTimedUnavailable("runtime_candidate_package_identity_mismatch", identity);
+    }
+    const runtimeBinding =
+      bundle?.combined_presentation?.runtime_route_candidate_set_bindings?.find(
+        (item) => item?.revision === revision
+      );
+    if (!runtimeBinding || runtimeBinding.layer_set_id !== identity.layer_set_id ||
+        runtimeBinding.runtime_candidate_set_id !== runtimePackage.runtime_candidate_set_id ||
+        runtimeBinding.selected_candidate_id !== runtimePackage.selected_candidate_id) {
+      return candidateTimedUnavailable("runtime_candidate_set_digest_identity_mismatch", identity);
+    }
+    const runtimeCandidate = runtimePackage.candidates?.find((item) =>
+      item?.candidate_id === candidate.candidate_id && item.layer === candidate.layer &&
+      item.objective === candidate.objective
+    );
+    if (!runtimeCandidate) {
+      return candidateTimedUnavailable("runtime_candidate_identity_mismatch", identity);
+    }
+    if (candidate.arrival_eta !== runtimeCandidate.arrival_eta) {
+      return candidateTimedUnavailable("candidate_eta_identity_mismatch", identity);
+    }
+    const samePublishedMetadata = ["distance_km", "travel_hours"].every(
+      (field) => Number(candidate[field]) === Number(runtimeCandidate[field])
+    ) && samePublishedValue(candidate.risk_metrics, runtimeCandidate.risk_metrics) &&
+      samePublishedValue(candidate.provenance, runtimeCandidate.provenance);
+    if (!samePublishedMetadata) {
+      return candidateTimedUnavailable("candidate_metadata_identity_mismatch", identity);
+    }
+    const routeCoordinates = candidate.geometry?.coordinates;
+    const runtimeCoordinates = runtimeCandidate.waypoints?.map((point) =>
+      [point.longitude, point.latitude]
+    );
+    if (!Array.isArray(routeCoordinates) || !Array.isArray(runtimeCoordinates) ||
+        routeCoordinates.length !== runtimeCoordinates.length ||
+        routeCoordinates.some((point, index) =>
+          point[0] !== runtimeCoordinates[index][0] || point[1] !== runtimeCoordinates[index][1]
+        )) {
+      return candidateTimedUnavailable("candidate_geometry_identity_mismatch", identity);
+    }
+    const cacheKey = `${revision}|${identity.layer_set_id}|${identity.candidate_id}|${identity.objective}`;
+    let source = candidateTimedSourceCache.get(cacheKey);
+    if (!source) {
+      const formal = candidate.layer === "full_voyage"
+        ? formalMotionTools.inspectCandidate(bundle, runtimeCandidate, identity.layer_set_id)
+        : {valid: false, reason: "formal_motion_candidate_not_published"};
+      if (formal.valid && (formal.record?.mode === "CURVE" ||
+          formal.record?.mode === "RAW_PASSTHROUGH") &&
+          Array.isArray(formal.samples) && formal.samples.length >= 2) {
+        source = {
+          points: formal.samples.map((sample) => ({
+            ...sample,
+            eta: new Date(sample.eta).toISOString(),
+          })),
+          source: formal.record.mode === "RAW_PASSTHROUGH"
+            ? "validated_candidate_motion_samples_raw"
+            : "validated_candidate_motion_samples",
+          motion_mode: formal.record.mode,
+          formal_reason: formal.reason || null,
+        };
+      } else if (candidate.layer === "full_voyage") {
+        source = {
+          points: null,
+          source: null,
+          motion_mode: formal.record?.mode || null,
+          formal_reason: formal.reason || "formal_candidate_motion_unavailable",
+          unavailable: "formal_candidate_motion_unavailable",
+        };
+      } else {
+        source = {
+          points: runtimeCandidate.waypoints.map((point) => ({
+            lon: point.longitude,
+            lat: point.latitude,
+            eta: point.eta,
+            recommended_speed_mps: point.recommended_speed_mps,
+          })),
+          source: "runtime_candidate_waypoints",
+          motion_mode: "RAW_PASSTHROUGH",
+          formal_reason: formal.reason || null,
+        };
+      }
+      candidateTimedSourceCache.set(cacheKey, source);
+    }
+    if (!Array.isArray(source.points)) {
+      return candidateTimedUnavailable(source.unavailable || "candidate_motion_unavailable", identity, {
+        motion_mode: source.motion_mode || null,
+        formal_reason: source.formal_reason || null,
+      });
+    }
+    const clipped = visualSmoothingTools.clipTimedPath(
+      source.points,
+      startMs + relativeMs,
+      {
+        source: source.source,
+        identity,
+        expectedIdentity: identity,
+      },
+    );
+    return {
+      ...clipped,
+      active_revision: revision,
+      layer_set_id: identity.layer_set_id,
+      candidate_id: identity.candidate_id,
+      objective: identity.objective,
+      motion_mode: source.motion_mode,
+      formal_reason: source.formal_reason || null,
+    };
   }
 
   function candidateVisualDiagnostics() {
+    const operationalRoute = runtimeRouteLocked
+      ? runtimeRouteObject()
+      : routeFor(activeCandidateRevision);
+    const operationalCandidateId = operationalRoute?.route_id || null;
     return candidatesForLayer().map((candidate) => {
-      const path = candidateVisualPath(candidate);
+      const timed = candidateTimedPathFor(candidate, activeCandidateRevision, simMs);
+      const operational = candidate.candidate_id === operationalCandidateId;
+      const overlayVisible = timed.visible && !operational;
+      const path = overlayVisible ? candidateVisualPath(candidate, timed.points) : null;
       return {
         candidate_id: candidate.candidate_id,
         objective: candidate.objective,
-        applied: Boolean(path.applied),
-        fallback_reason: path.fallback_reason,
-        source_point_count: path.source_point_count,
-        display_point_count: path.display_point_count,
-        rounded_corner_count: path.rounded_corner_count,
-        skipped_corner_count: path.skipped_corner_count,
-        collapsed_duplicate_count: path.collapsed_duplicate_count,
+        active_revision: timed.active_revision,
+        layer_set_id: timed.layer_set_id,
+        candidate_clip_source: timed.source,
+        timed_source: timed.source,
+        first_visible_eta: timed.first_visible_eta,
+        remaining_point_count: timed.remaining_point_count,
+        hidden_reason: operational
+          ? "operational_route_owns_future_stroke"
+          : timed.hidden_reason,
+        overlay_visible: overlayVisible,
+        motion_mode: timed.motion_mode || null,
+        applied: Boolean(path?.applied),
+        fallback_reason: path?.fallback_reason || null,
+        source_point_count: timed.source_point_count,
+        display_point_count: path?.display_point_count || 0,
+        rounded_corner_count: path?.rounded_corner_count || 0,
+        skipped_corner_count: path?.skipped_corner_count || 0,
+        collapsed_duplicate_count: path?.collapsed_duplicate_count || 0,
         presentation_only: true,
       };
     });
@@ -2826,10 +3070,10 @@
     drawPath(points, ROUTE_POLYLINE_COLOR, width, dash, filterFutureMs, alpha);
   }
 
-  function drawCandidateVisualPath(candidate, color, width, dash, alpha) {
-    const path = candidateVisualPath(candidate);
+  function drawCandidateVisualPath(candidate, color, width, dash, alpha, points = null) {
+    const path = candidateVisualPath(candidate, points);
     if (!visualSmoothingTools.trace(ctx, path)) {
-      drawPath(candidateGeometryPoints(candidate), color, width, dash, null, alpha);
+      drawPath(points || candidateGeometryPoints(candidate), color, width, dash, null, alpha);
       return path;
     }
     ctx.save();
@@ -2844,6 +3088,134 @@
     return path;
   }
 
+  function formalInspectionForRoute(route) {
+    if (!route) return {valid: false, reason: "no_active_route"};
+    return route.runtime_candidate
+      ? runtimeMotionInspection(route.runtime_candidate)
+      : inspectFormalRouteMotion(route);
+  }
+
+  function completedTrackPresentationPolicy(route, points = null) {
+    const inspection = formalInspectionForRoute(route);
+    const formalMode = inspection?.record?.mode || inspection?.mode || null;
+    const formalCurve = inspection?.valid === true && formalMode === "CURVE";
+    const engineeringRaw = viewMode === "engineering";
+    const path = formalCurve ? routeMotionPathFor(route) : null;
+    const formalStart = path?.timesMs?.length ? startMs + path.timesMs[0] : NaN;
+    const rawPrefixPointCount = Array.isArray(points) && Number.isFinite(formalStart)
+      ? points.filter((point) => {
+          const pointMs = isoToMs(point?.eta);
+          return Number.isFinite(pointMs) && pointMs < formalStart;
+        }).length
+      : 0;
+    const rawPrefixRounded = !engineeringRaw && formalCurve && rawPrefixPointCount >= 2;
+    const source = formalCurve
+      ? "formal_curve_samples"
+      : formalMode === "RAW_PASSTHROUGH"
+        ? "raw_passthrough"
+        : "timeline_fallback";
+    return {
+      source,
+      formal_motion_mode: formalMode,
+      smoothing_applied: !engineeringRaw && (!formalCurve || rawPrefixRounded),
+      raw_prefix_smoothing_applied: rawPrefixRounded,
+      raw_prefix_point_count: rawPrefixPointCount,
+      formal_curve_resmoothed: false,
+      engineering_raw: engineeringRaw,
+      strategy: engineeringRaw
+        ? "engineering_raw"
+        : formalCurve
+          ? rawPrefixRounded
+            ? "raw_timeline_prefix_rounded_then_formal_curve_raw_display"
+            : "formal_curve_samples_raw_display"
+          : "raw_timeline_rounded_display",
+      reason: inspection?.reason || null,
+      route_id: route?.route_id || route?.plan_id || null,
+      presentation_only: true,
+      authoritative_semantics_unchanged: true,
+    };
+  }
+
+  function completedTrackSegments(points, route) {
+    if (!Array.isArray(points) || points.length < 2) return [];
+    const policy = completedTrackPresentationPolicy(route, points);
+    // Engineering diagnostics must expose the exact producer/timeline
+    // polyline, including any raw prefix before a formal CURVE adoption.
+    // Smoothing is a paint-only exception for research/navigation views.
+    if (viewMode === "engineering") return [{points, smooth: false}];
+    if (policy.source !== "formal_curve_samples") {
+      return [{points, smooth: policy.smoothing_applied}];
+    }
+
+    // A route adopted mid-replay can leave a raw timeline prefix in
+    // state.track before the producer-authored CURVE samples begin.  Round
+    // only that prefix; never pass CURVE samples through the display smoother.
+    const path = routeMotionPathFor(route);
+    const formalStart = path?.timesMs?.length
+      ? startMs + path.timesMs[0]
+      : NaN;
+    if (!Number.isFinite(formalStart)) return [{points, smooth: false}];
+    const rawPrefix = [];
+    const formalSuffix = [];
+    for (const point of points) {
+      const pointMs = isoToMs(point?.eta);
+      if (Number.isFinite(pointMs) && pointMs < formalStart) rawPrefix.push(point);
+      else formalSuffix.push(point);
+    }
+    if (rawPrefix.length < 2) return [{points, smooth: false}];
+    if (!formalSuffix.length) return [{points: rawPrefix, smooth: true}];
+    return [
+      {points: rawPrefix, smooth: true},
+      {points: [rawPrefix[rawPrefix.length - 1], ...formalSuffix], smooth: false},
+    ];
+  }
+
+  function strokeDisplayPath(context, path, color, width, dash, alpha) {
+    if (!context || !visualSmoothingTools.trace(context, path)) return false;
+    context.save();
+    context.globalAlpha = alpha;
+    context.strokeStyle = color;
+    context.lineWidth = width;
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    context.setLineDash(dash);
+    context.stroke();
+    context.restore();
+    return true;
+  }
+
+  function drawCompletedTrack(points, route, color, width, dash, alpha) {
+    const segments = completedTrackSegments(points, route);
+    for (const segment of segments) {
+      if (segment.smooth) {
+        const path = buildProjectedVisualPath(
+          segment.points, project, canvas, mapZoom, "completed_track_raw"
+        );
+        if (strokeDisplayPath(ctx, path, color, width, dash, alpha)) continue;
+      }
+      drawPath(segment.points, color, width, dash, null, alpha);
+    }
+    return completedTrackPresentationPolicy(route, points);
+  }
+
+  function drawMiniCompletedTrack(points, route, color, width, dash, alpha) {
+    const segments = completedTrackSegments(points, route);
+    for (const segment of segments) {
+      if (segment.smooth) {
+        const path = buildProjectedVisualPath(
+          segment.points,
+          miniProject,
+          miniMapCanvas,
+          1,
+          "completed_track_raw",
+        );
+        if (strokeDisplayPath(miniCtx, path, color, width, dash, alpha)) continue;
+      }
+      drawMiniPath(segment.points, color, width, dash, alpha);
+    }
+    return completedTrackPresentationPolicy(route, points);
+  }
+
   function candidateOverlayReplacesRoute(route) {
     // Candidate geometry is a display-only comparison.  It must never replace
     // the active formal motion path: the vessel, completed track and active
@@ -2856,9 +3228,10 @@
   function drawResearchCandidateRoutes() {
     if (viewMode !== "research" || !layers.routes || !candidateInspection?.valid) return;
     const highlight = highlightedCandidate();
+    const activeRevision = activeCandidateRevision;
     const operationalRoute = runtimeRouteLocked
       ? runtimeRouteObject()
-      : routeFor(activeRevisionAt(simMs));
+      : routeFor(activeRevision);
     const operationalCandidateId = operationalRoute?.route_id || null;
     const visibleCandidates = candidatesForLayer().filter((candidate) =>
       visibleCandidateObjectives.has(candidate.objective) &&
@@ -2866,6 +3239,8 @@
     );
     if (layers.candidateSmoothing) {
       for (const candidate of visibleCandidates) {
+        const timed = candidateTimedPathFor(candidate, activeRevision, simMs);
+        if (!timed.visible || timed.points.length < 2) continue;
         const style = CANDIDATE_STYLES[candidate.objective] || CANDIDATE_STYLES.recommended;
         const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
         drawCandidateVisualPath(
@@ -2874,6 +3249,7 @@
           style.width + (isHighlighted ? 1.8 : 0),
           style.dash,
           isHighlighted ? 0.96 : 0.48,
+          timed.points,
         );
       }
     }
@@ -2881,10 +3257,11 @@
       // The comparison geometry is intentionally painted last so the thin raw
       // line remains inspectable on straight spans shared with the rounded path.
       for (const candidate of visibleCandidates) {
+        const timed = candidateTimedPathFor(candidate, activeRevision, simMs);
+        if (!timed.visible || timed.points.length < 2) continue;
         const isHighlighted = candidate.candidate_id === highlight?.candidate_id;
-        const geometry = candidateGeometryPoints(candidate);
         drawPath(
-          geometry,
+          timed.points,
           "rgba(245, 248, 251, 0.72)",
           isHighlighted ? 1.35 : 0.9,
           [4, 5],
@@ -2958,9 +3335,10 @@
       drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88);
     }
     if (state.track?.length > 1) {
-      // The completed track is already sampled from the same formal motion
-      // record as the vessel position.  Never run a local smoother over it.
-      drawMiniPath(state.track, "#69d49c", 2.2, [], 0.94);
+      // RAW/timeline track corners are rounded for display; producer CURVE
+      // samples remain untouched.  The policy is also active in research and
+      // navigation-simulation views, but engineering mode stays raw.
+      drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94);
     }
 
     const position = miniProject(state.lon, state.lat);
@@ -3058,9 +3436,9 @@
     drawResearchCandidateRoutes();
 
     if (layers.track && s.track.length > 1) {
-      // stateAt() supplies completed samples from the same formal motion
-      // record used for vessel position and heading.
-      drawPath(s.track, "#5cc47a", 3, [], null, 1);
+      // Keep completed-track presentation separate from state.track: only the
+      // Canvas paint commands may be rounded, never the formal motion/state.
+      drawCompletedTrack(s.track, active, "#5cc47a", 3, [], 1);
     }
 
     if (layers.routes && s.pendingRoute && s.pendingRoute.route && s.pendingRoute.revision !== s.active) {
@@ -3577,6 +3955,7 @@
     await formalMotionTools.prevalidateCandidateSets(bundle);
     formalRouteMotionCache = new WeakMap();
     runtimeRoutePathCache = new Map();
+    candidateTimedSourceCache = new Map();
     renderPipelineOverview(bundle);
     const sidecar = window.RISK_EXPLANATION_SIDECAR ?? bundle.risk_explanation ?? null;
     riskExplanationInspection = riskExplanationTools.inspect(sidecar, bundle);
@@ -3605,10 +3984,10 @@
     runtimeRouteMotionMode = runtimeMotionModeFor(runtimeSelectedCandidate());
     activeCandidateRevision = 1;
     activeCandidatePackage = bundle.route_candidates;
-    // Candidate comparison remains an explicit research view.  The default
-    // runtime is the operational presentation so candidate geometries cannot
-    // visually overlap the formal motion route on first load.
-    viewMode = "presentation";
+    // Candidate validation decides the default view before the animation loop
+    // starts.  This keeps valid packages in research validation while an
+    // invalid package fails closed to the authoritative navigation simulation.
+    viewMode = candidateInspection.valid ? "research" : "presentation";
     previousNonEngineeringMode = viewMode;
     selectedRouteLayer = "full_voyage";
     routeLayerSel.value = selectedRouteLayer;
@@ -3700,6 +4079,7 @@
             valid: false,
             reason: "production_research_path_removed",
           },
+          completed_track_display: completedTrackPresentationPolicy(active, current.track),
           route_polyline_visible: layers.routePolyline,
         };
       },
@@ -3740,6 +4120,10 @@
           authoritative_semantics_unchanged: true,
           routes: candidateVisualDiagnostics(),
         },
+        completed_track_display: completedTrackPresentationPolicy(
+          runtimeRouteLocked ? runtimeRouteObject() : routeFor(activeRevisionAt(simMs)),
+          stateAt(simMs).track,
+        ),
         selected_layer: selectedRouteLayer,
         highlighted_candidate_id: highlightedCandidateId,
         visible_objectives: [...visibleCandidateObjectives],
@@ -3749,10 +4133,32 @@
         candidates: candidatesForLayer(),
         metadata: Object.fromEntries(experimentMetadataRows()),
       }),
+      candidateTimedPath: (candidateId, options = {}) => {
+        const revision = Number.isInteger(options.revision)
+          ? options.revision : activeRevisionAt(simMs);
+        const packageValue = candidatePackageForRevision(revision);
+        const inspection = candidateTools.inspect(
+          packageValue,
+          bundle?.replay?.scenario_id || null,
+        );
+        const candidate = inspection.valid
+          ? inspection.candidates.find((item) => item.candidate_id === candidateId)
+          : null;
+        const relativeMs = Number.isFinite(options.simulation_ms)
+          ? options.simulation_ms : simMs;
+        return candidateTimedPathFor(candidate, revision, relativeMs);
+      },
       formalRouteMotion: () => inspectFormalRouteMotion(
         routeFor(activeRevisionAt(simMs))
       ),
       runtimeRouteSelection: () => runtimeRouteDescriptor(),
+      completedTrackPresentation: () => {
+        const current = stateAt(simMs);
+        return completedTrackPresentationPolicy(
+          runtimeRouteLocked ? runtimeRouteObject() : routeFor(current.active),
+          current.track,
+        );
+      },
       // Test/diagnostic surface: display filters stay interactive while the
       // selected runtime candidate remains identity-bound during playback.
       runtimeControls: () => ({

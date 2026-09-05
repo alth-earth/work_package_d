@@ -1,8 +1,9 @@
 /* Viewer 制品选择器（独立模块，app.js 只读其最小接口）。
  *
  * - 从同源 packages.json 读取已发布制品摘要（不加载包体）；
- * - 顶栏下拉选择制品：显式选择写 ?package=<pkg> 后整页重载，由 app.js 在
- *   加载 bundle 前解析该参数（并做 formalMotionTools 预检，失败自动回退默认）；
+ * - 顶栏下拉选择制品：显式选择写 ?package=<pkg>&package_location=<source>
+ *   后整页重载，由 app.js 在加载 bundle 前解析该参数（并做 formalMotionTools
+ *   预检，失败自动回退默认）；
  * - 右键“属性”弹窗展示完整身份与溯源信息；
  * - 默认（viewer-root / 无参数）保持加载当前 viewer/bundle.json，身份不切换。
  */
@@ -10,16 +11,24 @@
   "use strict";
 
   const PKG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+  const LOCATION_RE = /^(embedded|ready)$/;
 
   function currentPackageName() {
     const value = new URLSearchParams(window.location.search).get("package");
     return value && PKG_RE.test(value) ? value : null;
   }
 
+  function currentPackageLocation() {
+    const value = new URLSearchParams(window.location.search).get("package_location");
+    return value && LOCATION_RE.test(value) ? value : null;
+  }
+
   function resolveRequestedPath() {
     const pkg = currentPackageName();
     if (!pkg || pkg === "viewer-root") return null;
-    return "packages/" + encodeURIComponent(pkg) + "/bundle.json";
+    const location = currentPackageLocation();
+    const prefix = location === "ready" ? "ready-packages/" : "packages/";
+    return prefix + encodeURIComponent(pkg) + "/bundle.json";
   }
 
   // Minimal interface consumed by app.js before bundle fetch.
@@ -28,6 +37,7 @@
   let index = null; // packages.json document
   let entries = []; // ready & visible entries
   let activePkg = "viewer-root";
+  let activeLocation = null;
   let activeEntry = null;
 
   const SHORT = { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" };
@@ -102,7 +112,7 @@
       const btn = el("button", "pkg-option");
       btn.type = "button";
       btn.setAttribute("role", "option");
-      if (entry.package_dir === activePkg) btn.classList.add("is-current");
+      if (entry === activeEntry) btn.classList.add("is-current");
       const title = el("span", "pkg-option-title", entry.display_name);
       const meta = el("span", "pkg-option-meta");
       meta.innerHTML = ""; // clear
@@ -164,6 +174,11 @@
     const params = new URLSearchParams(window.location.search);
     if (next) params.set("package", next);
     else params.delete("package");
+    if (next && LOCATION_RE.test(entry.location || "")) {
+      params.set("package_location", entry.location);
+    } else {
+      params.delete("package_location");
+    }
     const qs = params.toString();
     window.location.search = qs ? `?${qs}` : "";
   }
@@ -336,6 +351,7 @@
 
   async function boot() {
     activePkg = currentPackageName() || "viewer-root";
+    activeLocation = currentPackageLocation();
     try {
       const resp = await fetch("packages.json", { cache: "no-cache" });
       if (!resp.ok) throw new Error(`packages.json HTTP ${resp.status}`);
@@ -347,7 +363,9 @@
         return ka - kb;
       });
       entries = ordered.filter((e) => !e.hidden);
-      activeEntry = entries.find((e) => e.package_dir === activePkg) || null;
+      activeEntry = entries.find((e) => (
+        e.package_dir === activePkg && (!activeLocation || e.location === activeLocation)
+      )) || entries.find((e) => e.package_dir === activePkg) || null;
     } catch (error) {
       entries = [];
       console.warn("[package-picker] 清单加载失败:", error);

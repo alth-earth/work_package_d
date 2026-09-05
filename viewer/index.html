@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="package_picker.css" />
   </head>
-  <body>
+  <body data-mode="research">
     <header class="topbar">
       <div class="brand" aria-label="IceNav-Risk 冰海智航系统">
         <div class="brand-mark" aria-hidden="true">
@@ -40,7 +40,7 @@
           </div>
           <span class="subtitle">环境数据 → 风险评估 → 路线决策 → 航行执行</span>
         </div>
-        <span id="mode-badge" class="badge">航行仿真</span>
+        <span id="mode-badge" class="badge">研究验证</span>
       </div>
       <div class="badges">
         <span id="gate-l1" class="badge gate">L1 -</span>
@@ -102,6 +102,13 @@
               aria-expanded="true" aria-controls="viewer-sidebar">收起侧栏</button>
           </div>
         </div>
+        <section id="mini-map-panel" class="mini-map-panel" hidden aria-label="小地图总览">
+          <div class="mini-map-header">
+            <span>小地图总览</span>
+            <span id="mini-map-follow-status">总览</span>
+          </div>
+          <canvas id="mini-map" width="220" height="220" aria-label="航线小地图"></canvas>
+        </section>
         <div id="map-compass" class="map-compass" aria-label="航向指南针">
           <div class="compass-dial">
             <span class="compass-cardinal compass-n">N</span>
@@ -177,8 +184,8 @@
             <label class="view-mode-control" for="view-mode">
               视图
               <select id="view-mode">
-                <option value="research">研究验证</option>
-                <option value="presentation" selected>航行仿真</option>
+                <option value="research" selected>研究验证</option>
+                <option value="presentation">航行仿真</option>
               </select>
             </label>
             <button id="toggle-debug" type="button" class="btn small">工程调试</button>
@@ -240,7 +247,7 @@
           </div>
         </section>
 
-        <section id="research-panel" class="block research-panel" hidden>
+        <section id="research-panel" class="block research-panel">
           <h2>航行决策</h2>
           <div id="research-status" class="status">正在加载研究制品</div>
           <div id="current-strategy" class="current-strategy">当前策略 · 正在加载</div>
