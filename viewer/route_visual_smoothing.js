@@ -13,6 +13,7 @@
     cornerRadiusCssPx: 20,
     maxTrimFraction: 0.4,
     duplicateToleranceCssPx: 0.5,
+    minimumSpacingCssPx: 0,
     minimumTurnAngleDeg: 3,
     maximumTurnAngleDeg: 177,
   });
@@ -33,6 +34,7 @@
         !finite(config.maxTrimFraction) || config.maxTrimFraction <= 0 ||
         config.maxTrimFraction >= 0.5 ||
         !finite(config.duplicateToleranceCssPx) || config.duplicateToleranceCssPx < 0 ||
+        !finite(config.minimumSpacingCssPx) || config.minimumSpacingCssPx < 0 ||
         !finite(config.minimumTurnAngleDeg) || config.minimumTurnAngleDeg < 0 ||
         !finite(config.maximumTurnAngleDeg) ||
         config.maximumTurnAngleDeg <= config.minimumTurnAngleDeg ||
@@ -210,6 +212,28 @@
     });
   }
 
+  // Keep a raw command builder for callers that need an endpoint-only
+  // exception.  It is deliberately separate from the screen-space smoother;
+  // a caller can preserve producer-authored interior samples while adding
+  // only the one endpoint turn needed by a clipped completed prefix.
+  function rawPath(values, options = {}) {
+    const sourceCount = Array.isArray(values) ? values.length : 0;
+    const invalidPoints = {sourceCount, values: [], collapsedCount: 0};
+    const config = normalizedConfig(options);
+    if (!config) return result(invalidPoints, [], false, "invalid_config");
+    if (!Array.isArray(values)) return result(invalidPoints, [], false, "invalid_points");
+    const parsed = values.map(pointOf);
+    if (parsed.some((point) => point === null)) {
+      return result(invalidPoints, [], false, "invalid_point");
+    }
+    return result(
+      {sourceCount, values: parsed, collapsedCount: 0},
+      rawCommands(parsed),
+      false,
+      "endpoint_only",
+    );
+  }
+
   function buildRoundedPath(values, options = {}) {
     const sourceCount = Array.isArray(values) ? values.length : 0;
     const invalidPoints = {sourceCount, values: [], collapsedCount: 0};
@@ -223,12 +247,16 @@
     }
 
     const duplicateTolerance = config.duplicateToleranceCssPx * config.unitsPerCssPixel;
+    const collapseTolerance = Math.max(
+      duplicateTolerance,
+      config.minimumSpacingCssPx * config.unitsPerCssPixel,
+    );
     const points = [];
     let collapsedCount = 0;
     for (let index = 0; index < parsed.length; index += 1) {
       const point = parsed[index];
       const isEndpoint = index === 0 || index === parsed.length - 1;
-      if (points.length && distance(points[points.length - 1], point) <= duplicateTolerance) {
+      if (points.length && distance(points[points.length - 1], point) <= collapseTolerance) {
         if (isEndpoint && index > 0) {
           // Preserve the published end point exactly.  If it only replaces a
           // nearby interior sample, that sample is the one counted as folded;
@@ -327,6 +355,123 @@
     );
   }
 
+  // Round a turn whose vertex is the final visible point.  The lookahead is
+  // context only: no command ever reaches it, so the painted completed track
+  // remains clipped exactly at the current vessel position.  This is used for
+  // both raw/timeline and formal CURVE tracks.  The formal producer samples
+  // remain immutable; the returned commands are a paint-only representation.
+  function buildEndpointRoundedPath(values, lookahead, options = {}) {
+    const roundInterior = options.roundInterior !== false;
+    const base = roundInterior ? buildRoundedPath(values, options) : rawPath(values, options);
+    const diagnostics = {
+      endpoint_turn_rounded: false,
+      endpoint_lookahead_used: false,
+      endpoint_lookahead_source: options.lookaheadSource || null,
+      endpoint_fallback_reason: null,
+      endpoint_lookahead_painted: false,
+    };
+    const fail = (reason) => Object.freeze({
+      ...base,
+      ...diagnostics,
+      endpoint_fallback_reason: reason,
+    });
+    if (!Array.isArray(values) || values.length < 2 ||
+        !Array.isArray(base.commands) || base.commands.length < 2) {
+      return fail("insufficient_points");
+    }
+    const config = normalizedConfig(options);
+    if (!config) return fail("invalid_config");
+    const parsed = values.map(pointOf);
+    if (parsed.some((point) => point === null)) return fail("invalid_point");
+    const current = parsed[parsed.length - 1];
+    const edgeTolerance = Math.max(
+      config.duplicateToleranceCssPx,
+      config.minimumSpacingCssPx,
+    ) * config.unitsPerCssPixel;
+    let previous = null;
+    for (let index = parsed.length - 2; index >= 0; index -= 1) {
+      if (distance(parsed[index], current) > edgeTolerance) {
+        previous = parsed[index];
+        break;
+      }
+    }
+    const next = pointOf(lookahead);
+    if (!previous) return fail("duplicate_endpoint");
+    if (!next) return fail("lookahead_missing");
+    diagnostics.endpoint_lookahead_used = true;
+
+    const duplicateTolerance = config.duplicateToleranceCssPx * config.unitsPerCssPixel;
+    const incoming = {x: current.x - previous.x, y: current.y - previous.y};
+    const outgoing = {x: next.x - current.x, y: next.y - current.y};
+    const incomingLength = Math.hypot(incoming.x, incoming.y);
+    const outgoingLength = Math.hypot(outgoing.x, outgoing.y);
+    if (incomingLength <= duplicateTolerance || outgoingLength <= duplicateTolerance) {
+      return fail("short_endpoint_edges");
+    }
+    const incomingUnit = {
+      x: incoming.x / incomingLength,
+      y: incoming.y / incomingLength,
+    };
+    const outgoingUnit = {
+      x: outgoing.x / outgoingLength,
+      y: outgoing.y / outgoingLength,
+    };
+    const turnAngle = degrees(Math.acos(clamp(
+      incomingUnit.x * outgoingUnit.x + incomingUnit.y * outgoingUnit.y,
+      -1,
+      1,
+    )));
+    if (!finite(turnAngle) || turnAngle < config.minimumTurnAngleDeg ||
+        turnAngle > config.maximumTurnAngleDeg) {
+      return fail("endpoint_turn_below_threshold");
+    }
+    const trim = Math.min(
+      config.cornerRadiusCssPx * config.unitsPerCssPixel,
+      incomingLength * config.maxTrimFraction,
+      outgoingLength * config.maxTrimFraction,
+    );
+    if (!finite(trim) || trim <= duplicateTolerance) return fail("endpoint_trim_too_short");
+
+    const entry = {
+      x: current.x - incomingUnit.x * trim,
+      y: current.y - incomingUnit.y * trim,
+    };
+    // A cubic can preserve the incoming tangent at the entry and the outgoing
+    // producer tangent at the exact current endpoint.  The second control
+    // point is only a tangent hint; it is never painted past `current`.
+    const handle = trim * 0.82;
+    const control1 = {
+      x: entry.x + incomingUnit.x * handle,
+      y: entry.y + incomingUnit.y * handle,
+    };
+    const control2 = {
+      x: current.x - outgoingUnit.x * handle,
+      y: current.y - outgoingUnit.y * handle,
+    };
+    const commands = base.commands.slice(0, -1);
+    commands.push(command("lineTo", entry));
+    commands.push(command("bezierCurveTo", {
+      cp1x: control1.x,
+      cp1y: control1.y,
+      cp2x: control2.x,
+      cp2y: control2.y,
+      x: current.x,
+      y: current.y,
+    }));
+    return Object.freeze({
+      ...base,
+      applied: true,
+      fallback_reason: null,
+      commands: Object.freeze(commands),
+      rounded_corner_count: base.rounded_corner_count + 1,
+      endpoint_turn_rounded: true,
+      endpoint_lookahead_used: true,
+      endpoint_lookahead_source: options.lookaheadSource || null,
+      endpoint_fallback_reason: null,
+      endpoint_lookahead_painted: false,
+    });
+  }
+
   // Role is diagnostic only: both approved roles use the same screen-space
   // rounding implementation, while callers decide whether a producer CURVE
   // or engineering-raw path is eligible before invoking this function.
@@ -336,6 +481,17 @@
       return Object.freeze({...invalid, role, fallback_reason: "unsupported_role"});
     }
     return Object.freeze({...buildRoundedPath(values, options), role});
+  }
+
+  function buildEndpointRolePath(values, role, lookahead, options = {}) {
+    if (!Object.hasOwn(ROLE_POLICIES, role)) {
+      const invalid = buildRoundedPath([], options);
+      return Object.freeze({...invalid, role, endpoint_fallback_reason: "unsupported_role"});
+    }
+    return Object.freeze({
+      ...buildEndpointRoundedPath(values, lookahead, options),
+      role,
+    });
   }
 
   function trace(context, path) {
@@ -348,6 +504,11 @@
       else if (item.kind === "lineTo") context.lineTo(item.x, item.y);
       else if (item.kind === "quadraticCurveTo") {
         context.quadraticCurveTo(item.cpx, item.cpy, item.x, item.y);
+      } else if (item.kind === "bezierCurveTo" &&
+          typeof context.bezierCurveTo === "function") {
+        context.bezierCurveTo(
+          item.cp1x, item.cp1y, item.cp2x, item.cp2y, item.x, item.y,
+        );
       } else {
         return false;
       }
@@ -361,7 +522,9 @@
     DEFAULT_CONFIG,
     ROLE_POLICIES,
     buildRoundedPath,
+    buildEndpointRoundedPath,
     buildRolePath,
+    buildEndpointRolePath,
     clipTimedPath,
     trace,
   });

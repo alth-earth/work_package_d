@@ -38,9 +38,18 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert 'drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94)' in mini_draw
     assert 'policy.source !== "formal_curve_samples"' in segments
     assert "formal_curve_resmoothed: false" in policy
+    assert "formal_curve_display_smoothing_applied" in policy
+    assert "endpoint_turn_rounding_available" in policy
+    assert "completedTrackLookaheadFor" in segments
+    assert "endpointLookahead" in segments
+    assert "FORMAL_COMPLETED_TRACK_SMOOTHING" in segments
     assert 'engineeringRaw = viewMode === "engineering"' in policy
     assert 'strategy: engineeringRaw' in policy
     assert 'if (viewMode === "engineering") return [{points, smooth: false}];' in segments
+    assert 'points: [rawPrefix[rawPrefix.length - 1], ...formalSuffix],\n        smooth: true' in segments
+    assert "minimumSpacingCssPx: 24" in app
+    assert "cornerRadiusCssPx: 30" in app
+    assert "buildEndpointRolePath" in app
     assert "buildProjectedVisualPath" in app
     assert "state.track" not in policy
     assert "state.track =" not in app

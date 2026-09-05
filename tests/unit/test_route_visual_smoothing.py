@@ -37,6 +37,7 @@ const approx = (actual, expected, message) => {
 };
 const kinds = (path) => path.commands.map((item) => item.kind);
 const quadratics = (path) => path.commands.filter((item) => item.kind === "quadraticCurveTo");
+const beziers = (path) => path.commands.filter((item) => item.kind === "bezierCurveTo");
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 assert(visual.SCHEMA_VERSION === "presentation.route-visual-smoothing.v1", "schema version");
@@ -165,6 +166,84 @@ assert(!collinear.applied && collinear.fallback_reason === "no_eligible_corner",
 assert(collinear.skipped_corner_count === 1 && quadratics(collinear).length === 0,
   "collinear corner is reported as skipped");
 
+// When the current vessel position is itself the clipped turn vertex, the
+// endpoint renderer uses one future producer sample only as tangent context.
+// It must finish exactly at the current point and must never paint the
+// lookahead point.
+const endpointInput = [
+  {x: 0, y: 0},
+  {x: 100, y: 0},
+];
+const endpoint = visual.buildEndpointRoundedPath(endpointInput, {x: 100, y: 100}, {
+  lookaheadSource: "cd.route-motion-set.v1",
+});
+assert(endpoint.applied && endpoint.endpoint_turn_rounded,
+  "endpoint turn should be rounded with lookahead context");
+assert(endpoint.endpoint_lookahead_used && endpoint.endpoint_lookahead_painted === false,
+  "lookahead is diagnostic context, never painted");
+assert(beziers(endpoint).length === 1, "endpoint emits one cubic curve");
+assert(endpoint.commands.at(-1).kind === "bezierCurveTo" &&
+  endpoint.commands.at(-1).x === 100 && endpoint.commands.at(-1).y === 0,
+  "endpoint cubic finishes at the current vessel point");
+assert(!endpoint.commands.some((item) => item.x === 100 && item.y === 100),
+  "endpoint path does not paint the future lookahead");
+assert(endpoint.endpoint_lookahead_source === "cd.route-motion-set.v1",
+  "endpoint lookahead source is exposed");
+
+// Formal producer samples can use the endpoint-only exception without
+// invoking the general quadratic display smoother; this still preserves the
+// exact current endpoint and the paint-only boundary.
+const endpointRawInterior = visual.buildEndpointRoundedPath(endpointInput,
+  {x: 100, y: 100}, {roundInterior: false});
+assert(endpointRawInterior.applied && endpointRawInterior.rounded_corner_count === 1,
+  "endpoint-only formal exception rounds the final turn");
+assert(quadratics(endpointRawInterior).length === 0 && beziers(endpointRawInterior).length === 1,
+  "endpoint-only formal exception does not add interior quadratics");
+
+const endpointMissing = visual.buildEndpointRoundedPath(endpointInput, null);
+assert(!endpointMissing.endpoint_turn_rounded &&
+  endpointMissing.endpoint_fallback_reason === "lookahead_missing",
+  "missing endpoint lookahead fails closed");
+assert(endpointMissing.commands.at(-1).kind === "lineTo" &&
+  endpointMissing.commands.at(-1).x === 100 && endpointMissing.commands.at(-1).y === 0,
+  "missing lookahead keeps an exact raw endpoint");
+
+const endpointStraight = visual.buildEndpointRoundedPath(endpointInput, {x: 200, y: 0});
+assert(!endpointStraight.endpoint_turn_rounded &&
+  endpointStraight.endpoint_fallback_reason === "endpoint_turn_below_threshold",
+  "collinear endpoint does not invent a turn");
+
+const denseEndpointInput = Array.from({length: 41}, (_, index) => ({
+  x: index * 2.5,
+  y: 0,
+}));
+const denseEndpoint = visual.buildEndpointRoundedPath(
+  denseEndpointInput,
+  {x: 100, y: 100},
+  {minimumSpacingCssPx: 3},
+);
+assert(denseEndpoint.applied && denseEndpoint.endpoint_turn_rounded &&
+  beziers(denseEndpoint).length === 1,
+  "dense producer samples still round the clipped endpoint");
+assert(denseEndpoint.commands.at(-1).x === 100 &&
+  denseEndpoint.commands.at(-1).y === 0,
+  "dense endpoint remains exact after display thinning");
+
+const dense = visual.buildRoundedPath([
+  {x: 0, y: 0},
+  {x: 1, y: 0},
+  {x: 2, y: 0},
+  {x: 3, y: 0},
+  {x: 4, y: 0},
+  {x: 5, y: 0},
+  {x: 5, y: 100},
+  {x: 105, y: 100},
+], {minimumSpacingCssPx: 3});
+assert(dense.display_point_count < dense.source_point_count,
+  "minimum spacing thins dense projected samples in display only");
+assert(dense.applied && quadratics(dense).length >= 1,
+  "thinned dense samples retain a visible turn");
+
 for (const invalidPoints of [
   [{x: 0, y: 0}, {x: NaN, y: 1}, {x: 2, y: 2}],
   [{x: 0, y: 0}, {x: Infinity, y: 1}, {x: 2, y: 2}],
@@ -219,9 +298,15 @@ const context2d = {
   moveTo: (x, y) => traceCalls.push(["moveTo", x, y]),
   lineTo: (x, y) => traceCalls.push(["lineTo", x, y]),
   quadraticCurveTo: (cpx, cpy, x, y) => traceCalls.push(["quadraticCurveTo", cpx, cpy, x, y]),
+  bezierCurveTo: (cp1x, cp1y, cp2x, cp2y, x, y) =>
+    traceCalls.push(["bezierCurveTo", cp1x, cp1y, cp2x, cp2y, x, y]),
 };
 assert(visual.trace(context2d, rightAngle), "trace accepts rounded path");
 assert(traceCalls.length === rightAngle.commands.length + 1, "trace call count");
+traceCalls.length = 0;
+assert(visual.trace(context2d, endpoint), "trace accepts endpoint cubic path");
+assert(traceCalls.some((item) => item[0] === "bezierCurveTo"),
+  "trace replays endpoint cubic command");
 assert(!visual.trace(context2d, {commands: [{kind: "moveTo", x: 0, y: 0}, {kind: "bogus"}]}),
   "trace rejects unknown command");
 '''

@@ -173,6 +173,23 @@
   const ROUTE_POLYLINE_COLOR = "rgba(245, 248, 251, 0.78)";
   const CURVE_HEADING_LOOKAHEAD_MS = 60 * 1000;
   const MAX_CURVE_MOTION_GAP_KM = 25;
+  // Formal motion samples are dense enough to be sub-pixel apart at the
+  // default map scale.  Keep a bounded tangent window large enough to form a
+  // visible endpoint turn, while still never painting future points.
+  const COMPLETED_TRACK_LOOKAHEAD_SAMPLES = 96;
+  const FORMAL_COMPLETED_TRACK_SMOOTHING = Object.freeze({
+    // Formal samples are often sub-pixel apart after projection.  A bounded
+    // display-only thinning step makes their producer-authored curvature
+    // visible without changing the samples, ETA anchors, or route motion.
+    // Keep enough screen-space distance between retained producer samples
+    // for a turn to have an actually visible radius.  The formal samples are
+    // much denser than one CSS pixel at the default zoom; a 24px display
+    // spacing is still only a paint-layer decimation and never changes the
+    // published motion geometry.
+    minimumSpacingCssPx: 24,
+    cornerRadiusCssPx: 30,
+    minimumTurnAngleDeg: 1,
+  });
 
   const RISK_COLORS = {
     1: "#55c878",
@@ -917,7 +934,7 @@
   }
 
   function buildProjectedVisualPath(points, projector, element, zoom = 1,
-    role = "candidate_remaining") {
+    role = "candidate_remaining", endpointLookahead = null, smoothingOptions = {}) {
     const source = Array.isArray(points) ? points : [];
     const projected = source.map((point) => {
       const value = coordinateOf(point);
@@ -927,9 +944,25 @@
       const result = projector(lon, lat);
       return {x: Number(result?.x), y: Number(result?.y)};
     });
-    return visualSmoothingTools.buildRolePath(projected, role, {
+    const options = {
       unitsPerCssPixel: displayUnitsPerCssPixel(element, zoom),
-    });
+      ...smoothingOptions,
+    };
+    if (endpointLookahead) {
+      const value = coordinateOf(endpointLookahead);
+      const lon = Number(value.lon);
+      const lat = Number(value.lat);
+      if (Number.isFinite(lon) && Number.isFinite(lat)) {
+        const projectedLookahead = projector(lon, lat);
+        return visualSmoothingTools.buildEndpointRolePath(
+          projected,
+          role,
+          {x: Number(projectedLookahead?.x), y: Number(projectedLookahead?.y)},
+          options,
+        );
+      }
+    }
+    return visualSmoothingTools.buildRolePath(projected, role, options);
   }
 
   function candidateVisualPath(candidate, points = null) {
@@ -2162,6 +2195,72 @@
     return points;
   }
 
+  // Return one producer point after the clipped completed prefix as paint-only
+  // tangent context.  The point is never appended to state.track or sent to
+  // Canvas; it only lets the endpoint-turn renderer join the incoming track
+  // to the vessel's current outgoing course without exposing future geometry.
+  function completedTrackLookaheadFor(route, relativeMs) {
+    const path = routeMotionPathFor(route);
+    const target = Number(relativeMs);
+    if (path && Array.isArray(path.points) && Array.isArray(path.timesMs) &&
+        path.points.length >= 2 && path.points.length === path.timesMs.length &&
+        Number.isFinite(target) && target >= path.timesMs[0] &&
+        target < path.timesMs[path.timesMs.length - 1]) {
+      let low = 0;
+      let high = path.timesMs.length - 1;
+      while (low < high) {
+        const mid = (low + high + 1) >> 1;
+        if (path.timesMs[mid] <= target) low = mid;
+        else high = mid - 1;
+      }
+      // A single producer sample can be sub-pixel away from the vessel and
+      // cannot provide a stable Canvas tangent.  Keep the context on the same
+      // validated path, but look a short bounded number of samples ahead; the
+      // point is still never painted or added to state.track.
+      const nextIndex = Math.min(
+        low + COMPLETED_TRACK_LOOKAHEAD_SAMPLES,
+        path.points.length - 1,
+      );
+      const point = path.points[nextIndex];
+      if (nextIndex > low && point && Number.isFinite(point.lon) && Number.isFinite(point.lat)) {
+        return {
+          point: {lon: point.lon, lat: point.lat},
+          source: path.source || "formal_motion_sample",
+          sample_index: nextIndex,
+          sample_span: nextIndex - low,
+          eta_ms: path.timesMs[nextIndex],
+          future_points_painted: 0,
+        };
+      }
+      return null;
+    }
+
+    // If formal motion is unavailable, remain on the authoritative raw
+    // waypoint/timeline path and use the next ETA-ordered waypoint only as a
+    // tangent hint.  A malformed waypoint is fail-closed (no guessed curve).
+    if (path || !route?.waypoints?.length || !Number.isFinite(target) ||
+        !Number.isFinite(startMs)) return null;
+    const absoluteMs = startMs + target;
+    for (let index = 0; index < route.waypoints.length; index += 1) {
+      const waypoint = route.waypoints[index];
+      const waypointMs = isoToMs(waypoint?.eta);
+      const lon = Number(waypoint?.lon ?? waypoint?.longitude);
+      const lat = Number(waypoint?.lat ?? waypoint?.latitude);
+      if (Number.isFinite(waypointMs) && waypointMs > absoluteMs &&
+          Number.isFinite(lon) && Number.isFinite(lat)) {
+        return {
+          point: {lon, lat},
+          source: "authoritative_waypoint",
+          sample_index: index,
+          sample_span: null,
+          eta_ms: waypointMs - startMs,
+          future_points_painted: 0,
+        };
+      }
+    }
+    return null;
+  }
+
   function currentSegmentPaintPointsAt(route, state) {
     if (!route?.waypoints || route.waypoints.length < 2 ||
         !state?.segment?.start_eta || !state.segment.end_eta) return [];
@@ -3095,7 +3194,7 @@
       : inspectFormalRouteMotion(route);
   }
 
-  function completedTrackPresentationPolicy(route, points = null) {
+  function completedTrackPresentationPolicy(route, points = null, relativeMs = simMs) {
     const inspection = formalInspectionForRoute(route);
     const formalMode = inspection?.record?.mode || inspection?.mode || null;
     const formalCurve = inspection?.valid === true && formalMode === "CURVE";
@@ -3109,6 +3208,9 @@
         }).length
       : 0;
     const rawPrefixRounded = !engineeringRaw && formalCurve && rawPrefixPointCount >= 2;
+    const lookahead = !engineeringRaw && Array.isArray(points) && points.length >= 2
+      ? completedTrackLookaheadFor(route, relativeMs)
+      : null;
     const source = formalCurve
       ? "formal_curve_samples"
       : formalMode === "RAW_PASSTHROUGH"
@@ -3117,18 +3219,23 @@
     return {
       source,
       formal_motion_mode: formalMode,
-      smoothing_applied: !engineeringRaw && (!formalCurve || rawPrefixRounded),
+      smoothing_applied: !engineeringRaw,
       raw_prefix_smoothing_applied: rawPrefixRounded,
       raw_prefix_point_count: rawPrefixPointCount,
+      formal_curve_display_smoothing_applied: !engineeringRaw && formalCurve,
       formal_curve_resmoothed: false,
+      endpoint_turn_rounding_available: Boolean(lookahead),
+      endpoint_turn_lookahead_source: lookahead?.source || null,
+      endpoint_turn_lookahead_sample_span: lookahead?.sample_span ?? null,
+      endpoint_turn_future_points_painted: 0,
       engineering_raw: engineeringRaw,
       strategy: engineeringRaw
         ? "engineering_raw"
         : formalCurve
           ? rawPrefixRounded
-            ? "raw_timeline_prefix_rounded_then_formal_curve_raw_display"
-            : "formal_curve_samples_raw_display"
-          : "raw_timeline_rounded_display",
+            ? "raw_timeline_prefix_rounded_then_formal_curve_endpoint_and_screen_rounded_display"
+            : "formal_curve_endpoint_and_screen_rounded_display"
+          : "raw_timeline_endpoint_and_rounded_display",
       reason: inspection?.reason || null,
       route_id: route?.route_id || route?.plan_id || null,
       presentation_only: true,
@@ -3136,25 +3243,44 @@
     };
   }
 
-  function completedTrackSegments(points, route) {
+  function completedTrackSegments(points, route, relativeMs = simMs) {
     if (!Array.isArray(points) || points.length < 2) return [];
-    const policy = completedTrackPresentationPolicy(route, points);
+    const policy = completedTrackPresentationPolicy(route, points, relativeMs);
+    const endpointLookahead = viewMode === "engineering"
+      ? null
+      : completedTrackLookaheadFor(route, relativeMs)?.point || null;
+    const formalSmoothingOptions = policy.source === "formal_curve_samples"
+      ? FORMAL_COMPLETED_TRACK_SMOOTHING
+      : {};
     // Engineering diagnostics must expose the exact producer/timeline
     // polyline, including any raw prefix before a formal CURVE adoption.
     // Smoothing is a paint-only exception for research/navigation views.
     if (viewMode === "engineering") return [{points, smooth: false}];
     if (policy.source !== "formal_curve_samples") {
-      return [{points, smooth: policy.smoothing_applied}];
+      return [{
+        points,
+        smooth: policy.smoothing_applied,
+        endpointLookahead,
+        smoothingOptions: formalSmoothingOptions,
+      }];
     }
 
     // A route adopted mid-replay can leave a raw timeline prefix in
-    // state.track before the producer-authored CURVE samples begin.  Round
-    // only that prefix; never pass CURVE samples through the display smoother.
+    // state.track before the producer-authored CURVE samples begin.  The
+    // producer samples remain authoritative and untouched; each visible
+    // eligible for a bounded screen-space paint smoothing pass so a clipped
+    // turn is already rounded at the vessel.  The lookahead is tangent
+    // context only and is never included in the painted points.
     const path = routeMotionPathFor(route);
     const formalStart = path?.timesMs?.length
       ? startMs + path.timesMs[0]
       : NaN;
-    if (!Number.isFinite(formalStart)) return [{points, smooth: false}];
+    if (!Number.isFinite(formalStart)) return [{
+      points,
+      smooth: true,
+      endpointLookahead,
+      smoothingOptions: formalSmoothingOptions,
+    }];
     const rawPrefix = [];
     const formalSuffix = [];
     for (const point of points) {
@@ -3162,11 +3288,26 @@
       if (Number.isFinite(pointMs) && pointMs < formalStart) rawPrefix.push(point);
       else formalSuffix.push(point);
     }
-    if (rawPrefix.length < 2) return [{points, smooth: false}];
-    if (!formalSuffix.length) return [{points: rawPrefix, smooth: true}];
+    if (rawPrefix.length < 2) return [{
+      points,
+      smooth: true,
+      endpointLookahead,
+      smoothingOptions: formalSmoothingOptions,
+    }];
+    if (!formalSuffix.length) return [{
+      points: rawPrefix,
+      smooth: true,
+      endpointLookahead,
+      smoothingOptions: formalSmoothingOptions,
+    }];
     return [
       {points: rawPrefix, smooth: true},
-      {points: [rawPrefix[rawPrefix.length - 1], ...formalSuffix], smooth: false},
+      {
+        points: [rawPrefix[rawPrefix.length - 1], ...formalSuffix],
+        smooth: true,
+        endpointLookahead,
+        smoothingOptions: formalSmoothingOptions,
+      },
     ];
   }
 
@@ -3184,36 +3325,44 @@
     return true;
   }
 
-  function drawCompletedTrack(points, route, color, width, dash, alpha) {
-    const segments = completedTrackSegments(points, route);
+  function drawCompletedTrack(points, route, color, width, dash, alpha, relativeMs = simMs) {
+    const segments = completedTrackSegments(points, route, relativeMs);
     for (const segment of segments) {
-      if (segment.smooth) {
+      if (segment.smooth || segment.endpointLookahead) {
         const path = buildProjectedVisualPath(
-          segment.points, project, canvas, mapZoom, "completed_track_raw"
+          segment.points,
+          project,
+          canvas,
+          mapZoom,
+          "completed_track_raw",
+          segment.endpointLookahead,
+          segment.smoothingOptions,
         );
         if (strokeDisplayPath(ctx, path, color, width, dash, alpha)) continue;
       }
       drawPath(segment.points, color, width, dash, null, alpha);
     }
-    return completedTrackPresentationPolicy(route, points);
+    return completedTrackPresentationPolicy(route, points, relativeMs);
   }
 
-  function drawMiniCompletedTrack(points, route, color, width, dash, alpha) {
-    const segments = completedTrackSegments(points, route);
+  function drawMiniCompletedTrack(points, route, color, width, dash, alpha, relativeMs = simMs) {
+    const segments = completedTrackSegments(points, route, relativeMs);
     for (const segment of segments) {
-      if (segment.smooth) {
+      if (segment.smooth || segment.endpointLookahead) {
         const path = buildProjectedVisualPath(
           segment.points,
           miniProject,
           miniMapCanvas,
           1,
           "completed_track_raw",
+          segment.endpointLookahead,
+          segment.smoothingOptions,
         );
         if (strokeDisplayPath(miniCtx, path, color, width, dash, alpha)) continue;
       }
       drawMiniPath(segment.points, color, width, dash, alpha);
     }
-    return completedTrackPresentationPolicy(route, points);
+    return completedTrackPresentationPolicy(route, points, relativeMs);
   }
 
   function candidateOverlayReplacesRoute(route) {
@@ -3335,9 +3484,9 @@
       drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88);
     }
     if (state.track?.length > 1) {
-      // RAW/timeline track corners are rounded for display; producer CURVE
-      // samples remain untouched.  The policy is also active in research and
-      // navigation-simulation views, but engineering mode stays raw.
+      // RAW/timeline and producer CURVE track corners are rounded in the
+      // paint layer only.  Formal samples remain authoritative; engineering
+      // mode stays raw for side-by-side audit.
       drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94);
     }
 
