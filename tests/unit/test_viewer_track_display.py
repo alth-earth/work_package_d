@@ -46,6 +46,9 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert "completedTrackLookaheadFor" in policy
     assert "vesselPointAt(relativeMs)" in app
     assert "eta: new Date(target).toISOString()" in app
+    assert ".filter((point) => isoToMs(point?.eta) < target)" in app
+    assert "const beforeArrival = !Number.isFinite(finalPointMs) || target < finalPointMs;" in app
+    assert "if (!beforeArrival)" in app
     assert "formalPathValid && target >= path.timesMs[path.timesMs.length - 1]" in app
     assert "endpointLookahead" in segments
     assert 'engineeringRaw = viewMode === "engineering"' in policy

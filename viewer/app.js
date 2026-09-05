@@ -2212,14 +2212,34 @@
     const waypoints = Array.isArray(route.waypoints) ? route.waypoints : [];
     const startPointMs = isoToMs(waypoints[0]?.eta);
     if (!Number.isFinite(startPointMs) || target < startPointMs) return [];
+    const finalPoint = waypoints[waypoints.length - 1];
+    const finalPointMs = isoToMs(finalPoint?.eta);
+    const beforeArrival = !Number.isFinite(finalPointMs) || target < finalPointMs;
     const points = waypoints
-      .filter((point) => isoToMs(point?.eta) <= target)
+      // Keep the waypoint at the exact current ETA out of the prefix.  The
+      // physical vessel endpoint below is the single paint point at that
+      // instant, so a tiny producer/timeline mismatch cannot create a
+      // waypoint → vessel reversal.
+      .filter((point) => isoToMs(point?.eta) < target)
       .map((point) => ({
         lon: Number(point.lon ?? point.longitude),
         lat: Number(point.lat ?? point.latitude),
         eta: point.eta,
       }))
       .filter((point) => Number.isFinite(point.lon) && Number.isFinite(point.lat));
+    if (!beforeArrival) {
+      const endpoint = {
+        lon: Number(finalPoint?.lon ?? finalPoint?.longitude),
+        lat: Number(finalPoint?.lat ?? finalPoint?.latitude),
+        eta: finalPoint?.eta,
+      };
+      const last = points[points.length - 1];
+      if (Number.isFinite(endpoint.lon) && Number.isFinite(endpoint.lat) &&
+          (!last || last.lon !== endpoint.lon || last.lat !== endpoint.lat)) {
+        points.push(endpoint);
+      }
+      return points;
+    }
     const current = vesselPointAt(relativeMs);
     if (current && Number.isFinite(current.lon) && Number.isFinite(current.lat)) {
       const last = points[points.length - 1];
