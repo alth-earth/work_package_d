@@ -3226,12 +3226,16 @@
     return {
       source,
       formal_motion_mode: formalMode,
-      smoothing_applied: !engineeringRaw,
+      smoothing_applied: !engineeringRaw && (!formalCurve || rawPrefixRounded),
       raw_prefix_smoothing_applied: rawPrefixRounded,
       raw_prefix_point_count: rawPrefixPointCount,
-      formal_curve_display_smoothing_applied: !engineeringRaw && formalCurve,
+      // CURVE samples are producer-authored and are revealed by ETA clipping;
+      // applying a second screen-space fit would make already painted history
+      // move whenever the clipped endpoint advances.
+      formal_curve_display_smoothing_applied: false,
       formal_curve_resmoothed: false,
       endpoint_turn_rounding_available: Boolean(lookahead),
+      endpoint_turn_lookahead_used_for_paint: false,
       endpoint_turn_lookahead_source: lookahead?.source || null,
       endpoint_turn_lookahead_sample_span: lookahead?.sample_span ?? null,
       endpoint_turn_future_points_painted: 0,
@@ -3240,9 +3244,9 @@
         ? "engineering_raw"
         : formalCurve
           ? rawPrefixRounded
-            ? "raw_timeline_prefix_rounded_then_formal_curve_endpoint_and_screen_rounded_display"
-            : "formal_curve_endpoint_and_screen_rounded_display"
-          : "raw_timeline_endpoint_and_rounded_display",
+            ? "raw_timeline_prefix_rounded_then_formal_curve_eta_clipped_display"
+            : "formal_curve_samples_eta_clipped_display"
+          : "raw_timeline_eta_clipped_and_rounded_display",
       reason: inspection?.reason || null,
       route_id: route?.route_id || route?.plan_id || null,
       presentation_only: true,
@@ -3253,12 +3257,6 @@
   function completedTrackSegments(points, route, relativeMs = simMs) {
     if (!Array.isArray(points) || points.length < 2) return [];
     const policy = completedTrackPresentationPolicy(route, points, relativeMs);
-    const endpointLookahead = viewMode === "engineering"
-      ? null
-      : completedTrackLookaheadFor(route, relativeMs)?.point || null;
-    const formalSmoothingOptions = policy.source === "formal_curve_samples"
-      ? FORMAL_COMPLETED_TRACK_SMOOTHING
-      : {};
     // Engineering diagnostics must expose the exact producer/timeline
     // polyline, including any raw prefix before a formal CURVE adoption.
     // Smoothing is a paint-only exception for research/navigation views.
@@ -3267,25 +3265,56 @@
       return [{
         points,
         smooth: policy.smoothing_applied,
-        endpointLookahead,
-        smoothingOptions: formalSmoothingOptions,
+        // No future tangent is fed into the completed layer.  The visible
+        // prefix is clipped at the current ETA, so an earlier paint command
+        // cannot be displaced by later samples.
+        endpointLookahead: null,
+        smoothingOptions: {},
       }];
     }
 
     // A route adopted mid-replay can leave a raw timeline prefix in
     // state.track before the producer-authored CURVE samples begin.  The
-    // producer samples remain authoritative and untouched.  Keep that raw
-    // prefix and the formal suffix in one continuous paint path so the
-    // renderer has the incoming tangent context needed to round a turn at
-    // the vessel, instead of introducing a new corner at the adoption
-    // boundary.  This is presentation-only; the lookahead is tangent
-    // context and is never included in the painted points.
-    return [{
-      points,
+    // producer samples remain authoritative and untouched.  Prepare the full
+    // formal path in routeMotionPathFor(), then reveal only its ETA-clipped
+    // prefix here.  The formal suffix is deliberately drawn as producer
+    // samples, never passed through a second local smoother, so historical
+    // commands remain invariant as the current endpoint advances.
+    const path = routeMotionPathFor(route);
+    const formalStart = path?.timesMs?.length
+      ? startMs + path.timesMs[0]
+      : NaN;
+    if (!Number.isFinite(formalStart)) return [{points, smooth: false}];
+    const rawPrefix = [];
+    const formalSuffix = [];
+    for (const point of points) {
+      const pointMs = isoToMs(point?.eta);
+      if (Number.isFinite(pointMs) && pointMs < formalStart) rawPrefix.push(point);
+      else formalSuffix.push(point);
+    }
+    if (rawPrefix.length < 2) {
+      return [{points: formalSuffix.length ? formalSuffix : points, smooth: false}];
+    }
+    if (!formalSuffix.length) return [{
+      points: rawPrefix,
       smooth: true,
-      endpointLookahead,
-      smoothingOptions: formalSmoothingOptions,
+      endpointLookahead: null,
+      smoothingOptions: FORMAL_COMPLETED_TRACK_SMOOTHING,
     }];
+    return [
+      {
+        points: rawPrefix,
+        smooth: true,
+        endpointLookahead: null,
+        smoothingOptions: FORMAL_COMPLETED_TRACK_SMOOTHING,
+      },
+      {
+        points: [rawPrefix[rawPrefix.length - 1], ...formalSuffix],
+        smooth: false,
+        endpointLookahead: null,
+        smoothingOptions: {},
+      },
+    ];
   }
 
   function strokeDisplayPath(context, path, color, width, dash, alpha) {

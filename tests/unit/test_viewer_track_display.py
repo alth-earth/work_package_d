@@ -38,9 +38,9 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert 'drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94)' in mini_draw
     assert 'policy.source !== "formal_curve_samples"' in segments
     assert "formal_curve_resmoothed: false" in policy
-    assert "formal_curve_display_smoothing_applied" in policy
+    assert "formal_curve_display_smoothing_applied: false" in policy
     assert "endpoint_turn_rounding_available" in policy
-    assert "completedTrackLookaheadFor" in segments
+    assert "completedTrackLookaheadFor" in policy
     assert "raw timeline prefix" in segments
     assert "formalPathValid && target >= path.timesMs[path.timesMs.length - 1]" in app
     assert "endpointLookahead" in segments
@@ -48,8 +48,11 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert 'engineeringRaw = viewMode === "engineering"' in policy
     assert 'strategy: engineeringRaw' in policy
     assert 'if (viewMode === "engineering") return [{points, smooth: false}];' in segments
-    assert "one continuous paint path" in segments
-    assert "points,\n      smooth: true" in segments
+    assert "ETA-clipped" in segments
+    assert "formal suffix is deliberately drawn as producer" in segments
+    assert "endpointLookahead: null" in segments
+    assert "smooth: false" in segments
+    assert "points: rawPrefix,\n      smooth: true" in segments
     assert "minimumSpacingCssPx: 24" in app
     assert "cornerRadiusCssPx: 30" in app
     assert "buildEndpointRolePath" in app
