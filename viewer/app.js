@@ -3508,9 +3508,10 @@
     drawNavigationAids();
     const pos = project(s.lon, s.lat);
 
-    if (layers.track && s.trail.length > 1) {
-      drawPath(s.trail, "#d7e6ed", 2.2, [], null, presentationMode ? 0.72 : 0.45);
-    }
+    // `state.trail` remains available to diagnostics and the public replay
+    // API, but it is not painted.  A second white movement trace behind the
+    // vessel is ambiguous with an unfinished route/candidate and obscures
+    // the single green completed-track layer.
 
     if (layers.routes && s.supersededRoute && s.supersededRoute.length > 1) {
       drawRoutePolyline(s.supersededRoute, 1.2, [3, 8], simMs, 0.7);
@@ -3605,10 +3606,7 @@
       }
     }
 
-    // This phase is derived from simulation time, so playback speed changes
-    // the visual cadence and no independent CSS/timer animation is created.
-    const motionPhase = Math.sin((simMs / 1000) * Math.PI * 2 / 180);
-    drawShipIcon(pos, heading, motionPhase);
+    drawShipIcon(pos, heading);
     ctx.restore();
     updateMapUi(heading, s);
     updateDebug(s, heading);
@@ -3616,24 +3614,10 @@
     drawMiniMap(s, heading);
   }
 
-  function drawShipIcon(pos, heading, motionPhase) {
+  function drawShipIcon(pos, heading) {
     ctx.save();
     ctx.translate(pos.x, pos.y);
     ctx.rotate(heading * Math.PI / 180);
-    const wakeAlpha = 0.18 + (motionPhase + 1) * 0.05;
-    const wakeLength = 16 + (motionPhase + 1) * 2;
-    ctx.beginPath();
-    ctx.moveTo(-3.5, 8);
-    ctx.lineTo(-3.5, wakeLength);
-    ctx.moveTo(3.5, 8);
-    ctx.lineTo(3.5, wakeLength);
-    ctx.strokeStyle = "#d7e6ed";
-    ctx.globalAlpha = wakeAlpha;
-    ctx.lineWidth = 1.3;
-    ctx.setLineDash([3, 4]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.moveTo(0, -15);
     ctx.quadraticCurveTo(6, -7, 6, 1);
