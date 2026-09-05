@@ -186,7 +186,7 @@
     // much denser than one CSS pixel at the default zoom; a 24px display
     // spacing is still only a paint-layer decimation and never changes the
     // published motion geometry.
-    minimumSpacingCssPx: 24,
+    minimumSpacingCssPx: 56,
     cornerRadiusCssPx: 30,
     minimumTurnAngleDeg: 1,
   });
