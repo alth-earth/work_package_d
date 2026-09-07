@@ -64,7 +64,18 @@ def test_completed_track_rounding_is_paint_only_and_mode_bound() -> None:
     assert 'if (viewMode === "engineering") return [{points, smooth: false}];' in segments
     assert "complete timed" in segments
     assert "display.clipped" in segments
-    assert "paintPath: display.clipped" in segments
+    assert (
+        "const display = completedTrackPaintPathAt(route, relativeMs, canvas, project, mapZoom)"
+        in segments
+    )
+    assert "visualSmoothingTools.transformDisplayPath(display.clipped" in segments
+    assert "scaleX: Number(miniMapCanvas?.width) / Number(canvas?.width)" in segments
+    assert "scaleY: Number(miniMapCanvas?.height) / Number(canvas?.height)" in segments
+    assert (
+        "completedTrackPaintPathAt(route, relativeMs, miniMapCanvas, miniProject, 1)"
+        not in segments
+    )
+    assert "paintPath," in segments
     assert "authoritativeCompletedRoutePointsAt" in segments
     assert "endpointLookahead: null" in segments
     assert "smooth: false" in segments

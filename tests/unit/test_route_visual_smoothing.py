@@ -121,6 +121,35 @@ assert(Math.abs(naturalCurve.x - naturalAt900.x) < 1e-9 &&
 const timedAfter = visual.clipTimedDisplayPath(timedRight, 1500);
 assert(timedAfter.commands.at(-1).kind === "lineTo" &&
   timedAfter.commands.at(-1).y === 50, "post-turn reveal advances one segment");
+
+// A second affine canvas must reuse the already-clipped curve instead of
+// fitting another screen-space radius. All endpoint/control coordinates scale
+// together while command timing, live-tail flags, and the input stay intact.
+const timedDuringBeforeTransform = JSON.stringify(timedDuring);
+const miniTimed = visual.transformDisplayPath(timedDuring, {scaleX: 0.25, scaleY: 0.5});
+assert(miniTimed.valid && miniTimed.visible, "transformed timed path remains visible");
+assert(miniTimed.commands.length === timedDuring.commands.length,
+  "transform preserves command count");
+for (let index = 0; index < timedDuring.commands.length; index += 1) {
+  const mainCommand = timedDuring.commands[index];
+  const miniCommand = miniTimed.commands[index];
+  assert(mainCommand.kind === miniCommand.kind, `transform command kind ${index}`);
+  for (const key of ["x", "cpx", "cp1x", "cp2x"]) {
+    if (key in mainCommand) approx(miniCommand[key] / 0.25, mainCommand[key],
+      `transform ${index}.${key}`);
+  }
+  for (const key of ["y", "cpy", "cp1y", "cp2y"]) {
+    if (key in mainCommand) approx(miniCommand[key] / 0.5, mainCommand[key],
+      `transform ${index}.${key}`);
+  }
+  assert(miniCommand.time_start_ms === mainCommand.time_start_ms &&
+    miniCommand.time_end_ms === mainCommand.time_end_ms,
+    `transform command timing ${index}`);
+  assert(Boolean(miniCommand.live_tail) === Boolean(mainCommand.live_tail),
+    `transform live-tail flag ${index}`);
+}
+assert(JSON.stringify(timedDuring) === timedDuringBeforeTransform,
+  "display transform mutated its input");
 const timedInvalid = visual.buildTimedRolePath(rightAngleInput, [0, 0, 2],
   "completed_track_raw");
 assert(!timedInvalid.applied && timedInvalid.fallback_reason === "non_monotonic_time",
@@ -245,6 +274,22 @@ assert(!endpoint.commands.some((item) => item.x === 100 && item.y === 100),
   "endpoint path does not paint the future lookahead");
 assert(endpoint.endpoint_lookahead_source === "cd.route-motion-set.v1",
   "endpoint lookahead source is exposed");
+const miniEndpoint = visual.transformDisplayPath(endpoint, {
+  scaleX: 0.2,
+  scaleY: 0.4,
+  offsetX: 3,
+  offsetY: 5,
+});
+const mainBezier = beziers(endpoint)[0];
+const miniBezier = beziers(miniEndpoint)[0];
+approx(miniBezier.cp1x, mainBezier.cp1x * 0.2 + 3, "bezier control 1 x transform");
+approx(miniBezier.cp1y, mainBezier.cp1y * 0.4 + 5, "bezier control 1 y transform");
+approx(miniBezier.cp2x, mainBezier.cp2x * 0.2 + 3, "bezier control 2 x transform");
+approx(miniBezier.cp2y, mainBezier.cp2y * 0.4 + 5, "bezier control 2 y transform");
+const invalidTransform = visual.transformDisplayPath(endpoint, {scaleX: 0, scaleY: 1});
+assert(!invalidTransform.valid && !invalidTransform.visible &&
+  invalidTransform.hidden_reason === "invalid_transform" &&
+  invalidTransform.commands.length === 0, "invalid affine transform fails closed");
 
 // Formal producer samples can use the endpoint-only exception without
 // invoking the general quadratic display smoother; this still preserves the

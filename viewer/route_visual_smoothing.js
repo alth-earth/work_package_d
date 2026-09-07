@@ -915,6 +915,64 @@
     });
   }
 
+  // Reproject an already-built display path without rebuilding or smoothing
+  // its geometry.  This is used when two affine canvases must show the same
+  // geographic curve: command timing and all non-coordinate diagnostics are
+  // retained verbatim while endpoints and control points share one transform.
+  function transformDisplayPath(path, transform = {}) {
+    const commands = Array.isArray(path?.commands) ? path.commands : [];
+    const scaleX = Number(transform.scaleX);
+    const scaleY = Number(transform.scaleY);
+    const offsetX = transform.offsetX === undefined ? 0 : Number(transform.offsetX);
+    const offsetY = transform.offsetY === undefined ? 0 : Number(transform.offsetY);
+    const fail = (reason) => Object.freeze({
+      ...(path && typeof path === "object" ? path : {}),
+      valid: false,
+      visible: false,
+      hidden: true,
+      hidden_reason: reason,
+      commands: Object.freeze([]),
+    });
+    if (!commands.length) return fail("invalid_commands");
+    if (!finite(scaleX) || !finite(scaleY) || scaleX <= 0 || scaleY <= 0 ||
+        !finite(offsetX) || !finite(offsetY)) {
+      return fail("invalid_transform");
+    }
+    const map = (x, y) => {
+      const source = pointOf({x: Number(x), y: Number(y)});
+      if (!source) return null;
+      const transformed = {
+        x: source.x * scaleX + offsetX,
+        y: source.y * scaleY + offsetY,
+      };
+      return pointOf(transformed);
+    };
+    const transformed = [];
+    for (const item of commands) {
+      const endpoint = map(item?.x, item?.y);
+      if (!endpoint) return fail("invalid_command_endpoint");
+      const next = {...item, ...endpoint};
+      if (item.kind === "quadraticCurveTo") {
+        const control = map(item.cpx, item.cpy);
+        if (!control) return fail("invalid_command_control");
+        next.cpx = control.x;
+        next.cpy = control.y;
+      } else if (item.kind === "bezierCurveTo") {
+        const control1 = map(item.cp1x, item.cp1y);
+        const control2 = map(item.cp2x, item.cp2y);
+        if (!control1 || !control2) return fail("invalid_command_control");
+        next.cp1x = control1.x;
+        next.cp1y = control1.y;
+        next.cp2x = control2.x;
+        next.cp2y = control2.y;
+      } else if (item.kind !== "moveTo" && item.kind !== "lineTo") {
+        return fail("unsupported_command");
+      }
+      transformed.push(command(item.kind, next));
+    }
+    return Object.freeze({...path, commands: Object.freeze(transformed)});
+  }
+
   function trace(context, path) {
     if (!context || !path || !Array.isArray(path.commands) || path.commands.length < 2) {
       return false;
@@ -950,6 +1008,7 @@
     buildEndpointRolePath,
     clipTimedPath,
     clipTimedDisplayPath,
+    transformDisplayPath,
     trace,
   });
 })();

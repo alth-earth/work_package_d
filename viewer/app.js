@@ -3554,12 +3554,20 @@
           return Number.isFinite(pointMs) && pointMs < formalStart;
         })
       : points;
-    const display = renderTarget === "mini"
-      ? completedTrackPaintPathAt(route, relativeMs, miniMapCanvas, miniProject, 1)
-      : completedTrackPaintPathAt(route, relativeMs, canvas, project, mapZoom);
-    if (display.clipped?.visible && display.clipped.commands.length >= 2) {
+    const display = completedTrackPaintPathAt(route, relativeMs, canvas, project, mapZoom);
+    // The main-map timed paint plan is the sole completed-track geometry.
+    // Both canvases cover the same basemap bbox, so the mini-map only scales
+    // those already-clipped commands into its canvas coordinates.  It must not
+    // run a second screen-space fit with a different geographic turn radius.
+    const paintPath = renderTarget === "mini"
+      ? visualSmoothingTools.transformDisplayPath(display.clipped, {
+          scaleX: Number(miniMapCanvas?.width) / Number(canvas?.width),
+          scaleY: Number(miniMapCanvas?.height) / Number(canvas?.height),
+        })
+      : display.clipped;
+    if (paintPath?.visible && paintPath.commands.length >= 2) {
       return [{
-          paintPath: display.clipped,
+          paintPath,
           smooth: true,
           paintPlan: display.plan,
           endpointLookahead: null,
@@ -3761,9 +3769,9 @@
       drawMiniPath(state.pendingRoute.route, "#f2c46b", 1.8, [5, 4], 0.88);
     }
     if (state.track?.length > 1) {
-      // The mini-map has its own viewport-specific immutable timed paint plan;
-      // it reveals the same ETA prefix as the main map without changing the
-      // formal samples. Engineering mode remains raw for side-by-side audit.
+      // The mini-map reprojects the main map's immutable timed paint plan, so
+      // both views reveal the same geographic curve. Engineering mode remains
+      // raw for side-by-side audit.
       drawMiniCompletedTrack(state.track, active, "#69d49c", 2.2, [], 0.94);
     }
 
